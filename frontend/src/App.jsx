@@ -1,7 +1,8 @@
-import { Coins, Gamepad2, Globe2, LogOut, Sparkles, Wifi, WifiOff } from "lucide-react";
+import { Club, Coins, Gamepad2, Globe2, LogOut, Sparkles, Spade, Volume2, VolumeX, Wifi, WifiOff } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
+import { audio } from "./audio";
 import AuthPanel from "./components/AuthPanel";
 import BlackjackTable from "./components/BlackjackTable";
 import DishesGame from "./components/DishesGame";
@@ -26,9 +27,36 @@ export default function App() {
   const [socketError, setSocketError] = useState("");
   const [presence, setPresence] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [muted, setMuted] = useState(() => audio.isMuted());
   const worldRef = useRef(null);
+  const presenceIdsRef = useRef(new Set());
+  const lastMessageIdRef = useRef(null);
 
   const token = session?.token;
+
+  // Mantener el estado local sincronizado con el módulo de audio
+  useEffect(() => audio.subscribe(setMuted), []);
+
+  // Preload de audios + desbloqueo en el primer click/teclado (autoplay policy)
+  useEffect(() => {
+    audio.preload();
+    function unlock() {
+      // Reproducir y pausar un audio silencioso desbloquea el contexto en algunos navegadores.
+      try {
+        const a = new Audio();
+        a.volume = 0;
+        a.play().catch(() => {});
+      } catch { /* noop */ }
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    }
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
 
   useEffect(() => {
     worldRef.current = world;
@@ -84,15 +112,48 @@ export default function App() {
     }
 
     function handlePresence(payload) {
-      if (payload.worldId === worldRef.current?.id) {
-        setPresence(payload.players || []);
+      if (payload.worldId !== worldRef.current?.id) return;
+
+      const players = payload.players || [];
+      const nextIds = new Set(players.map((p) => p.userId));
+      const prevIds = presenceIdsRef.current;
+
+      // Detectar quién entró / quién salió (sin contar al propio usuario en el primer load)
+      const myId = session?.user?.id;
+      const isInitial = prevIds.size === 0;
+
+      if (!isInitial) {
+        for (const id of nextIds) {
+          if (!prevIds.has(id) && id !== myId) {
+            audio.play("login");
+            break;
+          }
+        }
+        for (const id of prevIds) {
+          if (!nextIds.has(id) && id !== myId) {
+            audio.play("logout");
+            break;
+          }
+        }
       }
+
+      presenceIdsRef.current = nextIds;
+      setPresence(players);
     }
 
     function handleMessage(message) {
-      if (message.worldId === worldRef.current?.id) {
-        setMessages((current) => [...current.slice(-79), message]);
+      if (message.worldId !== worldRef.current?.id) return;
+
+      // Reproducir sonido sólo para mensajes ajenos y nuevos
+      if (
+        message.userId !== session?.user?.id &&
+        message.id !== lastMessageIdRef.current
+      ) {
+        audio.play("msg");
       }
+      lastMessageIdRef.current = message.id;
+
+      setMessages((current) => [...current.slice(-79), message]);
     }
 
     function handleBalance(payload) {
@@ -162,6 +223,16 @@ export default function App() {
     [balance]
   );
 
+  function resetClientSession() {
+    presenceIdsRef.current = new Set();
+    setSession(null);
+    setWorld(null);
+    setBalance(0);
+    setView("worlds");
+    setPresence([]);
+    setMessages([]);
+  }
+
   function handleAuth(nextSession) {
     setSession(nextSession);
     setWorld(null);
@@ -172,13 +243,27 @@ export default function App() {
   }
 
   function handleLogout() {
-    socket?.disconnect();
-    setSession(null);
-    setWorld(null);
-    setBalance(0);
-    setView("worlds");
-    setPresence([]);
-    setMessages([]);
+    const activeWorldId = worldRef.current?.id;
+
+    let finished = false;
+    const finishLogout = () => {
+      if (finished) return;
+      finished = true;
+      socket?.disconnect();
+      resetClientSession();
+    };
+
+    if (socket?.connected && activeWorldId) {
+      socket.emit("leave_world", { worldId: activeWorldId }, () => {
+        finishLogout();
+      });
+      window.setTimeout(() => {
+        finishLogout();
+      }, 400);
+      return;
+    }
+
+    finishLogout();
   }
 
   async function reloadWorld() {
@@ -193,6 +278,7 @@ export default function App() {
   }
 
   function leaveWorld() {
+    presenceIdsRef.current = new Set();
     setWorld(null);
     setBalance(0);
     setView("worlds");
@@ -219,39 +305,51 @@ export default function App() {
 
   return (
     <main className="min-h-screen text-zinc-100">
-      <header className="sticky top-0 z-20 border-b border-white/10 bg-black/70 backdrop-blur">
+      <header className="sticky top-0 z-20 border-b border-amber-300/20 bg-black/80 backdrop-blur">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/60 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-amber-300/40 to-transparent" />
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-cyan-300/40 bg-cyan-300/10 text-cyan-200">
-              <Gamepad2 size={22} />
+            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-amber-300/60 text-amber-200 shadow-goldSoft" style={{ background: "radial-gradient(circle at 35% 30%, #fef3c7, #fbbf24 60%, #b8860b 100%)" }}>
+              <Spade size={20} className="text-zinc-950" />
+              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-200 bg-zinc-950 text-[8px] font-black text-amber-200">
+                <Club size={9} />
+              </span>
             </div>
             <div className="min-w-0">
-              <h1 className="font-display text-lg font-extrabold text-white sm:text-xl">
-                Economy Arcade
+              <h1 className="font-display text-lg font-black tracking-wide sm:text-xl">
+                <span className="gold-text">Economy Arcade</span>
               </h1>
-              <p className="truncate text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
-                {world ? world.name : session.user.username}
+              <p className="truncate text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/60">
+                {world ? world.name : `Bienvenido, ${session.user.username}`}
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {world && (
-              <div className="flex min-h-11 items-center gap-2 rounded-md border border-amber-300/30 bg-amber-300/10 px-4 font-display text-sm font-extrabold text-amber-200">
-                <Coins size={18} />
-                <span>{money}</span>
+              <div className="flex min-h-11 items-center gap-2 rounded-md border border-amber-300/40 px-4 font-display text-sm font-extrabold text-amber-100 shadow-goldSoft" style={{ background: "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(184,134,11,0.18))" }}>
+                <span className="coin"><Coins size={12} /></span>
+                <span className="text-shadow-gold">{money}</span>
               </div>
             )}
             <div
               className={`flex min-h-11 items-center gap-2 rounded-md border px-3 text-xs font-extrabold uppercase tracking-[0.14em] ${
                 socketStatus === "online"
-                  ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200"
+                  ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-200 shadow-emeraldGlow"
                   : "border-zinc-500/30 bg-zinc-500/10 text-zinc-400"
               }`}
               title={socketError || "Estado de Socket.io"}
             >
-              {socketStatus === "online" ? <Wifi size={17} /> : <WifiOff size={17} />}
-              {socketStatus}
+              {socketStatus === "online" ? (
+                <span className="relative flex items-center">
+                  <span className="absolute inset-0 -m-0.5 animate-ping rounded-full bg-emerald-400/40" />
+                  <Wifi size={17} className="relative" />
+                </span>
+              ) : (
+                <WifiOff size={17} />
+              )}
+              {socketStatus === "online" ? "EN VIVO" : "offline"}
             </div>
             {world && (
               <>
@@ -281,6 +379,13 @@ export default function App() {
                 </button>
               </>
             )}
+            <button
+              className="ghost-button px-3"
+              onClick={() => audio.toggleMuted()}
+              title={muted ? "Activar audio" : "Silenciar audio"}
+            >
+              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </button>
             <button className="ghost-button" onClick={handleLogout} title="Cerrar sesion">
               <LogOut size={18} />
               Salir

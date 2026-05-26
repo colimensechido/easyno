@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Orbitron:wght@600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=Orbitron:wght@600;700;800;900&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -8,44 +8,254 @@
   :root {
     color-scheme: dark;
     font-family: Inter, system-ui, sans-serif;
-    background: #08090d;
+    background: #050a07;
+    --gold: 251 191 36;
+    --gold-deep: 184 134 11;
+    --ruby: 220 38 38;
+    --emerald: 16 185 129;
+    --felt: 15 74 48;
   }
 
   body {
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
+    color: #f4f4f5;
     background:
-      linear-gradient(180deg, rgba(8, 9, 13, 0.78), rgba(8, 9, 13, 0.98)),
-      radial-gradient(circle at 18% 18%, rgba(34, 211, 238, 0.14), transparent 28%),
-      radial-gradient(circle at 80% 6%, rgba(244, 63, 94, 0.12), transparent 24%),
-      #08090d;
+      radial-gradient(ellipse at 20% 0%, rgba(251, 191, 36, 0.08), transparent 35%),
+      radial-gradient(ellipse at 80% 10%, rgba(220, 38, 38, 0.08), transparent 32%),
+      radial-gradient(ellipse at 50% 100%, rgba(16, 185, 129, 0.10), transparent 45%),
+      linear-gradient(180deg, #07120c 0%, #050a07 100%);
+    background-attachment: fixed;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+      radial-gradient(rgba(251, 191, 36, 0.05) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.5;
   }
 
   button,
   input {
     font: inherit;
   }
+
+  ::selection {
+    background: rgba(251, 191, 36, 0.35);
+    color: #050a07;
+  }
 }
 
 @layer components {
+  /* ============ PANELES ============ */
   .arcade-panel {
-    @apply rounded-lg border border-white/10 bg-zinc-950/80 shadow-neon backdrop-blur;
+    @apply relative rounded-xl border border-amber-300/15 bg-zinc-950/80 shadow-[0_8px_36px_rgba(0,0,0,0.6)] backdrop-blur;
+    background-image:
+      linear-gradient(180deg, rgba(251, 191, 36, 0.04), transparent 35%),
+      linear-gradient(180deg, rgba(8, 9, 13, 0.92), rgba(8, 9, 13, 0.98));
   }
 
+  .casino-panel {
+    @apply relative overflow-hidden rounded-xl border border-amber-300/25 shadow-gold backdrop-blur;
+    background:
+      linear-gradient(180deg, rgba(251, 191, 36, 0.06), transparent 40%),
+      radial-gradient(ellipse at top, rgba(124, 58, 237, 0.10), transparent 55%),
+      linear-gradient(180deg, rgba(10, 36, 24, 0.92), rgba(6, 21, 15, 0.96));
+  }
+
+  .felt-panel {
+    @apply relative overflow-hidden rounded-2xl border border-amber-300/20 shadow-[0_12px_40px_rgba(0,0,0,0.7)];
+    background:
+      radial-gradient(ellipse at center, rgba(19, 107, 70, 0.95) 0%, rgba(15, 74, 48, 0.95) 45%, rgba(10, 36, 24, 0.95) 100%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 4px);
+  }
+
+  /* ============ BOTONES ============ */
   .arcade-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-cyan-300/30 bg-cyan-400 px-4 py-2 text-sm font-extrabold text-zinc-950 shadow-neon transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-md border border-amber-300/40 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-zinc-950 shadow-gold transition disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
+    background: linear-gradient(135deg, #fde68a 0%, #fbbf24 40%, #d97706 100%);
+  }
+
+  .arcade-button:hover:not(:disabled) {
+    @apply -translate-y-0.5;
+    box-shadow: 0 0 32px rgba(251, 191, 36, 0.7), 0 0 12px rgba(251, 191, 36, 0.6) inset;
+  }
+
+  .arcade-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 0.6s;
+  }
+
+  .arcade-button:hover:not(:disabled)::after {
+    transform: translateX(100%);
   }
 
   .danger-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-rose-300/30 bg-rose-500 px-4 py-2 text-sm font-extrabold text-white shadow-magenta transition hover:bg-rose-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-md border border-rose-300/40 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-white shadow-ruby transition disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
+    background: linear-gradient(135deg, #f87171 0%, #dc2626 50%, #7f1d1d 100%);
+  }
+
+  .danger-button:hover:not(:disabled) {
+    @apply -translate-y-0.5;
+    box-shadow: 0 0 32px rgba(220, 38, 38, 0.65);
   }
 
   .ghost-button {
-    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-white/10 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 disabled:cursor-not-allowed disabled:text-zinc-500;
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-amber-300/15 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-100 transition hover:-translate-y-0.5 hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:text-zinc-500;
   }
 
+  .royal-button {
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-md border border-violet-300/40 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-white transition;
+    background: linear-gradient(135deg, #a78bfa 0%, #7c3aed 50%, #4c1d95 100%);
+    box-shadow: 0 0 22px rgba(124, 58, 237, 0.4);
+  }
+
+  .royal-button:hover:not(:disabled) {
+    @apply -translate-y-0.5;
+    box-shadow: 0 0 32px rgba(124, 58, 237, 0.7);
+  }
+
+  /* ============ INPUTS ============ */
   .arcade-input {
-    @apply min-h-11 w-full rounded-md border border-white/10 bg-black/40 px-4 text-sm font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-cyan-300/60 focus:ring-2 focus:ring-cyan-300/20;
+    @apply min-h-11 w-full rounded-md border border-amber-300/15 bg-black/50 px-4 text-sm font-semibold text-white outline-none transition placeholder:text-zinc-600 focus:border-amber-300/60 focus:ring-2 focus:ring-amber-300/30;
+  }
+
+  /* ============ FICHAS (CHIPS) ============ */
+  .chip {
+    @apply relative inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-sm font-extrabold text-white;
+    background:
+      radial-gradient(circle at 50% 30%, rgba(255, 255, 255, 0.4), transparent 55%),
+      radial-gradient(circle at center, var(--chip-color, #dc2626) 0%, var(--chip-edge, #7f1d1d) 100%);
+    box-shadow:
+      0 0 0 4px rgba(255, 255, 255, 0.1),
+      0 0 0 5px var(--chip-color, #dc2626),
+      0 6px 0 rgba(0, 0, 0, 0.45),
+      0 10px 16px rgba(0, 0, 0, 0.6);
+    border: 3px dashed rgba(255, 255, 255, 0.35);
+  }
+
+  .chip-red    { --chip-color: #dc2626; --chip-edge: #7f1d1d; }
+  .chip-blue   { --chip-color: #2563eb; --chip-edge: #1e3a8a; }
+  .chip-green  { --chip-color: #10b981; --chip-edge: #064e3b; }
+  .chip-gold   { --chip-color: #fbbf24; --chip-edge: #b8860b; }
+  .chip-black  { --chip-color: #18181b; --chip-edge: #000000; }
+  .chip-purple { --chip-color: #7c3aed; --chip-edge: #4c1d95; }
+
+  /* ============ CARTELES (BANNERS) ============ */
+  .victory-banner {
+    @apply relative overflow-hidden rounded-2xl border-2 border-amber-300 p-6 text-center;
+    background:
+      radial-gradient(ellipse at center, rgba(251, 191, 36, 0.35), transparent 60%),
+      linear-gradient(135deg, #b8860b 0%, #fbbf24 45%, #fde68a 50%, #fbbf24 55%, #b8860b 100%);
+    background-size: 200% 100%;
+    animation: shimmer 3s linear infinite, glow-pulse 2s ease-in-out infinite;
+  }
+
+  .defeat-banner {
+    @apply relative overflow-hidden rounded-2xl border-2 border-rose-500 p-6 text-center;
+    background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 50%, #7f1d1d 100%);
+    box-shadow: 0 0 32px rgba(220, 38, 38, 0.45);
+  }
+
+  .push-banner {
+    @apply relative overflow-hidden rounded-2xl border-2 border-cyan-300 p-6 text-center;
+    background: linear-gradient(135deg, #0e7490 0%, #0891b2 50%, #06b6d4 100%);
+    box-shadow: 0 0 28px rgba(34, 211, 238, 0.4);
+  }
+
+  /* ============ TEXTO DORADO ============ */
+  .gold-text {
+    background: linear-gradient(135deg, #fde68a 0%, #fbbf24 50%, #b8860b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 24px rgba(251, 191, 36, 0.35);
+  }
+
+  .ruby-text {
+    background: linear-gradient(135deg, #fecaca 0%, #f87171 50%, #b91c1c 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ============ EFECTOS DECORATIVOS ============ */
+  .neon-divider {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(251, 191, 36, 0.6), transparent);
+  }
+
+  .scanline {
+    background-image: repeating-linear-gradient(
+      0deg,
+      rgba(255, 255, 255, 0.02) 0,
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+  }
+
+  .marquee-lights {
+    position: relative;
+  }
+
+  .marquee-lights::before,
+  .marquee-lights::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    height: 6px;
+    background-image: radial-gradient(circle, #fbbf24 1.5px, transparent 2px);
+    background-size: 14px 6px;
+    background-repeat: repeat-x;
+    opacity: 0.65;
+  }
+
+  .marquee-lights::before { top: -6px; }
+  .marquee-lights::after { bottom: -6px; }
+
+  /* ============ TARJETAS ============ */
+  .playing-card {
+    @apply relative flex aspect-[3/4] flex-col justify-between rounded-lg border-2 border-white/30 bg-gradient-to-br from-white to-zinc-200 text-zinc-950 shadow-cardLift;
+  }
+
+  .playing-card-back {
+    @apply relative flex aspect-[3/4] items-center justify-center overflow-hidden rounded-lg border-2 border-amber-300/60;
+    background:
+      repeating-linear-gradient(45deg, #4c1d95 0 6px, #6d28d9 6px 12px),
+      linear-gradient(135deg, #7c3aed, #4c1d95);
+    box-shadow: 0 0 18px rgba(124, 58, 237, 0.45), 0 6px 18px rgba(0, 0, 0, 0.5);
+  }
+
+  /* ============ MONEDA INDIVIDUAL ============ */
+  .coin {
+    @apply relative inline-flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-black text-amber-900;
+    background:
+      radial-gradient(circle at 35% 30%, #fef3c7, #fbbf24 60%, #b8860b 100%);
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6), 0 2px 0 rgba(0,0,0,0.3);
+  }
+}
+
+@layer utilities {
+  .text-shadow-gold {
+    text-shadow:
+      0 0 12px rgba(251, 191, 36, 0.6),
+      0 0 24px rgba(251, 191, 36, 0.4);
+  }
+
+  .text-shadow-ruby {
+    text-shadow:
+      0 0 12px rgba(220, 38, 38, 0.6),
+      0 0 24px rgba(220, 38, 38, 0.4);
   }
 }
