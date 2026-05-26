@@ -1,0 +1,14 @@
+{
+    email {$ACME_EMAIL}
+    acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+}
+
+# ── API REST (acceso externo directo al backend) ───────────────────────────────
+api.{$ROOT_DOMAIN} {
+    reverse_proxy backend:4000
+}
+
+# ── App (frontend + socket.io vía nginx interno) ──────────────────────────────
+{$ROOT_DOMAIN} {
+    reverse_proxy frontend:80
+}

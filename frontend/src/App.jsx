@@ -49,7 +49,11 @@ export default function App() {
       return undefined;
     }
 
-    const nextSocket = io(import.meta.env.VITE_SOCKET_URL || "http://localhost:4000", {
+    // En producción (Docker) no se pasa URL: socket.io conecta al mismo origen
+    // y nginx proxea /socket.io/ al backend.
+    // En desarrollo, VITE_SOCKET_URL puede apuntar a http://localhost:4000.
+    const socketUrl = import.meta.env.VITE_SOCKET_URL ?? "";
+    const nextSocket = io(socketUrl || undefined, {
       auth: { token },
       transports: ["websocket", "polling"]
     });

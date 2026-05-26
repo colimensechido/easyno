@@ -1,0 +1,54 @@
+services:
+
+  # ── Caddy: reverse proxy + TLS automático (ACME DNS Cloudflare) ───────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      ACME_EMAIL:          ${ACME_EMAIL:?Debes definir ACME_EMAIL en .env}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?Debes definir CLOUDFLARE_API_TOKEN en .env}
+      ROOT_DOMAIN:         ${ROOT_DOMAIN:?Debes definir ROOT_DOMAIN en .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - frontend
+
+  # ── Backend: Node.js / Express / SQLite ──────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "4000"
+      NODE_ENV: production
+      DATABASE_PATH: /app/data/database.sqlite
+      JWT_SECRET: ${JWT_SECRET:?Debes definir JWT_SECRET en .env}
+      CLIENT_ORIGIN: ${CLIENT_ORIGIN:-https://${ROOT_DOMAIN}}
+    volumes:
+      - db_data:/app/data
+    expose:
+      - "4000"
+
+  # ── Frontend: React (build) servido por nginx + proxy interno a socket.io ─────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:
