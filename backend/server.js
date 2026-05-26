@@ -17,7 +17,9 @@ const REQUIRED_DISH_SCRUBS = 100;
 const BETTING_WINDOW_MS = 7000;
 const TURN_WINDOW_MS = 15000;
 const SETTLED_TABLE_VISIBLE_MS = 12000;
-const PVP_START_WINDOW_MS = 5000;
+const PVP_START_WINDOW_MS = 180000;
+const PVP_REMATCH_WINDOW_MS = 20000;
+const TABLE_MAX_PLAYERS = 12;
 const AI_TABLE_MIN_BET = 25;
 const AI_TABLE_MAX_BET = 500;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,16}$/;
@@ -423,6 +425,7 @@ function emptyMultiplayerTable(worldId) {
       min: AI_TABLE_MIN_BET,
       max: AI_TABLE_MAX_BET
     },
+    maxPlayers: TABLE_MAX_PLAYERS,
     dealerCards: [],
     dealerTotal: null,
     currentTurnUserId: null,
@@ -453,6 +456,7 @@ function publicMultiplayerTable(worldId) {
       min: AI_TABLE_MIN_BET,
       max: AI_TABLE_MAX_BET
     },
+    maxPlayers: table.maxPlayers || TABLE_MAX_PLAYERS,
     dealerCards,
     dealerTotal: activeDealer || table.dealer.length === 0 ? null : handValue(table.dealer),
     currentTurnUserId: table.currentTurnUserId,
@@ -518,6 +522,7 @@ function createBettingTable(worldId) {
     resetTimer: null,
     deck: [],
     dealer: [],
+    maxPlayers: TABLE_MAX_PLAYERS,
     players: new Map(),
     order: [],
     turnIndex: -1,
@@ -845,6 +850,9 @@ function publicPlayerTables(worldId) {
       pot: table.buyIn * table.seats.length,
       startEndsAt: table.startEndsAt,
       turnEndsAt: table.turnEndsAt,
+      rematchEndsAt: table.rematchEndsAt || null,
+      rematchRequestedBy: table.rematchRequestedBy || null,
+      rematchConfirmations: Array.from(table.rematchConfirmations || []),
       currentTurnUserId: table.currentTurnUserId,
       winners: table.winners || [],
       seats: table.seats.map((seat) => ({
@@ -923,6 +931,11 @@ function clearPlayerTableTimers(table) {
     clearTimeout(table.resetTimer);
     table.resetTimer = null;
   }
+
+  if (table.rematchTimer) {
+    clearTimeout(table.rematchTimer);
+    table.rematchTimer = null;
+  }
 }
 
 async function refundPlayerTableSeat(seat, worldId, buyIn) {
@@ -933,6 +946,46 @@ async function refundPlayerTableSeat(seat, worldId, buyIn) {
   ]);
   const economy = await getEconomyOrFail(seat.userId, worldId);
   await broadcastEconomyChange(seat.userId, worldId, economy.balance);
+}
+
+function clearPvpRematchState(table) {
+  if (table.rematchTimer) {
+    clearTimeout(table.rematchTimer);
+    table.rematchTimer = null;
+  }
+
+  table.rematchEndsAt = null;
+  table.rematchRequestedBy = null;
+  table.rematchConfirmations = new Set();
+}
+
+function resetPvpTableToWaiting(table, message = "Esperando jugadores") {
+  const connectedSeats = table.seats.filter((seat) => seat.connected !== false);
+
+  clearPlayerTableTimers(table);
+  clearPvpRematchState(table);
+
+  table.phase = "waiting";
+  table.status = "waiting";
+  table.startEndsAt = null;
+  table.turnEndsAt = null;
+  table.turnIndex = -1;
+  table.currentTurnUserId = null;
+  table.deck = [];
+  table.winners = [];
+  table.seats = connectedSeats.map((seat) => ({
+    ...seat,
+    cards: [],
+    status: "waiting",
+    outcome: null,
+    payout: 0
+  }));
+
+  if (table.seats.length > 0) {
+    table.hostId = table.seats[0].userId;
+  }
+
+  table.message = message;
 }
 
 function schedulePlayerTableCleanup(table, worldId) {
@@ -948,15 +1001,43 @@ function schedulePlayerTableCleanup(table, worldId) {
       return;
     }
 
-    clearPlayerTableTimers(currentTable);
-    tables.delete(table.id);
+    resetPvpTableToWaiting(currentTable, "La revancha expiro. Vuelvan al lobby.");
 
-    if (tables.size === 0) {
-      playerOnlyTables.delete(worldId);
+    if (currentTable.seats.length === 0) {
+      tables.delete(table.id);
+
+      if (tables.size === 0) {
+        playerOnlyTables.delete(worldId);
+      }
     }
 
     emitPlayerTables(worldId);
-  }, SETTLED_TABLE_VISIBLE_MS);
+  }, PVP_REMATCH_WINDOW_MS);
+}
+
+async function tryStartPvpRematch(worldId, tableId) {
+  const { table } = findPlayerTable(worldId, tableId);
+
+  if (table.phase !== "settled") {
+    return false;
+  }
+
+  const connectedSeats = table.seats.filter((seat) => seat.connected !== false);
+  const confirmations = table.rematchConfirmations instanceof Set
+    ? table.rematchConfirmations
+    : new Set(table.rematchConfirmations || []);
+
+  if (
+    connectedSeats.length < 2 ||
+    !connectedSeats.every((seat) => confirmations.has(seat.userId))
+  ) {
+    return false;
+  }
+
+  resetPvpTableToWaiting(table, "Revancha confirmada");
+  emitPlayerTables(worldId);
+  await startPvpTableRound(worldId, tableId);
+  return true;
 }
 
 function findPlayerTable(worldId, tableId) {
@@ -1048,6 +1129,7 @@ async function startPvpTableRound(worldId, tableId) {
   table.startEndsAt = null;
   table.turnEndsAt = null;
   table.winners = [];
+  clearPvpRematchState(table);
 
   for (const seat of table.seats) {
     seat.cards = [draw(table.deck), draw(table.deck)];
@@ -1118,6 +1200,9 @@ async function settlePvpTable(worldId, tableId) {
   table.phase = "settled";
   table.currentTurnUserId = null;
   table.turnEndsAt = null;
+  table.rematchEndsAt = Date.now() + PVP_REMATCH_WINDOW_MS;
+  table.rematchRequestedBy = null;
+  table.rematchConfirmations = new Set();
 
   const validSeats = table.seats.filter((seat) => handValue(seat.cards || []) <= 21);
   const bestTotal = validSeats.length
@@ -1129,8 +1214,8 @@ async function settlePvpTable(worldId, tableId) {
 
   table.winners = winners.map((seat) => seat.userId);
   table.message = winners.length
-    ? `Ganador: ${winners.map((seat) => seat.username).join(", ")}`
-    : "Todos se pasaron";
+    ? `Ganador: ${winners.map((seat) => seat.username).join(", ")}. El anfitrion puede pedir revancha.`
+    : "Todos se pasaron. El anfitrion puede pedir revancha.";
 
   await run("BEGIN IMMEDIATE");
 
@@ -1208,6 +1293,11 @@ async function handlePlayerLeftPlayerTables(userId, worldId) {
 
     table.seats = nextSeats;
     table.hostId = nextSeats[0].userId;
+
+    if (table.phase === "settled") {
+      clearPvpRematchState(table);
+      table.message = "El anfitrion puede pedir revancha";
+    }
 
     if (table.phase === "waiting" && table.seats.length < 2 && table.startTimer) {
       clearTimeout(table.startTimer);
@@ -1719,7 +1809,7 @@ io.on("connection", (socket) => {
         phase: "waiting",
         message: "Esperando jugadores",
         buyIn,
-        maxSeats: 4,
+        maxSeats: TABLE_MAX_PLAYERS,
         hostId: socket.user.id,
         createdAt: new Date().toISOString(),
         startEndsAt: null,
@@ -1727,6 +1817,10 @@ io.on("connection", (socket) => {
         startTimer: null,
         turnTimer: null,
         resetTimer: null,
+        rematchEndsAt: null,
+        rematchRequestedBy: null,
+        rematchConfirmations: new Set(),
+        rematchTimer: null,
         deck: [],
         turnIndex: -1,
         currentTurnUserId: null,
@@ -1839,6 +1933,11 @@ io.on("connection", (socket) => {
         tables.delete(tableId);
       } else {
         table.hostId = table.seats[0].userId;
+
+        if (table.phase === "settled") {
+          clearPvpRematchState(table);
+          table.message = "El anfitrion puede pedir revancha";
+        }
 
         if (table.phase === "waiting" && table.seats.length < 2 && table.startTimer) {
           clearTimeout(table.startTimer);
@@ -1962,6 +2061,86 @@ io.on("connection", (socket) => {
     }
   });
 
+  socket.on("request_player_table_rematch", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+      const { table } = findPlayerTable(worldId, tableId);
+
+      if (table.phase !== "settled") {
+        throw new Error("La revancha solo se puede pedir al terminar la ronda");
+      }
+
+      if (table.hostId !== socket.user.id) {
+        throw new Error("Solo el anfitrion puede pedir revancha");
+      }
+
+      const seat = table.seats.find((candidate) => candidate.userId === socket.user.id && candidate.connected !== false);
+
+      if (!seat) {
+        throw new Error("Debes seguir en la mesa para pedir revancha");
+      }
+
+      table.rematchRequestedBy = socket.user.id;
+      table.rematchConfirmations = new Set([socket.user.id]);
+      table.message = `${socket.user.username} pidio revancha`;
+      emitPlayerTables(worldId);
+
+      await tryStartPvpRematch(worldId, tableId);
+
+      if (typeof callback === "function") {
+        callback({ ok: true });
+      }
+    } catch (error) {
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo pedir revancha" });
+      }
+    }
+  });
+
+  socket.on("confirm_player_table_rematch", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+      const { table } = findPlayerTable(worldId, tableId);
+
+      if (table.phase !== "settled") {
+        throw new Error("La revancha ya no esta disponible");
+      }
+
+      if (!table.rematchRequestedBy) {
+        throw new Error("Primero el anfitrion debe pedir revancha");
+      }
+
+      const seat = table.seats.find((candidate) => candidate.userId === socket.user.id && candidate.connected !== false);
+
+      if (!seat) {
+        throw new Error("Debes seguir en la mesa para confirmar revancha");
+      }
+
+      if (!(table.rematchConfirmations instanceof Set)) {
+        table.rematchConfirmations = new Set(table.rematchConfirmations || []);
+      }
+
+      table.rematchConfirmations.add(socket.user.id);
+
+      const connectedSeats = table.seats.filter((candidate) => candidate.connected !== false);
+      const confirmedCount = connectedSeats.filter((candidate) => table.rematchConfirmations.has(candidate.userId)).length;
+      table.message = `${seat.username} confirmo revancha (${confirmedCount}/${connectedSeats.length})`;
+      emitPlayerTables(worldId);
+
+      await tryStartPvpRematch(worldId, tableId);
+
+      if (typeof callback === "function") {
+        callback({ ok: true });
+      }
+    } catch (error) {
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo confirmar revancha" });
+      }
+    }
+  });
+
   socket.on("place_bet_multiplayer", async (payload, callback) => {
     try {
       const worldId = Number(payload && payload.worldId);
@@ -1987,6 +2166,10 @@ io.on("connection", (socket) => {
 
       if (table.players.has(socket.user.id)) {
         throw new Error("Ya apostaste en esta ronda");
+      }
+
+      if (table.order.length >= (table.maxPlayers || TABLE_MAX_PLAYERS)) {
+        throw new Error(`La mesa VS Banca admite hasta ${table.maxPlayers || TABLE_MAX_PLAYERS} jugadores`);
       }
 
       let nextBalance = 0;
