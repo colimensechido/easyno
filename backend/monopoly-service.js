@@ -44,7 +44,7 @@ function asClientError(error, fallbackMessage = "No se pudo completar la accion 
 
 function loadMonopolyModule() {
   if (!modulePromise) {
-    const modulePath = pathToFileURL(path.join(__dirname, "..", "shared", "monopoly-engine", "index.mjs")).href;
+    const modulePath = pathToFileURL(path.join(__dirname, "shared", "monopoly-engine", "index.mjs")).href;
     modulePromise = import(modulePath);
   }
 

@@ -4,11 +4,14 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Instalar dependencias de producción
-COPY package*.json ./
+COPY backend/package*.json ./
 RUN npm ci --omit=dev
 
-# Copiar código fuente
-COPY server.js ./
+# Copiar código fuente del backend
+COPY backend/*.js ./
+
+# Copiar módulos compartidos
+COPY shared ./shared
 
 # El directorio /app/data se usa para la base de datos persistente
 # (montado como volumen en docker-compose)
