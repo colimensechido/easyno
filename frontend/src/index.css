@@ -244,6 +244,1062 @@
       radial-gradient(circle at 35% 30%, #fef3c7, #fbbf24 60%, #b8860b 100%);
     box-shadow: 0 0 8px rgba(251, 191, 36, 0.6), 0 2px 0 rgba(0,0,0,0.3);
   }
+
+  /* ============ MONOPOLY ============ */
+  .monopoly-panel {
+    @apply rounded-[22px] border-2 shadow-[0_14px_40px_rgba(0,0,0,0.28)];
+    border-color: #cdb591;
+    background:
+      linear-gradient(180deg, rgba(255, 252, 244, 0.96), rgba(245, 232, 206, 0.98)),
+      linear-gradient(135deg, rgba(176, 32, 22, 0.03), transparent 40%);
+    color: #23160c;
+  }
+
+  .monopoly-toolbar {
+    @apply flex flex-col gap-3 rounded-[20px] border-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between;
+    border-color: #cdb591;
+    background:
+      linear-gradient(180deg, rgba(255, 252, 244, 0.96), rgba(245, 232, 206, 0.98));
+  }
+
+  .monopoly-play-layout {
+    display: grid;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .monopoly-status-strip {
+    display: grid;
+    gap: 0.85rem;
+  }
+
+  .monopoly-tabletop-row {
+    display: grid;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .monopoly-action-rail {
+    display: grid;
+    gap: 1rem;
+    min-width: 0;
+  }
+
+  .monopoly-action-panel {
+    min-height: 430px;
+  }
+
+  .monopoly-action-stack {
+    display: grid;
+    grid-auto-rows: minmax(42px, auto);
+    gap: 0.65rem;
+  }
+
+  .auction-modal-actions {
+    display: grid;
+    grid-template-columns: minmax(110px, 150px) auto auto;
+    gap: 0.75rem;
+    align-items: center;
+    width: 100%;
+  }
+
+  .auction-bid-input {
+    min-height: 42px;
+  }
+
+  @media (max-width: 640px) {
+    .auction-modal-actions {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (min-width: 768px) and (max-width: 1279px) {
+    .monopoly-status-strip {
+      grid-template-columns: minmax(0, 1fr) 260px;
+      align-items: stretch;
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .monopoly-tabletop-row {
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 280px);
+    }
+
+    .monopoly-status-strip {
+      align-self: stretch;
+      grid-auto-rows: minmax(0, auto);
+    }
+  }
+
+  @media (min-width: 1536px) {
+    .monopoly-play-layout {
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 330px);
+    }
+
+    .monopoly-action-rail {
+      position: sticky;
+      top: 0.75rem;
+      max-height: calc(100vh - 1.5rem);
+      overflow: auto;
+      padding-right: 0.15rem;
+    }
+  }
+
+  .monopoly-table-shell {
+    @apply overflow-hidden rounded-[24px] p-2 shadow-[0_22px_60px_rgba(0,0,0,0.42)];
+    background:
+      radial-gradient(circle at 50% 20%, rgba(255,255,255,0.08), transparent 35%),
+      linear-gradient(135deg, #5b3a24 0%, #7d5432 48%, #50311d 100%);
+    border: 3px solid rgba(255, 240, 210, 0.22);
+  }
+
+  .monopoly-board-shell-main {
+    padding: clamp(0.35rem, 0.8vw, 0.65rem);
+  }
+
+  .monopoly-board-viewport {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    margin-inline: auto;
+    border-radius: 20px;
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  .monopoly-board-viewport-main {
+    width: 100%;
+    max-width: 1120px;
+  }
+
+  @media (min-width: 1280px) {
+    .monopoly-board-viewport-main {
+      width: min(100%, calc(100vh - 7.25rem));
+      max-width: 1120px;
+    }
+  }
+
+  @media (max-width: 1023px) {
+    .monopoly-board-viewport-main {
+      width: 100%;
+      max-width: none;
+    }
+  }
+
+  .monopoly-board {
+    display: grid;
+    position: relative;
+    grid-template-columns: minmax(74px, 1.32fr) repeat(9, minmax(42px, 1fr)) minmax(74px, 1.32fr);
+    grid-template-rows: minmax(74px, 1.32fr) repeat(9, minmax(42px, 1fr)) minmax(74px, 1.32fr);
+    aspect-ratio: 1 / 1;
+    width: 100%;
+    border-radius: 18px;
+    overflow: hidden;
+    border: 3px solid #1b1109;
+    background: #f3ead6;
+    transform-origin: 50% 50%;
+    transition: transform 850ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+
+  .monopoly-board.cam-zoom {
+    transform: scale(var(--cam-scale, 1.18));
+    transform-origin: var(--cam-x, 50%) var(--cam-y, 50%);
+  }
+
+  .monopoly-board-preview .monopoly-center {
+    background:
+      radial-gradient(circle at center, rgba(255, 255, 255, 0.75), rgba(255, 247, 230, 0.92)),
+      repeating-linear-gradient(45deg, rgba(0,0,0,0.02) 0 4px, transparent 4px 8px);
+  }
+
+  .monopoly-board-preview .monopoly-space {
+    cursor: default;
+  }
+
+  .monopoly-board-preview .monopoly-space:hover {
+    transform: none;
+  }
+
+  .monopoly-center {
+    grid-column: 2 / span 9;
+    grid-row: 2 / span 9;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: clamp(14px, 2.2vw, 28px);
+    min-height: 0;
+    background:
+      radial-gradient(circle at center, rgba(255,255,255,0.86), rgba(249,240,219,0.96)),
+      linear-gradient(180deg, rgba(255,255,255,0.3), transparent 35%);
+  }
+
+  .monopoly-center::before,
+  .monopoly-center::after {
+    content: "";
+    position: absolute;
+    inset: 14px;
+    border: 2px solid rgba(35, 22, 12, 0.12);
+    pointer-events: none;
+  }
+
+  .monopoly-center::after {
+    inset: 28px;
+    border-style: dashed;
+  }
+
+  .monopoly-center.de-emphasized::before {
+    border-color: rgba(35, 22, 12, 0.05);
+  }
+
+  .monopoly-center.de-emphasized {
+    filter: saturate(0.82);
+  }
+
+  .monopoly-center.board-live {
+    box-shadow: inset 0 0 0 4px rgba(15,118,110,0.18);
+  }
+
+  .monopoly-logo {
+    @apply inline-flex self-center rounded-[16px] px-5 py-2 text-2xl font-black uppercase text-white shadow-[0_10px_24px_rgba(176,32,22,0.28)];
+    letter-spacing: 0.02em;
+    background: linear-gradient(135deg, #d63a2b 0%, #b02016 52%, #8f170f 100%);
+    border: 3px solid #f7e4be;
+    transform: rotate(-6deg);
+  }
+
+  .monopoly-callout {
+    @apply rounded-[24px] border-2 p-5;
+  }
+
+  .monopoly-callout.tone-info {
+    border-color: #86c9b2;
+    background: #edf9f3;
+    color: #0f4d3f;
+  }
+
+  .monopoly-callout.tone-success {
+    border-color: #7fc56e;
+    background: #eef8e9;
+    color: #14532d;
+  }
+
+  .monopoly-callout.tone-warn {
+    border-color: #e7c98f;
+    background: #fff4dc;
+    color: #8a5a00;
+  }
+
+  .monopoly-callout.tone-danger {
+    border-color: #d8a5a0;
+    background: #fff1ef;
+    color: #7f1d1d;
+  }
+
+  .monopoly-center-stat {
+    @apply flex min-w-0 items-center gap-2 rounded-[14px] border px-3 py-2 text-left text-[10px] font-extrabold uppercase tracking-[0.12em];
+    border-color: #ddcfb7;
+    background: rgba(255, 248, 236, 0.84);
+    color: #7c5d38;
+  }
+
+  .monopoly-center-stat svg {
+    flex: none;
+    color: #b02016;
+  }
+
+  /* Stack interno del centro del tablero: 3 filas estables (callout, info, acción). */
+  .monopoly-center-stack {
+    display: grid;
+    grid-template-rows: minmax(72px, auto) minmax(120px, 1fr) minmax(56px, auto);
+    gap: 0.85rem;
+    height: 100%;
+    width: 100%;
+  }
+
+  .monopoly-center-callout {
+    padding: 0.75rem 1rem;
+    border-radius: 18px;
+    border-width: 2px;
+  }
+
+  .monopoly-center-callout h2 {
+    font-size: clamp(0.95rem, 1.5vw, 1.25rem);
+  }
+
+  .monopoly-center-board-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+  }
+
+  .monopoly-center-stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+    width: 100%;
+    max-width: 480px;
+  }
+
+  .monopoly-center-action {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 48px;
+  }
+
+  .monopoly-logo-sm {
+    @apply rounded-[14px] px-4 py-1.5 text-lg shadow-[0_8px_18px_rgba(176,32,22,0.28)];
+    border-width: 2px;
+    transform: rotate(-4deg);
+  }
+
+  /* Reserva de altura para evitar saltos en TurnAssist y Dice */
+  .monopoly-panel.turn-assist,
+  .dice-stage {
+    min-height: 168px;
+  }
+
+  @media (min-width: 1280px) {
+    .monopoly-panel.turn-assist,
+    .dice-stage {
+      min-height: 0;
+    }
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .dice-stage {
+    @apply rounded-[22px] border-2 p-3 shadow-[0_14px_40px_rgba(0,0,0,0.2)];
+    border-color: #cdb591;
+    background:
+      radial-gradient(circle at top right, rgba(214,58,43,0.1), transparent 30%),
+      linear-gradient(180deg, rgba(255, 252, 244, 0.98), rgba(245, 232, 206, 0.98));
+    transition: transform 320ms ease, box-shadow 320ms ease, border-color 320ms ease;
+    transform-origin: center;
+  }
+
+  .dice-stage.rolling {
+    box-shadow: 0 22px 60px rgba(176, 32, 22, 0.24);
+    transform: translateY(-2px) scale(1.015);
+  }
+
+  .dice-stage.cinematic-active {
+    border-color: #b02016;
+    box-shadow: 0 0 0 4px rgba(176, 32, 22, 0.18), 0 28px 72px rgba(176, 32, 22, 0.32);
+    transform: scale(1.04);
+  }
+
+  .die-face {
+    @apply flex h-16 w-16 items-center justify-center rounded-[18px] border-2 text-2xl font-black text-[#23160c];
+    border-color: #d0be9d;
+    background:
+      linear-gradient(180deg, #fffef8 0%, #f5e8cf 100%);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.7), 0 10px 22px rgba(0,0,0,0.12);
+    transition: transform 320ms ease, box-shadow 320ms ease;
+  }
+
+  .dice-stage.cinematic-active .die-face {
+    transform: translateY(-2px) scale(1.08);
+    box-shadow: inset 0 2px 0 rgba(255,255,255,0.7), 0 14px 34px rgba(176, 32, 22, 0.32);
+  }
+
+  .die-face.rolling {
+    animation: dice-roll 0.45s linear infinite;
+  }
+
+  .turn-assist-grid {
+    @apply grid gap-3 sm:grid-cols-2;
+  }
+
+  .turn-assist-card {
+    @apply rounded-[20px] border px-4 py-4;
+    border-color: #ddcfb7;
+    background: rgba(255, 248, 236, 0.9);
+  }
+
+  .turn-assist-label {
+    display: block;
+    color: #7c5d38;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  .turn-assist-value {
+    display: block;
+    margin-top: 0.55rem;
+    color: #23160c;
+    font-size: 1rem;
+    font-weight: 900;
+    line-height: 1.3;
+  }
+
+  .wait-banner {
+    @apply mt-4 flex items-center gap-3 rounded-[22px] border px-4 py-4;
+    border-color: #d8c8ae;
+    background: linear-gradient(180deg, rgba(255,248,236,0.95), rgba(247,236,214,0.98));
+  }
+
+  .monopoly-space {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 0.3rem;
+    border: 2px solid #1b1109;
+    background: linear-gradient(180deg, #fbf6e9 0%, #f0e3c9 100%);
+    text-align: left;
+    transition: transform 0.22s ease, box-shadow 0.22s ease, z-index 0.22s ease, border-color 0.22s ease;
+    z-index: 1;
+  }
+
+  .monopoly-space:hover {
+    transform: translateY(-1px);
+    z-index: 3;
+  }
+
+  .monopoly-space.selected {
+    box-shadow: inset 0 0 0 4px #0f766e, 0 10px 24px rgba(15, 118, 110, 0.12);
+    z-index: 4;
+  }
+
+  .monopoly-space.current {
+    box-shadow: inset 0 0 0 4px #b02016, 0 10px 24px rgba(176, 32, 22, 0.14);
+    z-index: 5;
+  }
+
+  .monopoly-space.cam-target {
+    z-index: 6;
+    box-shadow: inset 0 0 0 4px #f59e0b, 0 0 0 4px rgba(245, 158, 11, 0.55), 0 14px 32px rgba(176, 32, 22, 0.25);
+    animation: cam-target-pulse 1.2s ease-in-out infinite;
+  }
+
+  .monopoly-space.owned {
+    border-color: #7f6847;
+  }
+
+  .monopoly-space.corner {
+    padding: 0.45rem;
+  }
+
+  .monopoly-band {
+    position: absolute;
+    background: var(--group-color, #1f2937);
+  }
+
+  .side-bottom .monopoly-band {
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 14px;
+  }
+
+  .side-top .monopoly-band {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 14px;
+  }
+
+  .side-left .monopoly-band {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+  }
+
+  .side-right .monopoly-band {
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 14px;
+  }
+
+  .monopoly-space-inner {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex: 1;
+    flex-direction: column;
+    gap: 0.18rem;
+  }
+
+  .side-bottom .monopoly-space-inner {
+    padding-top: 0.75rem;
+  }
+
+  .side-top .monopoly-space-inner {
+    padding-bottom: 0.75rem;
+  }
+
+  .side-left .monopoly-space-inner {
+    padding-right: 0.75rem;
+  }
+
+  .side-right .monopoly-space-inner {
+    padding-left: 0.75rem;
+  }
+
+  .monopoly-space-name {
+    color: #24160d;
+    font-size: clamp(9px, 0.78vw, 13px);
+    font-weight: 900;
+    line-height: 1.08;
+    text-transform: uppercase;
+    overflow-wrap: anywhere;
+  }
+
+  .monopoly-space-meta {
+    color: #7c5d38;
+    font-size: clamp(7.5px, 0.6vw, 10.5px);
+    font-weight: 800;
+    line-height: 1.05;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .space-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    margin-top: auto;
+  }
+
+  .monopoly-space-price {
+    color: #14532d;
+    font-size: clamp(7px, 0.58vw, 10px);
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  .monopoly-buildings {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.18rem;
+    flex-wrap: wrap;
+  }
+
+  .monopoly-house-dot,
+  .monopoly-hotel-dot {
+    display: inline-flex;
+    border-radius: 999px;
+  }
+
+  .monopoly-house-dot {
+    width: 8px;
+    height: 8px;
+    background: #16a34a;
+    border: 1px solid #166534;
+  }
+
+  .monopoly-hotel-dot {
+    width: 10px;
+    height: 10px;
+    background: #dc2626;
+    border: 1px solid #7f1d1d;
+  }
+
+  .monopoly-mortgage-stamp {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.1rem 0.28rem;
+    border-radius: 999px;
+    background: #4b5563;
+    color: white;
+    font-size: 7px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .monopoly-token-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.18rem;
+    margin-top: auto;
+  }
+
+  .monopoly-token {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    border-radius: 999px;
+    background: var(--token-bg, #dc2626);
+    border: 2px solid var(--token-ring, #7f1d1d);
+    color: white;
+    font-size: 9px;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.24);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .monopoly-token > .token-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    line-height: 1;
+  }
+
+  .monopoly-token.shape-square {
+    border-radius: 6px;
+  }
+
+  .monopoly-token.shape-rounded {
+    border-radius: 30%;
+  }
+
+  .monopoly-token.shape-diamond {
+    border-radius: 6px;
+    transform: rotate(45deg);
+  }
+
+  .monopoly-token.shape-diamond > .token-glyph {
+    transform: rotate(-45deg);
+  }
+
+  .monopoly-token.shape-hexagon {
+    border-radius: 4px;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    border-width: 0;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.28);
+  }
+
+  .monopoly-token.shape-shield {
+    border-radius: 6px;
+    clip-path: polygon(0 0, 100% 0, 100% 65%, 50% 100%, 0 65%);
+  }
+
+  .monopoly-token.shape-star {
+    border-radius: 4px;
+    clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    border-width: 0;
+  }
+
+  .monopoly-token.emoji {
+    background: var(--token-bg, #ffffff);
+    border-color: var(--token-ring, #cbb18b);
+    color: #23160c;
+    font-size: 0.92rem;
+  }
+
+  .monopoly-token-count {
+    background: #ece3cf;
+    border-color: #b59a76;
+    color: #23160c;
+  }
+
+  .monopoly-owner-mark {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--owner-color, #d94841) 55%, white 45%);
+    opacity: 0.55;
+  }
+
+  .space-owner-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: rgba(35, 22, 12, 0.84);
+    color: white;
+    font-size: 8px;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-token-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 8;
+  }
+
+  .token-piece {
+    position: absolute;
+    transition:
+      left 500ms cubic-bezier(0.22, 1, 0.36, 1),
+      top 500ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 500ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 420ms ease,
+      opacity 420ms ease;
+  }
+
+  .token-piece.active .monopoly-token-large {
+    box-shadow: 0 0 0 4px rgba(255,255,255,0.6), 0 0 0 8px rgba(176,32,22,0.25), 0 12px 26px rgba(0,0,0,0.32);
+    animation: token-pulse 1.4s ease-in-out infinite;
+  }
+
+  .token-piece.bankrupt {
+    opacity: 0.5;
+    filter: grayscale(1);
+  }
+
+  .monopoly-token-large {
+    width: 2rem;
+    height: 2rem;
+    font-size: 12px;
+  }
+
+  .monopoly-token-large.emoji {
+    font-size: 1.15rem;
+  }
+
+  /* ============ TOKEN CUSTOMIZER ============ */
+  .token-customizer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .token-option {
+    @apply flex aspect-square items-center justify-center rounded-2xl border-2 text-xl font-black transition;
+    border-color: #d8c8ae;
+    background: #fff8ec;
+    color: #23160c;
+    cursor: pointer;
+  }
+
+  .token-option:hover {
+    border-color: #b5915e;
+    transform: translateY(-1px);
+  }
+
+  .token-option.active {
+    border-color: #0f766e;
+    background: #ebfaf3;
+    box-shadow: 0 6px 16px rgba(15, 118, 110, 0.18);
+  }
+
+  .token-shape-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .token-shape-row button {
+    border: 2px solid transparent;
+    border-radius: 14px;
+    padding: 0.35rem 0.55rem;
+    background: #fff8ec;
+    border-color: #d8c8ae;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+
+  .token-shape-row button.active {
+    border-color: #0f766e;
+    background: #ebfaf3;
+  }
+
+  .token-color-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .token-color-swatch {
+    width: 1.85rem;
+    height: 1.85rem;
+    border-radius: 999px;
+    border: 3px solid transparent;
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease;
+  }
+
+  .token-color-swatch:hover {
+    transform: scale(1.08);
+  }
+
+  .token-color-swatch.active {
+    border-color: #0f766e;
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.5);
+  }
+
+  .monopoly-chip {
+    @apply inline-flex items-center justify-center rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em];
+  }
+
+  .monopoly-primary-button,
+  .monopoly-secondary-button,
+  .monopoly-danger-button {
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-[14px] border-2 px-3.5 py-2 text-sm font-black uppercase transition disabled:cursor-not-allowed disabled:opacity-55;
+    letter-spacing: 0.04em;
+  }
+
+  .monopoly-primary-button {
+    background: linear-gradient(135deg, #d63a2b 0%, #b02016 52%, #8f170f 100%);
+    border-color: #7f1d1d;
+    color: white;
+    box-shadow: 0 14px 30px rgba(176, 32, 22, 0.18);
+  }
+
+  .monopoly-primary-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .monopoly-secondary-button {
+    background: linear-gradient(180deg, #fff8ec 0%, #f1e3c9 100%);
+    border-color: #c6af89;
+    color: #23160c;
+  }
+
+  .monopoly-secondary-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: #b5915e;
+  }
+
+  .monopoly-danger-button {
+    background: linear-gradient(135deg, #fecaca 0%, #ef4444 52%, #991b1b 100%);
+    border-color: #7f1d1d;
+    color: white;
+  }
+
+  .monopoly-danger-button:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+
+  .monopoly-input {
+    @apply min-h-11 w-full rounded-[16px] border-2 px-4 text-sm font-semibold outline-none transition;
+    border-color: #d0be9d;
+    background: rgba(255, 255, 255, 0.86);
+    color: #23160c;
+  }
+
+  .monopoly-input:focus {
+    border-color: #0f766e;
+    box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.12);
+  }
+
+  .deed-card {
+    @apply rounded-[28px] border-2 p-6 shadow-[0_18px_50px_rgba(0,0,0,0.32)];
+    border-color: #cdb591;
+    background:
+      linear-gradient(180deg, rgba(255, 252, 244, 0.98), rgba(245, 232, 206, 0.98));
+    color: #23160c;
+  }
+
+  .deed-header {
+    @apply flex flex-col gap-4 rounded-[24px] p-5 md:flex-row md:items-start md:justify-between;
+  }
+
+  .deed-grid {
+    @apply mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  }
+
+  .deed-stat {
+    @apply rounded-[20px] border px-4 py-4;
+    border-color: #ddcfb7;
+    background: rgba(255, 248, 236, 0.84);
+  }
+
+  .deed-stat span:first-child {
+    display: block;
+    color: #7c5d38;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+  }
+
+  .deed-value {
+    display: block;
+    margin-top: 0.45rem;
+    color: #23160c;
+    font-size: 1rem;
+    font-weight: 900;
+  }
+
+  .event-feed-card {
+    @apply rounded-[20px] border px-4 py-4;
+  }
+
+  .event-feed-card.tone-info {
+    border-color: #86c9b2;
+    background: #edf9f3;
+    color: #0f4d3f;
+  }
+
+  .event-feed-card.tone-success {
+    border-color: #9ecf94;
+    background: #eef8e9;
+    color: #14532d;
+  }
+
+  .event-feed-card.tone-warn {
+    border-color: #e7c98f;
+    background: #fff4dc;
+    color: #8a5a00;
+  }
+
+  .event-feed-card.tone-danger {
+    border-color: #d8a5a0;
+    background: #fff1ef;
+    color: #7f1d1d;
+  }
+
+  .monopoly-toast-stack {
+    position: fixed;
+    top: 92px;
+    right: 22px;
+    z-index: 60;
+    display: grid;
+    gap: 0.75rem;
+    width: min(380px, calc(100vw - 24px));
+  }
+
+  .monopoly-toast {
+    @apply flex items-start gap-3 rounded-[22px] border-2 p-4 shadow-[0_22px_50px_rgba(0,0,0,0.28)];
+    backdrop-filter: blur(14px);
+    animation: toast-in 360ms ease;
+  }
+
+  .monopoly-toast.tone-info {
+    border-color: #86c9b2;
+    background: rgba(237, 249, 243, 0.96);
+    color: #0f4d3f;
+  }
+
+  .monopoly-toast.tone-success {
+    border-color: #9ecf94;
+    background: rgba(238, 248, 233, 0.96);
+    color: #14532d;
+  }
+
+  .monopoly-toast.tone-warn {
+    border-color: #e7c98f;
+    background: rgba(255, 244, 220, 0.97);
+    color: #8a5a00;
+  }
+
+  .monopoly-toast.tone-danger {
+    border-color: #d8a5a0;
+    background: rgba(255, 241, 239, 0.97);
+    color: #7f1d1d;
+  }
+
+  .toast-close {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition;
+    border-color: rgba(35, 22, 12, 0.14);
+    background: rgba(255,255,255,0.42);
+    color: currentColor;
+  }
+
+  .toast-close:hover {
+    background: rgba(255,255,255,0.7);
+  }
+
+  .monopoly-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(11, 8, 5, 0.56);
+    backdrop-filter: blur(10px);
+  }
+
+  .monopoly-modal {
+    @apply w-full max-w-2xl rounded-[28px] border-2 p-6 shadow-[0_28px_90px_rgba(0,0,0,0.35)];
+    animation: modal-in 320ms ease;
+  }
+
+  .monopoly-modal.tone-info {
+    border-color: #86c9b2;
+    background: linear-gradient(180deg, #f5fffb 0%, #ecf9f2 100%);
+    color: #0f4d3f;
+  }
+
+  .monopoly-modal.tone-success {
+    border-color: #9ecf94;
+    background: linear-gradient(180deg, #f7fff3 0%, #eef8e9 100%);
+    color: #14532d;
+  }
+
+  .monopoly-modal.tone-warn {
+    border-color: #e7c98f;
+    background: linear-gradient(180deg, #fffaf0 0%, #fff4dc 100%);
+    color: #8a5a00;
+  }
+
+  .monopoly-modal.tone-danger {
+    border-color: #d8a5a0;
+    background: linear-gradient(180deg, #fff7f6 0%, #fff1ef 100%);
+    color: #7f1d1d;
+  }
+
+  .modal-stat-card {
+    @apply rounded-[20px] border px-4 py-4;
+    border-color: rgba(35, 22, 12, 0.12);
+    background: rgba(255,255,255,0.55);
+  }
+
+  .modal-stat-card span:first-child {
+    display: block;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    opacity: 0.72;
+  }
+
+  .modal-stat-value {
+    display: block;
+    margin-top: 0.55rem;
+    font-size: 1rem;
+    font-weight: 900;
+    color: #23160c;
+  }
+
+  .monopoly-chat-shell {
+    @apply grid h-[360px] content-start gap-3 overflow-y-auto rounded-[20px] border p-4;
+    border-color: #d8c8ae;
+    background:
+      linear-gradient(180deg, rgba(255, 252, 244, 0.95), rgba(249, 240, 219, 0.98)),
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.02) 0 1px, transparent 1px 4px);
+  }
+
+  .monopoly-chat-bubble {
+    @apply max-w-[88%] rounded-[20px] px-4 py-3;
+  }
+
+  .monopoly-chat-bubble.mine {
+    background: linear-gradient(135deg, #d63a2b 0%, #b02016 100%);
+    color: white;
+    border-bottom-right-radius: 8px;
+  }
+
+  .monopoly-chat-bubble.theirs {
+    background: #fff8ec;
+    color: #23160c;
+    border: 1px solid #d8c8ae;
+    border-bottom-left-radius: 8px;
+  }
 }
 
 @layer utilities {
@@ -258,4 +1314,46 @@
       0 0 12px rgba(220, 38, 38, 0.6),
       0 0 24px rgba(220, 38, 38, 0.4);
   }
+}
+
+@keyframes dice-roll {
+  0% { transform: rotate(0deg) scale(1); }
+  25% { transform: rotate(12deg) scale(1.04); }
+  50% { transform: rotate(-14deg) scale(0.98); }
+  75% { transform: rotate(8deg) scale(1.03); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes token-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes cam-target-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 0 4px #f59e0b, 0 0 0 4px rgba(245, 158, 11, 0.55), 0 14px 32px rgba(176, 32, 22, 0.25);
+  }
+  50% {
+    box-shadow: inset 0 0 0 4px #fbbf24, 0 0 0 10px rgba(245, 158, 11, 0.18), 0 16px 36px rgba(176, 32, 22, 0.32);
+  }
+}
+
+@keyframes cam-veil-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes toast-in {
+  0% { opacity: 0; transform: translateY(-10px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes modal-in {
+  0% { opacity: 0; transform: translateY(16px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes cam-veil-in {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
 }

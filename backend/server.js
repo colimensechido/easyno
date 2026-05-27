@@ -7,6 +7,7 @@ const sqlite3 = require("sqlite3").verbose();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { Server } = require("socket.io");
+const { createMonopolyService } = require("./monopoly-service");
 
 const app = express();
 const server = http.createServer(app);
@@ -44,6 +45,7 @@ const blackjackSessions = new Map();
 const worldPresence = new Map();
 const multiplayerBlackjackTables = new Map();
 const playerOnlyTables = new Map();
+const monopolyService = createMonopolyService({ get, run, all, io, roomName });
 
 app.use(
   cors({
@@ -122,6 +124,35 @@ async function initDatabase() {
       FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS monopoly_games (
+      world_id INTEGER PRIMARY KEY,
+      state_json TEXT NOT NULL,
+      updated_by INTEGER NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS monopoly_tables (
+      id TEXT PRIMARY KEY,
+      world_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'WAITING',
+      config_json TEXT NOT NULL,
+      state_json TEXT,
+      created_by INTEGER NOT NULL,
+      updated_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
 }
 
 function signToken(user) {
@@ -180,6 +211,10 @@ function validatePassword(password) {
 
 function roomName(worldId) {
   return `world:${worldId}`;
+}
+
+function tableChannel(worldId, tableId) {
+  return `${roomName(worldId)}:monopoly:${tableId}`;
 }
 
 function userRoom(userId) {
@@ -1473,6 +1508,181 @@ app.post("/api/worlds/join", authRequired, async (req, res) => {
   }
 });
 
+app.get("/api/monopoly/tables", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.query.worldId);
+    await ensureWorldMembership(req.user.id, worldId);
+    const payload = await monopolyService.listTables(worldId);
+    return res.json(payload);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.status ? error.message : "No se pudieron obtener las mesas de Monopoly"
+    });
+  }
+});
+
+app.get("/api/monopoly/state", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.query.worldId);
+    const tableId = req.query.tableId ? String(req.query.tableId) : null;
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.getState({ worldId, tableId });
+    return res.json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.status ? error.message : "No se pudo obtener el estado de Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/create", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const name = String(req.body.name || "Mesa Monopoly");
+    const mode = String(req.body.mode || "NORMAL");
+    const timedMinutes = Number(req.body.timedMinutes || 60);
+    const turnTimeSeconds = Number(req.body.turnTimeSeconds || 60);
+
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.createTable({
+      worldId,
+      actorId: req.user.id,
+      name,
+      mode,
+      timedMinutes,
+      turnTimeSeconds
+    });
+    return res.status(201).json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo crear la mesa Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/join", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const tableId = String(req.body.tableId || "");
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.joinTable({
+      worldId,
+      tableId,
+      actorId: req.user.id
+    });
+    return res.json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo unir a la mesa Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/start", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const tableId = String(req.body.tableId || "");
+
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.startGame({
+      worldId,
+      tableId,
+      actorId: req.user.id
+    });
+    return res.status(201).json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo iniciar Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/action", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const tableId = String(req.body.tableId || "");
+    const action = String(req.body.action || "");
+    const payload = req.body.payload && typeof req.body.payload === "object" ? req.body.payload : {};
+
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.performAction({
+      worldId,
+      tableId,
+      actorId: req.user.id,
+      actionName: action,
+      payload
+    });
+    return res.json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo ejecutar la accion de Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/leave", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const tableId = String(req.body.tableId || "");
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.leaveTable({
+      worldId,
+      tableId,
+      actorId: req.user.id
+    });
+    return res.json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo salir de la mesa Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/surrender", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const tableId = String(req.body.tableId || "");
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.surrender({
+      worldId,
+      tableId,
+      actorId: req.user.id
+    });
+    return res.json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo rendir la partida de Monopoly"
+    });
+  }
+});
+
+app.post("/api/monopoly/close", authRequired, async (req, res) => {
+  try {
+    const worldId = Number(req.body.worldId);
+    const tableId = String(req.body.tableId || "");
+    await ensureWorldMembership(req.user.id, worldId);
+    const state = await monopolyService.closeTable({
+      worldId,
+      tableId,
+      actorId: req.user.id
+    });
+    return res.json(state);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.message || "No se pudo cerrar la mesa Monopoly"
+    });
+  }
+});
+
 app.post("/api/game/reward-dishes", authRequired, async (req, res) => {
   try {
     const worldId = Number(req.body.worldId);
@@ -1696,6 +1906,7 @@ io.on("connection", (socket) => {
       socket.emit("joined_world", { world, balance: economy.balance });
       socket.emit("blackjack_state", publicMultiplayerTable(worldId));
       socket.emit("player_tables_state", publicPlayerTables(worldId));
+      socket.emit("monopoly_tables_state", await monopolyService.listTables(worldId));
       emitMultiplayerTable(worldId);
       if (restoredPlayerTable) {
         emitPlayerTables(worldId);
@@ -1768,6 +1979,257 @@ io.on("connection", (socket) => {
   socket.on("request_player_tables", (payload) => {
     const worldId = Number(payload && payload.worldId);
     socket.emit("player_tables_state", publicPlayerTables(worldId));
+  });
+
+  socket.on("request_monopoly_tables", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      const state = await monopolyService.listTables(worldId);
+      socket.emit("monopoly_tables_state", state);
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudieron obtener las mesas de Monopoly" });
+      }
+    }
+  });
+
+  socket.on("request_monopoly_state", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      const state = await monopolyService.getState({
+        worldId,
+        tableId
+      });
+      socket.emit("monopoly_state", state);
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo obtener Monopoly" });
+      }
+    }
+  });
+
+  socket.on("create_monopoly_table", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const name = String((payload && payload.name) || "Mesa Monopoly");
+      const mode = String((payload && payload.mode) || "NORMAL");
+      const timedMinutes = Number((payload && payload.timedMinutes) || 60);
+      const turnTimeSeconds = Number((payload && payload.turnTimeSeconds) || 60);
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      const state = await monopolyService.createTable({
+        worldId,
+        actorId: socket.user.id,
+        name,
+        mode,
+        timedMinutes,
+        turnTimeSeconds
+      });
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo crear la mesa Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo crear la mesa Monopoly" });
+      }
+    }
+  });
+
+  socket.on("join_monopoly_table", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      socket.join(tableChannel(worldId, tableId));
+      const state = await monopolyService.joinTable({
+        worldId,
+        tableId,
+        actorId: socket.user.id
+      });
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo entrar a la mesa Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo entrar a la mesa Monopoly" });
+      }
+    }
+  });
+
+  socket.on("start_monopoly_game", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      socket.join(tableChannel(worldId, tableId));
+      const state = await monopolyService.startGame({
+        worldId,
+        tableId,
+        actorId: socket.user.id
+      });
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo iniciar Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo iniciar Monopoly" });
+      }
+    }
+  });
+
+  socket.on("monopoly_action", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+      const action = String((payload && payload.action) || "");
+      const actionPayload = payload && payload.payload && typeof payload.payload === "object" ? payload.payload : {};
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      socket.join(tableChannel(worldId, tableId));
+      const state = await monopolyService.performAction({
+        worldId,
+        tableId,
+        actorId: socket.user.id,
+        actionName: action,
+        payload: actionPayload
+      });
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo ejecutar la accion de Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo ejecutar la accion de Monopoly" });
+      }
+    }
+  });
+
+  socket.on("leave_monopoly_table", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      const state = await monopolyService.leaveTable({
+        worldId,
+        tableId,
+        actorId: socket.user.id
+      });
+
+      socket.leave(tableChannel(worldId, tableId));
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo salir de la mesa Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo salir de la mesa Monopoly" });
+      }
+    }
+  });
+
+  socket.on("surrender_monopoly_game", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      const state = await monopolyService.surrender({
+        worldId,
+        tableId,
+        actorId: socket.user.id
+      });
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo rendir la partida de Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo rendir la partida de Monopoly" });
+      }
+    }
+  });
+
+  socket.on("close_monopoly_table", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      const state = await monopolyService.closeTable({
+        worldId,
+        tableId,
+        actorId: socket.user.id
+      });
+      socket.leave(tableChannel(worldId, tableId));
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo cerrar la mesa Monopoly" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo cerrar la mesa Monopoly" });
+      }
+    }
   });
 
   socket.on("create_player_table", async (payload, callback) => {

@@ -6,6 +6,7 @@ import { audio } from "./audio";
 import AuthPanel from "./components/AuthPanel";
 import BlackjackTable from "./components/BlackjackTable";
 import DishesGame from "./components/DishesGame";
+import MonopolyGame from "./components/MonopolyGame";
 import WorldSelector from "./components/WorldSelector";
 import WorldSidebar from "./components/WorldSidebar";
 
@@ -33,6 +34,7 @@ export default function App() {
   const lastMessageIdRef = useRef(null);
 
   const token = session?.token;
+  const monopolyView = Boolean(world && view === "monopoly");
 
   // Mantener el estado local sincronizado con el módulo de audio
   useEffect(() => audio.subscribe(setMuted), []);
@@ -370,6 +372,14 @@ export default function App() {
                   Blackjack
                 </button>
                 <button
+                  className={view === "monopoly" ? "arcade-button" : "ghost-button"}
+                  onClick={() => setView("monopoly")}
+                  title="Monopoly"
+                >
+                  <Coins size={18} />
+                  Monopoly
+                </button>
+                <button
                   className="ghost-button"
                   onClick={leaveWorld}
                   title="Cambiar mundo"
@@ -394,7 +404,7 @@ export default function App() {
         </div>
       </header>
 
-      <section className="mx-auto max-w-7xl px-4 py-8">
+      <section className={`mx-auto px-4 py-8 ${monopolyView ? "max-w-[1800px]" : "max-w-7xl"}`}>
         {!world && (
           <WorldSelector
             token={token}
@@ -407,35 +417,48 @@ export default function App() {
         )}
 
         {world && (
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="min-w-0">
-              {view === "dishes" && (
-                <DishesGame
-                  token={token}
-                  world={world}
-                  onBalanceChange={setBalance}
-                  onReloadWorld={reloadWorld}
-                />
-              )}
-
-              {view === "blackjack" && (
-                <BlackjackTable
-                  socket={socket}
-                  currentUser={session.user}
-                  world={world}
-                  balance={balance}
-                />
-              )}
-            </div>
-
-            <WorldSidebar
-              connectionStatus={socketStatus}
+          monopolyView ? (
+            <MonopolyGame
+              token={token}
+              socket={socket}
               currentUser={session.user}
+              world={world}
+              presence={presence}
               messages={messages}
-              players={presence}
+              connectionStatus={socketStatus}
               onSendMessage={sendWorldMessage}
             />
-          </div>
+          ) : (
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+              <div className="min-w-0">
+                {view === "dishes" && (
+                  <DishesGame
+                    token={token}
+                    world={world}
+                    onBalanceChange={setBalance}
+                    onReloadWorld={reloadWorld}
+                  />
+                )}
+
+                {view === "blackjack" && (
+                  <BlackjackTable
+                    socket={socket}
+                    currentUser={session.user}
+                    world={world}
+                    balance={balance}
+                  />
+                )}
+              </div>
+
+              <WorldSidebar
+                connectionStatus={socketStatus}
+                currentUser={session.user}
+                messages={messages}
+                players={presence}
+                onSendMessage={sendWorldMessage}
+              />
+            </div>
+          )
         )}
       </section>
     </main>
