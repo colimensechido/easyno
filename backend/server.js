@@ -104,6 +104,8 @@ async function initDatabase() {
     )
   `);
 
+  await run("ALTER TABLE users ADD COLUMN monopoly_token_json TEXT").catch(() => {});
+
   await run(`
     CREATE TABLE IF NOT EXISTS worlds (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,6 +211,35 @@ function validatePassword(password) {
   return null;
 }
 
+function sanitizeMonopolyToken(input) {
+  const token = input && typeof input === "object" ? input : {};
+  const clean = {
+    label: String(token.label || "").trim().slice(0, 4).toUpperCase(),
+    icon: String(token.icon || "").trim().slice(0, 32),
+    bg: /^#[0-9a-fA-F]{6}$/.test(token.bg) ? token.bg : "#d94841",
+    ring: /^#[0-9a-fA-F]{6}$/.test(token.ring) ? token.ring : "#7c1510",
+    fg: /^#[0-9a-fA-F]{6}$/.test(token.fg) ? token.fg : "#ffffff",
+    shape: ["circle", "rounded", "square", "diamond", "hexagon", "shield", "star"].includes(token.shape)
+      ? token.shape
+      : "circle"
+  };
+
+  if (!clean.icon && !clean.label) {
+    clean.label = "TOP";
+  }
+
+  return clean;
+}
+
+function parseStoredMonopolyToken(value) {
+  if (!value) return null;
+  try {
+    return sanitizeMonopolyToken(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
 function roomName(worldId) {
   return `world:${worldId}`;
 }
@@ -266,14 +297,20 @@ async function ensureWorldMembership(userId, worldId) {
   return { world, economy };
 }
 
-function makeDeck() {
+// Construye un "shoe" de `deckCount` barajas de 52 cartas mezcladas juntas con
+// Fisher-Yates (crypto.randomInt para aleatoriedad segura). Un solo mazo de 52
+// puede agotarse con muchos jugadores; por eso permitimos varios mazos.
+function makeDeck(deckCount = 1) {
   const suits = ["S", "H", "D", "C"];
   const ranks = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
   const deck = [];
 
-  for (const suit of suits) {
-    for (const rank of ranks) {
-      deck.push({ suit, rank });
+  const totalDecks = Math.max(1, Math.floor(deckCount) || 1);
+  for (let d = 0; d < totalDecks; d += 1) {
+    for (const suit of suits) {
+      for (const rank of ranks) {
+        deck.push({ suit, rank });
+      }
     }
   }
 
@@ -285,7 +322,24 @@ function makeDeck() {
   return deck;
 }
 
+// Cantidad de mazos recomendada segun jugadores en la mesa. Con repartos de 2
+// cartas + posibles hits + la banca, ~7 cartas por jugador es un techo prudente.
+function deckCountFor(playerCount = 1) {
+  const cardsNeeded = (Math.max(1, playerCount) + 1) * 7;
+  return Math.max(1, Math.ceil(cardsNeeded / 52));
+}
+
+// Saca una carta del tope del mazo. Red de seguridad: si el shoe se agota a
+// mitad de ronda, lo reabastecemos con una baraja nueva mezclada para no
+// devolver `undefined` (que rompia el calculo de manos).
 function draw(deck) {
+  if (!Array.isArray(deck) || deck.length === 0) {
+    if (Array.isArray(deck)) {
+      deck.push(...makeDeck(1));
+    } else {
+      return { suit: "S", rank: "A" };
+    }
+  }
   return deck.pop();
 }
 
@@ -370,6 +424,7 @@ async function emitWorldPresence(worldId) {
       SELECT
         users.id AS userId,
         users.username AS username,
+        users.monopoly_token_json AS tokenJson,
         economies.balance AS balance
       FROM users
       JOIN economies
@@ -381,7 +436,15 @@ async function emitWorldPresence(worldId) {
     [worldId, ...ids]
   );
 
-  io.to(roomName(worldId)).emit("world_presence", { worldId, players: rows });
+  io.to(roomName(worldId)).emit("world_presence", {
+    worldId,
+    players: rows.map((row) => ({
+      userId: row.userId,
+      username: row.username,
+      balance: row.balance,
+      token: parseStoredMonopolyToken(row.tokenJson)
+    }))
+  });
 }
 
 async function broadcastEconomyChange(userId, worldId, balance) {
@@ -661,7 +724,7 @@ async function startMultiplayerRound(worldId) {
 
   table.phase = "playing";
   table.status = "playing";
-  table.deck = makeDeck();
+  table.deck = makeDeck(deckCountFor(table.order.length));
   table.dealer = [draw(table.deck), draw(table.deck)];
   table.turnIndex = -1;
   table.currentTurnUserId = null;
@@ -1158,7 +1221,7 @@ async function startPvpTableRound(worldId, tableId) {
   }
 
   table.phase = "playing";
-  table.deck = makeDeck();
+  table.deck = makeDeck(deckCountFor(table.seats.length));
   table.turnIndex = -1;
   table.currentTurnUserId = null;
   table.startEndsAt = null;
@@ -1508,6 +1571,41 @@ app.post("/api/worlds/join", authRequired, async (req, res) => {
   }
 });
 
+app.get("/api/monopoly/token", authRequired, async (req, res) => {
+  try {
+    const row = await get("SELECT monopoly_token_json AS tokenJson FROM users WHERE id = ?", [req.user.id]);
+    const token = row?.tokenJson ? JSON.parse(row.tokenJson) : null;
+    return res.json({ token });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "No se pudo cargar tu ficha" });
+  }
+});
+
+app.put("/api/monopoly/token", authRequired, async (req, res) => {
+  try {
+    const token = sanitizeMonopolyToken(req.body?.token);
+    await run("UPDATE users SET monopoly_token_json = ? WHERE id = ?", [
+      JSON.stringify(token),
+      req.user.id
+    ]);
+    return res.json({ token });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "No se pudo guardar tu ficha" });
+  }
+});
+
+app.delete("/api/monopoly/token", authRequired, async (req, res) => {
+  try {
+    await run("UPDATE users SET monopoly_token_json = NULL WHERE id = ?", [req.user.id]);
+    return res.json({ token: null });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "No se pudo restablecer tu ficha" });
+  }
+});
+
 app.get("/api/monopoly/tables", authRequired, async (req, res) => {
   try {
     const worldId = Number(req.query.worldId);
@@ -1544,6 +1642,9 @@ app.post("/api/monopoly/create", authRequired, async (req, res) => {
     const mode = String(req.body.mode || "NORMAL");
     const timedMinutes = Number(req.body.timedMinutes || 60);
     const turnTimeSeconds = Number(req.body.turnTimeSeconds || 60);
+    const maxPlayers = Number(req.body.maxPlayers || 4);
+    const isPrivate = Boolean(req.body.isPrivate);
+    const password = String(req.body.password || "");
 
     await ensureWorldMembership(req.user.id, worldId);
     const state = await monopolyService.createTable({
@@ -1552,7 +1653,10 @@ app.post("/api/monopoly/create", authRequired, async (req, res) => {
       name,
       mode,
       timedMinutes,
-      turnTimeSeconds
+      turnTimeSeconds,
+      maxPlayers,
+      isPrivate,
+      password
     });
     return res.status(201).json(state);
   } catch (error) {
@@ -1567,11 +1671,13 @@ app.post("/api/monopoly/join", authRequired, async (req, res) => {
   try {
     const worldId = Number(req.body.worldId);
     const tableId = String(req.body.tableId || "");
+    const password = String(req.body.password || "");
     await ensureWorldMembership(req.user.id, worldId);
     const state = await monopolyService.joinTable({
       worldId,
       tableId,
-      actorId: req.user.id
+      actorId: req.user.id,
+      password
     });
     return res.json(state);
   } catch (error) {
@@ -2034,6 +2140,9 @@ io.on("connection", (socket) => {
       const mode = String((payload && payload.mode) || "NORMAL");
       const timedMinutes = Number((payload && payload.timedMinutes) || 60);
       const turnTimeSeconds = Number((payload && payload.turnTimeSeconds) || 60);
+      const maxPlayers = Number((payload && payload.maxPlayers) || 4);
+      const isPrivate = Boolean(payload && payload.isPrivate);
+      const password = String((payload && payload.password) || "");
 
       if (!socket.data.worldId || socket.data.worldId !== worldId) {
         throw new Error("Primero debes entrar a este mundo");
@@ -2045,7 +2154,10 @@ io.on("connection", (socket) => {
         name,
         mode,
         timedMinutes,
-        turnTimeSeconds
+        turnTimeSeconds,
+        maxPlayers,
+        isPrivate,
+        password
       });
 
       if (typeof callback === "function") {
@@ -2064,6 +2176,7 @@ io.on("connection", (socket) => {
     try {
       const worldId = Number(payload && payload.worldId);
       const tableId = String((payload && payload.tableId) || "");
+      const password = String((payload && payload.password) || "");
 
       if (!socket.data.worldId || socket.data.worldId !== worldId) {
         throw new Error("Primero debes entrar a este mundo");
@@ -2073,7 +2186,8 @@ io.on("connection", (socket) => {
       const state = await monopolyService.joinTable({
         worldId,
         tableId,
-        actorId: socket.user.id
+        actorId: socket.user.id,
+        password
       });
 
       if (typeof callback === "function") {
@@ -2191,6 +2305,7 @@ io.on("connection", (socket) => {
         tableId,
         actorId: socket.user.id
       });
+      socket.leave(tableChannel(worldId, tableId));
 
       if (typeof callback === "function") {
         callback({ ok: true, state });

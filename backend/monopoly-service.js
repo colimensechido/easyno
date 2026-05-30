@@ -44,7 +44,9 @@ function asClientError(error, fallbackMessage = "No se pudo completar la accion 
 
 function loadMonopolyModule() {
   if (!modulePromise) {
-    const modulePath = pathToFileURL(path.join(__dirname, "shared", "monopoly-engine", "index.mjs")).href;
+    // El motor vive en la raiz del repo (shared/monopoly-engine), no dentro de
+    // backend/. Apuntamos un nivel arriba para no depender de un symlink/junction.
+    const modulePath = pathToFileURL(path.join(__dirname, "..", "shared", "monopoly-engine", "index.mjs")).href;
     modulePromise = import(modulePath);
   }
 
@@ -54,6 +56,7 @@ function loadMonopolyModule() {
 function createMonopolyService({ get, run, all, io, roomName }) {
   const queues = new Map();
   const turnTimers = new Map();
+  const finishedCleanupTimers = new Map();
 
   function queueByKey(key, work) {
     const previous = queues.get(key) || Promise.resolve();
@@ -77,6 +80,14 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     if (timer) {
       clearTimeout(timer.timeoutId);
       turnTimers.delete(tableId);
+    }
+  }
+
+  function clearFinishedCleanupTimer(tableId) {
+    const timerId = finishedCleanupTimers.get(tableId);
+    if (timerId) {
+      clearTimeout(timerId);
+      finishedCleanupTimers.delete(tableId);
     }
   }
 
@@ -130,9 +141,18 @@ function createMonopolyService({ get, run, all, io, roomName }) {
       mode: config.mode || "NORMAL",
       timedMinutes: Number(config.timedMinutes || 60),
       turnTimeSeconds: Number(config.turnTimeSeconds || 60),
+      maxPlayers: clampMaxPlayers(config.maxPlayers),
+      isPrivate: Boolean(config.isPrivate),
+      password: typeof config.password === "string" ? config.password : "",
       seatedPlayerIds: Array.isArray(config.seatedPlayerIds) ? config.seatedPlayerIds.map(Number).filter(Number.isInteger) : [],
       createdAt: config.createdAt || row.createdAt
     };
+  }
+
+  function clampMaxPlayers(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 4;
+    return Math.min(8, Math.max(2, Math.round(parsed)));
   }
 
   async function saveTableRow(row, { name, status, config, stateJson, updatedBy }) {
@@ -161,7 +181,30 @@ function createMonopolyService({ get, run, all, io, roomName }) {
 
   async function deleteTableRow(tableId) {
     clearTurnTimer(tableId);
+    clearFinishedCleanupTimer(tableId);
     await run("DELETE FROM monopoly_tables WHERE id = ?", [tableId]);
+  }
+
+  function scheduleFinishedCleanup(row, delayMs = 12_000) {
+    clearTurnTimer(row.id);
+    clearFinishedCleanupTimer(row.id);
+
+    const timeoutId = setTimeout(() => {
+      queueByKey(`monopoly:${row.id}`, async () => {
+        const freshRow = await getTableRow(row.id);
+        if (!freshRow || freshRow.status !== TABLE_STATUS.FINISHED) {
+          clearFinishedCleanupTimer(row.id);
+          return;
+        }
+
+        await deleteTableRow(row.id);
+        await emitTables(freshRow.worldId);
+      }).catch((error) => {
+        console.error("No se pudo limpiar la mesa Monopoly finalizada", error);
+      });
+    }, delayMs);
+
+    finishedCleanupTimers.set(row.id, timeoutId);
   }
 
   async function listPlayersForWorld(worldId) {
@@ -170,6 +213,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         SELECT
           users.id AS id,
           users.username AS name,
+          users.monopoly_token_json AS tokenJson,
           economies.balance AS balance
         FROM economies
         JOIN users ON users.id = economies.user_id
@@ -182,7 +226,10 @@ function createMonopolyService({ get, run, all, io, roomName }) {
 
   async function mapPlayersById(worldId, playerIds = []) {
     const rows = await listPlayersForWorld(worldId);
-    const byId = new Map(rows.map((row) => [row.id, row]));
+    const byId = new Map(rows.map((row) => [row.id, {
+      ...row,
+      token: parsePlayerToken(row.tokenJson)
+    }]));
 
     if (playerIds.length === 0) {
       return byId;
@@ -225,6 +272,9 @@ function createMonopolyService({ get, run, all, io, roomName }) {
       mode: config.mode,
       timedMinutes: config.timedMinutes,
       turnTimeSeconds: config.turnTimeSeconds,
+      maxPlayers: config.maxPlayers,
+      isPrivate: config.isPrivate,
+      hasPassword: config.isPrivate && Boolean(config.password),
       hostId: config.hostId,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
@@ -237,7 +287,8 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         name: player.name,
         cash: player.cash,
         bankrupt: Boolean(player.bankrupt),
-        inJail: Boolean(player.inJail)
+        inJail: Boolean(player.inJail),
+        token: player.token || playersById.get(player.id)?.token || null
       })),
       currentPlayerId: game?.currentPlayerId || null,
       winnerId: game?.winnerId || null
@@ -249,6 +300,16 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     const playersById = await mapPlayersById(worldId);
     const tables = await Promise.all(rows.map((row) => buildTableSummary(row, playersById)));
     return { worldId, tables };
+  }
+
+  function parsePlayerToken(tokenJson) {
+    if (!tokenJson) return null;
+    try {
+      const token = JSON.parse(tokenJson);
+      return token && typeof token === "object" ? token : null;
+    } catch {
+      return null;
+    }
   }
 
   async function emitTables(worldId) {
@@ -270,6 +331,13 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     const playersById = await mapPlayersById(worldId, config.seatedPlayerIds);
     const game = engine ? buildGameSnapshot(engine) : null;
 
+    if (game?.players) {
+      game.players = game.players.map((player) => ({
+        ...player,
+        token: playersById.get(player.id)?.token || null
+      }));
+    }
+
     return {
       worldId,
       tableId,
@@ -281,6 +349,9 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         mode: config.mode,
         timedMinutes: config.timedMinutes,
         turnTimeSeconds: config.turnTimeSeconds,
+        maxPlayers: config.maxPlayers,
+        isPrivate: config.isPrivate,
+        hasPassword: config.isPrivate && Boolean(config.password),
         turnDeadlineAt: turnTimers.get(row.id)?.deadlineAt || null,
         hostId: config.hostId,
         createdBy: row.createdBy,
@@ -295,7 +366,8 @@ function createMonopolyService({ get, run, all, io, roomName }) {
             name: gamePlayer?.name || player?.name || "Jugador",
             balance: player?.balance ?? gamePlayer?.cash ?? 0,
             bankrupt: Boolean(gamePlayer?.bankrupt),
-            inJail: Boolean(gamePlayer?.inJail)
+            inJail: Boolean(gamePlayer?.inJail),
+            token: player?.token || null
           };
         }),
         game
@@ -522,7 +594,22 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     }
 
     if (engine.state.auction) {
-      throw new Error("No puedes rendirte durante una subasta activa");
+      const auction = engine.state.auction;
+      auction.participantIds = auction.participantIds.filter((playerId) => playerId !== actorId);
+      auction.passedPlayerIds = auction.passedPlayerIds.filter((playerId) => playerId !== actorId);
+
+      if (auction.currentBidderId === actorId) {
+        auction.currentBidderId = null;
+        auction.currentBid = 0;
+      }
+
+      if (auction.activeBidderId === actorId) {
+        auction.activeBidderId = auction.participantIds.find((playerId) => !auction.passedPlayerIds.includes(playerId)) || null;
+      }
+
+      if (auction.participantIds.length === 0) {
+        engine.finalizeAuction(null);
+      }
     }
 
     if (engine.state.pendingPurchase?.playerId === actorId) {
@@ -554,6 +641,13 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     engine.checkGameEnd(Date.now());
   }
 
+  function removePlayerFromTableConfig(config, actorId) {
+    config.seatedPlayerIds = config.seatedPlayerIds.filter((playerId) => playerId !== actorId);
+    if (config.hostId === actorId) {
+      config.hostId = config.seatedPlayerIds[0] || null;
+    }
+  }
+
   return {
     async listTables(worldId) {
       return buildTablesPayload(worldId);
@@ -582,9 +676,15 @@ function createMonopolyService({ get, run, all, io, roomName }) {
       };
     },
 
-    async createTable({ worldId, actorId, name, mode, timedMinutes, turnTimeSeconds }) {
+    async createTable({ worldId, actorId, name, mode, timedMinutes, turnTimeSeconds, maxPlayers, isPrivate, password }) {
       return queueByKey(`monopoly-world:${worldId}`, async () => {
         await assertPlayerCanSeat(worldId, actorId);
+
+        const wantsPrivate = Boolean(isPrivate);
+        const cleanPassword = wantsPrivate ? String(password || "").trim().slice(0, 32) : "";
+        if (wantsPrivate && !cleanPassword) {
+          throw asClientError(new Error("Una sala privada necesita contraseña"));
+        }
 
         const tableId = crypto.randomUUID();
         const config = {
@@ -592,6 +692,9 @@ function createMonopolyService({ get, run, all, io, roomName }) {
           mode: mode || "NORMAL",
           timedMinutes: Number(timedMinutes || 60),
           turnTimeSeconds: Number(turnTimeSeconds || 60),
+          maxPlayers: clampMaxPlayers(maxPlayers),
+          isPrivate: wantsPrivate,
+          password: cleanPassword,
           seatedPlayerIds: [actorId],
           createdAt: new Date().toISOString()
         };
@@ -626,7 +729,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
       });
     },
 
-    async joinTable({ worldId, tableId, actorId }) {
+    async joinTable({ worldId, tableId, actorId, password }) {
       return queueByKey(`monopoly:${tableId}`, async () => {
         await assertPlayerCanSeat(worldId, actorId, tableId);
         const row = await getTableRow(tableId);
@@ -640,7 +743,19 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         }
 
         const config = parseConfig(row);
-        if (!config.seatedPlayerIds.includes(actorId)) {
+        const alreadySeated = config.seatedPlayerIds.includes(actorId);
+
+        if (!alreadySeated && config.isPrivate && config.password) {
+          if (String(password || "").trim() !== config.password) {
+            throw asClientError(new Error("Contraseña incorrecta"), "Contraseña incorrecta", 403);
+          }
+        }
+
+        if (!alreadySeated && config.seatedPlayerIds.length >= config.maxPlayers) {
+          throw asClientError(new Error("La sala está llena"));
+        }
+
+        if (!alreadySeated) {
           config.seatedPlayerIds.push(actorId);
         }
 
@@ -675,10 +790,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
           throw asClientError(new Error("Usa rendirte para salir de una partida en curso"));
         }
 
-        config.seatedPlayerIds = config.seatedPlayerIds.filter((playerId) => playerId !== actorId);
-        if (config.hostId === actorId) {
-          config.hostId = config.seatedPlayerIds[0] || null;
-        }
+        removePlayerFromTableConfig(config, actorId);
 
         if (config.seatedPlayerIds.length === 0) {
           await deleteTableRow(tableId);
@@ -694,6 +806,72 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         });
 
         return emitAll(worldId, tableId);
+      });
+    },
+
+    async surrender({ worldId, tableId, actorId }) {
+      return queueByKey(`monopoly:${tableId}`, async () => {
+        const row = await getTableRow(tableId);
+
+        if (!row || row.worldId !== worldId) {
+          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+        }
+
+        const config = parseConfig(row);
+        if (!config.seatedPlayerIds.includes(actorId)) {
+          throw asClientError(new Error("No estas sentado en esta mesa"));
+        }
+
+        if (row.status !== TABLE_STATUS.PLAYING || !row.stateJson) {
+          removePlayerFromTableConfig(config, actorId);
+
+          if (config.seatedPlayerIds.length === 0) {
+            await deleteTableRow(tableId);
+            return emitAll(worldId, null);
+          }
+
+          await saveTableRow(row, {
+            name: row.name,
+            status: row.status,
+            config,
+            stateJson: row.stateJson,
+            updatedBy: actorId
+          });
+
+          return emitAll(worldId, tableId);
+        }
+
+        const engine = await loadEngineFromRow(row);
+        try {
+          await forcePlayerBankruptcy(engine, actorId, "SALIDA_DE_PARTIDA");
+        } catch (error) {
+          throw asClientError(error, "No se pudo abandonar la partida");
+        }
+
+        removePlayerFromTableConfig(config, actorId);
+        syncRowStatusFromEngine(row, engine);
+
+        if (row.status === TABLE_STATUS.FINISHED) {
+          clearTurnTimer(row.id);
+        }
+
+        await saveTableRow(row, {
+          name: row.name,
+          status: row.status,
+          config,
+          stateJson: JSON.stringify(engine.getState()),
+          updatedBy: actorId
+        });
+
+        const response = await emitAll(worldId, tableId);
+        const nextRow = await getTableRow(tableId);
+        if (nextRow?.status === TABLE_STATUS.FINISHED) {
+          scheduleFinishedCleanup(nextRow);
+        } else if (nextRow) {
+          await scheduleTurnTimeoutForRow(nextRow);
+        }
+
+        return response;
       });
     },
 
@@ -794,48 +972,11 @@ function createMonopolyService({ get, run, all, io, roomName }) {
 
         const nextRow = await getTableRow(tableId);
         const response = await emitAll(worldId, tableId);
-        await scheduleTurnTimeoutForRow(nextRow);
-        return response;
-      });
-    },
-
-    async surrender({ worldId, tableId, actorId }) {
-      return queueByKey(`monopoly:${tableId}`, async () => {
-        const row = await getTableRow(tableId);
-
-        if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+        if (nextRow?.status === TABLE_STATUS.FINISHED) {
+          scheduleFinishedCleanup(nextRow);
+        } else if (nextRow) {
+          await scheduleTurnTimeoutForRow(nextRow);
         }
-
-        if (row.status !== TABLE_STATUS.PLAYING || !row.stateJson) {
-          throw asClientError(new Error("No hay una partida activa en esta mesa"));
-        }
-
-        const engine = await loadEngineFromRow(row);
-        const actor = engine.getState().players.find((player) => player.id === actorId);
-
-        if (!actor) {
-          throw asClientError(new Error("No formas parte de esta mesa"));
-        }
-
-        try {
-          await forcePlayerBankruptcy(engine, actorId, "RENDICION");
-        } catch (error) {
-          throw asClientError(error, "No se pudo rendir la partida");
-        }
-
-        syncRowStatusFromEngine(row, engine);
-        await saveTableRow(row, {
-          name: row.name,
-          status: row.status,
-          config: parseConfig(row),
-          stateJson: JSON.stringify(engine.getState()),
-          updatedBy: actorId
-        });
-
-        const nextRow = await getTableRow(tableId);
-        const response = await emitAll(worldId, tableId);
-        await scheduleTurnTimeoutForRow(nextRow);
         return response;
       });
     }

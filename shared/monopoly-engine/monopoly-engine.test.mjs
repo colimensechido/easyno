@@ -288,8 +288,8 @@ test("al transferir una propiedad hipotecada se cobra el 10 por ciento al nuevo 
   assert.equal(seller.cash, 1600);
 });
 
-test("la quiebra contra el banco libera la propiedad e inicia subasta inmediata", () => {
-  const game = createGame({ players: ["Ana", "Luis"] });
+test("la quiebra contra el banco libera la propiedad e inicia subasta si aun hay rivales", () => {
+  const game = createGame({ players: ["Ana", "Luis", "Marta"] });
   const debtor = game.currentPlayer();
   const mediterranean = game.findSpaceById("mediterranean_avenue");
 
@@ -308,6 +308,29 @@ test("la quiebra contra el banco libera la propiedad e inicia subasta inmediata"
   assert.equal(mediterranean.ownerId, null);
   assert.equal(game.state.status, GAME_STATUSES.SUBASTA);
   assert.equal(game.state.auction.assetId, mediterranean.id);
+});
+
+test("la quiebra que deja un solo jugador activo finaliza sin subasta", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const debtor = game.currentPlayer();
+  const mediterranean = game.findSpaceById("mediterranean_avenue");
+
+  game.assignPropertyToPlayer(mediterranean, debtor);
+  game.state.pendingDebt = {
+    debtorId: debtor.id,
+    creditorType: CREDITOR_TYPES.BANK,
+    creditorId: null,
+    amount: 9999,
+    reason: "TEST"
+  };
+
+  game.resolverQuiebra();
+
+  assert.equal(debtor.bankrupt, true);
+  assert.equal(mediterranean.ownerId, null);
+  assert.equal(game.state.status, GAME_STATUSES.FINALIZADO);
+  assert.equal(game.state.auction, null);
+  assert.ok(game.state.winnerId);
 });
 
 test("en modo corto la segunda quiebra finaliza la partida", () => {

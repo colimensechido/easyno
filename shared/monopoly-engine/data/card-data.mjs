@@ -17,8 +17,8 @@ function card({ id, deck, title, effect, amount = 0, target = null, steps = 0, k
 export function createChanceDeck() {
   return [
     card({ id: "chance_advance_go", deck: CARD_DECKS.CHANCE, title: "Avanza hasta Salida", effect: CARD_EFFECTS.MOVE_TO, target: "go" }),
-    card({ id: "chance_advance_illinois", deck: CARD_DECKS.CHANCE, title: "Avanza hasta Avenida Illinois", effect: CARD_EFFECTS.MOVE_TO, target: "illinois_avenue" }),
-    card({ id: "chance_advance_st_charles", deck: CARD_DECKS.CHANCE, title: "Avanza hasta Plaza St. Charles", effect: CARD_EFFECTS.MOVE_TO, target: "st_charles_place" }),
+    card({ id: "chance_advance_illinois", deck: CARD_DECKS.CHANCE, title: "Avanza hasta Buenos Aires", effect: CARD_EFFECTS.MOVE_TO, target: "illinois_avenue" }),
+    card({ id: "chance_advance_st_charles", deck: CARD_DECKS.CHANCE, title: "Avanza hasta Arequipa", effect: CARD_EFFECTS.MOVE_TO, target: "st_charles_place" }),
     card({ id: "chance_nearest_utility", deck: CARD_DECKS.CHANCE, title: "Avanza al servicio mas cercano", effect: CARD_EFFECTS.MOVE_TO_NEAREST_UTILITY, meta: { utilityMultiplier: 10 } }),
     card({ id: "chance_nearest_railroad_1", deck: CARD_DECKS.CHANCE, title: "Avanza al ferrocarril mas cercano", effect: CARD_EFFECTS.MOVE_TO_NEAREST_RAILROAD, meta: { rentMultiplier: 2 } }),
     card({ id: "chance_nearest_railroad_2", deck: CARD_DECKS.CHANCE, title: "Avanza al ferrocarril mas cercano", effect: CARD_EFFECTS.MOVE_TO_NEAREST_RAILROAD, meta: { rentMultiplier: 2 } }),
@@ -28,8 +28,8 @@ export function createChanceDeck() {
     card({ id: "chance_go_to_jail", deck: CARD_DECKS.CHANCE, title: "Vayase a la carcel", effect: CARD_EFFECTS.GO_TO_JAIL }),
     card({ id: "chance_general_repairs", deck: CARD_DECKS.CHANCE, title: "Haz reparaciones generales", effect: CARD_EFFECTS.REPAIRS, meta: { perHouse: 25, perHotel: 100 } }),
     card({ id: "chance_poor_tax", deck: CARD_DECKS.CHANCE, title: "Paga impuesto por pobre", effect: CARD_EFFECTS.PAY_BANK, amount: 15 }),
-    card({ id: "chance_reading_railroad", deck: CARD_DECKS.CHANCE, title: "Lleva tu ficha a Ferrocarril Reading", effect: CARD_EFFECTS.MOVE_TO, target: "reading_railroad" }),
-    card({ id: "chance_boardwalk", deck: CARD_DECKS.CHANCE, title: "Lleva tu ficha a Paseo Boardwalk", effect: CARD_EFFECTS.MOVE_TO, target: "boardwalk" }),
+    card({ id: "chance_reading_railroad", deck: CARD_DECKS.CHANCE, title: "Lleva tu ficha al Tren Maya", effect: CARD_EFFECTS.MOVE_TO, target: "reading_railroad" }),
+    card({ id: "chance_boardwalk", deck: CARD_DECKS.CHANCE, title: "Lleva tu ficha a Ciudad de Mexico", effect: CARD_EFFECTS.MOVE_TO, target: "boardwalk" }),
     card({ id: "chance_chairman", deck: CARD_DECKS.CHANCE, title: "Elegido presidente del consejo", effect: CARD_EFFECTS.PAY_EACH_PLAYER, amount: 50 }),
     card({ id: "chance_building_loan", deck: CARD_DECKS.CHANCE, title: "Tu prestamo para edificios vence", effect: CARD_EFFECTS.RECEIVE_MONEY, amount: 150 })
   ];

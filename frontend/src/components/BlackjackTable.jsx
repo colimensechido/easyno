@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { audio } from "../audio";
+import { AnimatedButton } from "./shared";
 
 const suitInfo = {
   S: { symbol: "♠", name: "Picas", red: false },
@@ -1419,26 +1420,37 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
   function placeBet() {
     if (!socket?.connected) {
       setError("Socket desconectado");
-      return;
+      return Promise.resolve();
     }
 
-    socket.emit("place_bet_multiplayer", { worldId: world.id, bet: betValue }, (response) => {
-      if (!response?.ok) {
-        setError(response?.error || "No se pudo apostar");
-      }
+    // Devolvemos una promesa que se resuelve con el ack del servidor: asi el
+    // AnimatedButton queda en estado "cargando" y bloquea el doble clic hasta
+    // que la apuesta se confirma o falla.
+    return new Promise((resolve) => {
+      socket.emit("place_bet_multiplayer", { worldId: world.id, bet: betValue }, (response) => {
+        if (!response?.ok) {
+          setError(response?.error || "No se pudo apostar");
+        }
+        resolve();
+      });
     });
   }
 
   function playerAction(action) {
     if (!socket?.connected) {
       setError("Socket desconectado");
-      return;
+      return Promise.resolve();
     }
 
-    socket.emit("player_action", { worldId: world.id, action }, (response) => {
-      if (!response?.ok) {
-        setError(response?.error || "No se pudo procesar accion");
-      }
+    // Promesa resuelta con el ack: el boton se bloquea mientras la accion
+    // (pedir carta / plantarse) viaja al servidor, evitando envios duplicados.
+    return new Promise((resolve) => {
+      socket.emit("player_action", { worldId: world.id, action }, (response) => {
+        if (!response?.ok) {
+          setError(response?.error || "No se pudo procesar accion");
+        }
+        resolve();
+      });
     });
   }
 
@@ -1632,7 +1644,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
 
           <div className="mt-5 grid gap-3">
             {(phase === "idle" || phase === "betting" || phase === "settled") && (
-              <button className="arcade-button w-full" onClick={placeBet} disabled={!canPlaceBet}>
+              <AnimatedButton baseClassName="arcade-button w-full" onClick={placeBet} disabled={!canPlaceBet} ignoreGate>
                 {phase === "settled" ? <RotateCcw size={18} /> : me ? <LockKeyhole size={18} /> : <BadgeDollarSign size={18} />}
                 {phase === "settled"
                   ? seatsFull && !me
@@ -1643,7 +1655,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
                     : seatsFull
                       ? "Sala llena"
                       : "Confirmar apuesta"}
-              </button>
+              </AnimatedButton>
             )}
 
             {phase === "betting" && (
@@ -1668,14 +1680,14 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
 
                 {aiControlsOpen && (
                   <div className="grid gap-3">
-                    <button className="arcade-button w-full" onClick={() => playerAction("hit")} disabled={!isMyTurn}>
+                    <AnimatedButton baseClassName="arcade-button w-full" onClick={() => playerAction("hit")} disabled={!isMyTurn} ignoreGate>
                       <Hand size={18} />
                       Pedir carta
-                    </button>
-                    <button className="danger-button w-full" onClick={() => playerAction("stand")} disabled={!isMyTurn}>
+                    </AnimatedButton>
+                    <AnimatedButton baseClassName="danger-button w-full" onClick={() => playerAction("stand")} disabled={!isMyTurn} ignoreGate>
                       <StepForward size={18} />
                       Plantarse
-                    </button>
+                    </AnimatedButton>
                   </div>
                 )}
               </div>

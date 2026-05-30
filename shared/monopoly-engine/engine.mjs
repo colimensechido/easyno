@@ -72,6 +72,11 @@ export class MonopolyGameEngine {
 
     if (config.state) {
       this.random = config.random || Math.random;
+      // liveState (opt-in): cuando es true, getState() devuelve el estado vivo
+      // sin clonarlo. Pensado SOLO para simulaciones de alto volumen que tratan
+      // el estado como solo-lectura. El valor por defecto (false) conserva el
+      // comportamiento clasico (clon defensivo) para la app real.
+      this._liveState = Boolean(config.liveState);
       this.state = clone(config.state);
       this.options = {
         ...DEFAULT_ENGINE_OPTIONS,
@@ -89,6 +94,7 @@ export class MonopolyGameEngine {
     assert(config.players.length >= 2, "Monopoly requiere al menos 2 jugadores");
 
     this.random = config.random || Math.random;
+    this._liveState = Boolean(config.liveState);
     this.options = {
       ...DEFAULT_ENGINE_OPTIONS,
       ...(config.options || {})
@@ -155,7 +161,7 @@ export class MonopolyGameEngine {
   }
 
   getState() {
-    return clone(this.state);
+    return this._liveState ? this.state : clone(this.state);
   }
 
   iniciarPartida({ now = Date.now() } = {}) {
@@ -818,11 +824,22 @@ export class MonopolyGameEngine {
     const isCurrentPlayer = this.currentPlayer().id === playerId;
 
     if (isCurrentPlayer) {
-      if (player.jail.inJail) {
-        actions.push(ENGINE_ACTIONS.TIRAR_DADOS, ENGINE_ACTIONS.PAGAR_MULTA_CARCEL);
+      // Solo se puede tirar/decidir carcel cuando el turno esta en una fase que
+      // lo admite. Un jugador que cayo en la carcel AL FINAL de su movimiento
+      // queda inJail=true pero con fase AWAITING_TURN_END: en ese caso solo debe
+      // poder terminar el turno, no volver a tirar (de lo contrario la accion
+      // listada chocaria con el guard de tirarDados y lanzaria un error).
+      const puedeTirar =
+        this.state.turn.phase === TURN_PHASES.AWAITING_ROLL ||
+        this.state.turn.phase === TURN_PHASES.AWAITING_JAIL_DECISION;
 
-        if (Object.values(player.getOutOfJailCards).some((count) => count > 0)) {
-          actions.push(ENGINE_ACTIONS.USAR_CARTA_SALIR_CARCEL);
+      if (player.jail.inJail) {
+        if (puedeTirar) {
+          actions.push(ENGINE_ACTIONS.TIRAR_DADOS, ENGINE_ACTIONS.PAGAR_MULTA_CARCEL);
+
+          if (Object.values(player.getOutOfJailCards).some((count) => count > 0)) {
+            actions.push(ENGINE_ACTIONS.USAR_CARTA_SALIR_CARCEL);
+          }
         }
       } else if (this.state.turn.phase === TURN_PHASES.AWAITING_ROLL) {
         actions.push(ENGINE_ACTIONS.TIRAR_DADOS);
@@ -1774,10 +1791,6 @@ export class MonopolyGameEngine {
       return;
     }
 
-    if (this.state.auction || this.state.pendingBankruptcyAuctions.length > 0 || (this.state.pendingContinuation && this.state.pendingContinuation.type === "BANKRUPTCY_AUCTIONS")) {
-      return;
-    }
-
     const bankruptCount = this.state.players.filter((player) => player.bankrupt).length;
 
     if (this.mode === GAME_MODES.SHORT && bankruptCount >= 2) {
@@ -1785,8 +1798,14 @@ export class MonopolyGameEngine {
       return;
     }
 
+    // Este check va ANTES del guard de subastas: si solo queda 1 jugador activo,
+    // la partida termina de inmediato sin importar subastas o estados pendientes.
     if (this.activePlayers().length <= 1) {
       this.finishGame();
+      return;
+    }
+
+    if (this.state.auction || this.state.pendingBankruptcyAuctions.length > 0 || (this.state.pendingContinuation && this.state.pendingContinuation.type === "BANKRUPTCY_AUCTIONS")) {
       return;
     }
 
@@ -1801,6 +1820,18 @@ export class MonopolyGameEngine {
     this.state.winnerId = winner ? winner.playerId : null;
     this.state.endedAt = Date.now();
     this.state.turn.phase = TURN_PHASES.COMPLETED;
+
+    // Limpiar todos los estados pendientes: la partida terminó y no hay acciones
+    // que resolver, sin importar qué estuviese en curso (cartas, subastas, deudas).
+    this.state.auction = null;
+    this.state.pendingBankruptcyAuctions = [];
+    this.state.pendingContinuation = null;
+    this.state.pendingPurchase = null;
+    this.state.pendingCard = null;
+    this.state.pendingTax = null;
+    this.state.pendingRentClaim = null;
+    this.state.pendingDebt = null;
+
     this.log("GAME_FINISHED", { winnerId: this.state.winnerId });
   }
 

@@ -1,24 +1,40 @@
 import {
   AlertTriangle,
+  Bot,
   Building2,
+  Bug,
+  Chrome,
+  Code2,
+  Coffee,
   Info,
   Crown,
+  Cpu,
   Dice5,
   DoorOpen,
+  Gem,
   Gavel,
+  Github,
+  Globe,
   Hammer,
   Landmark,
   Lightbulb,
+  Lock,
+  LogIn,
   LogOut,
   Map as MapIcon,
   MessageCircle,
   PauseCircle,
   PlayCircle,
+  PlusCircle,
   Receipt,
   Scale,
   Send,
   ShieldAlert,
   Sparkles,
+  Pizza,
+  Rocket,
+  Skull,
+  Star,
   TimerReset,
   TrainFront,
   Trophy,
@@ -28,7 +44,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
+// Lobby rediseñado: pantalla principal inmersiva + flujos Unirse/Crear.
 import { audio } from "../audio";
+import { Dice } from "./shared";
 
 const actionAudioMap = {
   tirarDados: null, // se reproduce en la cinemática para sincronizar
@@ -98,14 +116,14 @@ const modeLabel = {
 };
 
 const colorGroupMeta = {
-  brown: { label: "Cafe", color: "#7a4b2a", accent: "#b46d3a" },
-  light_blue: { label: "Celeste", color: "#7cd4e8", accent: "#2c9ec7" },
-  pink: { label: "Rosa", color: "#d95db4", accent: "#a82a82" },
-  orange: { label: "Naranja", color: "#eb8f2d", accent: "#b76000" },
-  red: { label: "Rojo", color: "#d4473b", accent: "#a42014" },
-  yellow: { label: "Amarillo", color: "#f0d24f", accent: "#b7940b" },
-  green: { label: "Verde", color: "#30a44a", accent: "#1a6d2c" },
-  dark_blue: { label: "Azul", color: "#274fae", accent: "#163478" }
+  brown: { label: "Bolivia", shortLabel: "BOL", color: "#7a4b2a", accent: "#b46d3a" },
+  light_blue: { label: "Ecuador", shortLabel: "ECU", color: "#7cd4e8", accent: "#2c9ec7" },
+  pink: { label: "Peru", shortLabel: "PER", color: "#d95db4", accent: "#a82a82" },
+  orange: { label: "Chile", shortLabel: "CHL", color: "#eb8f2d", accent: "#b76000" },
+  red: { label: "Argentina", shortLabel: "ARG", color: "#d4473b", accent: "#a42014" },
+  yellow: { label: "Colombia", shortLabel: "COL", color: "#f0d24f", accent: "#b7940b" },
+  green: { label: "Brasil", shortLabel: "BRA", color: "#30a44a", accent: "#1a6d2c" },
+  dark_blue: { label: "Mexico", shortLabel: "MEX", color: "#274fae", accent: "#163478" }
 };
 
 const tokenPalette = [
@@ -117,11 +135,38 @@ const tokenPalette = [
   { bg: "#22252f", ring: "#090a0d" }
 ];
 
-const tokenEmojiPresets = [
-  "TOP", "CAR", "DOG", "CAT", "TRN", "SHOE", "SHIP", "DICE",
-  "UNI", "DRG", "FOX", "TUR", "LION", "PAN", "FROG", "OWL",
-  "KING", "GEM", "STAR", "FIRE", "BOLT", "LUCK", "SUN", "AIM",
-  "SPAD", "HART", "DIAM", "CLUB", "GAME", "ROKT", "CAST", "SWRD"
+const tokenIconMap = {
+  bot: Bot,
+  bug: Bug,
+  chrome: Chrome,
+  code: Code2,
+  coffee: Coffee,
+  cpu: Cpu,
+  dice: Dice5,
+  gem: Gem,
+  github: Github,
+  pizza: Pizza,
+  rocket: Rocket,
+  skull: Skull,
+  star: Star,
+  trophy: Trophy
+};
+
+const tokenIconPresets = [
+  { id: "github", label: "GitHub", copy: "merge lord" },
+  { id: "chrome", label: "Google", copy: "RAM gratis" },
+  { id: "bug", label: "Bug", copy: "feature raro" },
+  { id: "bot", label: "Bot", copy: "modo IA" },
+  { id: "code", label: "Code", copy: "semicolons" },
+  { id: "cpu", label: "CPU", copy: "lag boss" },
+  { id: "coffee", label: "Cafe", copy: "debug fuel" },
+  { id: "pizza", label: "Pizza", copy: "deploy night" },
+  { id: "rocket", label: "Rocket", copy: "to prod" },
+  { id: "skull", label: "Skull", copy: "rip rentas" },
+  { id: "gem", label: "Gem", copy: "premium" },
+  { id: "star", label: "Star", copy: "main char" },
+  { id: "dice", label: "Dice", copy: "RNG" },
+  { id: "trophy", label: "Trophy", copy: "tryhard" }
 ];
 
 const tokenShapes = [
@@ -148,6 +193,9 @@ const tokenColorPresets = [
   { bg: "#c026d3", ring: "#701a75" },
   { bg: "#fef3c7", ring: "#b45309" }
 ];
+
+const tokenColorChoices = [...new Set(tokenColorPresets.flatMap((color) => [color.bg, color.ring]))];
+const tokenFigureColorChoices = ["#ffffff", "#23160c", ...tokenColorChoices.filter((color) => !["#ffffff", "#23160c"].includes(color))];
 
 const TOKEN_STORAGE_KEY = "monopoly-custom-tokens-v1";
 
@@ -178,57 +226,163 @@ function isEmojiToken(value) {
 
 function resolveTokenStyle(player, customTokens) {
   const palette = playerAccent(player.colorIndex ?? 0);
-  const custom = customTokens?.[player.id];
-  const label = custom?.label ?? initialLetters(player.name);
+  const playerId = player?.id ?? player?.userId;
+  const custom = customTokens?.[playerId] || player?.token;
+  const label = custom?.label ?? initialLetters(player?.name ?? player?.username);
+  const icon = custom?.icon && tokenIconMap[custom.icon] ? custom.icon : "";
   const bg = custom?.bg ?? palette.bg;
   const ring = custom?.ring ?? palette.ring;
+  const fg = custom?.fg ?? "#ffffff";
   const shape = custom?.shape ?? "circle";
   const emoji = isEmojiToken(label);
-  return { label, bg, ring, shape, emoji };
+  return { label, icon, bg, ring, fg, shape, emoji };
 }
 
 const previewBoard = [
   { index: 0, id: "go", name: "Salida", type: "SALIDA" },
-  { index: 1, id: "mediterranean", name: "Mediterranea", type: "PROPIEDAD", colorGroup: "brown", price: 60 },
+  { index: 1, id: "mediterranean", name: "La Paz", shortName: "LPZ", type: "PROPIEDAD", colorGroup: "brown", price: 60 },
   { index: 2, id: "cc1", name: "Arca", type: "ARCA_COMUNAL" },
-  { index: 3, id: "baltic", name: "Baltica", type: "PROPIEDAD", colorGroup: "brown", price: 60 },
+  { index: 3, id: "baltic", name: "Sucre", shortName: "Sucre", type: "PROPIEDAD", colorGroup: "brown", price: 60 },
   { index: 4, id: "tax1", name: "Impuesto", type: "IMPUESTO" },
-  { index: 5, id: "rr1", name: "Reading", type: "FERROCARRIL", price: 200 },
-  { index: 6, id: "oriental", name: "Oriental", type: "PROPIEDAD", colorGroup: "light_blue", price: 100 },
+  { index: 5, id: "rr1", name: "Tren Maya", type: "FERROCARRIL", price: 200 },
+  { index: 6, id: "oriental", name: "Quito", shortName: "Quito", type: "PROPIEDAD", colorGroup: "light_blue", price: 100 },
   { index: 7, id: "chance1", name: "Casualidad", type: "CASUALIDAD" },
-  { index: 8, id: "vermont", name: "Vermont", type: "PROPIEDAD", colorGroup: "light_blue", price: 100 },
-  { index: 9, id: "connecticut", name: "Connecticut", type: "PROPIEDAD", colorGroup: "light_blue", price: 120 },
+  { index: 8, id: "vermont", name: "Cuenca", type: "PROPIEDAD", colorGroup: "light_blue", price: 100 },
+  { index: 9, id: "connecticut", name: "Guayaquil", shortName: "GYE", type: "PROPIEDAD", colorGroup: "light_blue", price: 120 },
   { index: 10, id: "jail", name: "Carcel", type: "CARCEL_VISITA" },
-  { index: 11, id: "stcharles", name: "St. Charles", type: "PROPIEDAD", colorGroup: "pink", price: 140 },
-  { index: 12, id: "electric", name: "Electrica", type: "SERVICIO_PUBLICO", price: 150 },
-  { index: 13, id: "states", name: "States", type: "PROPIEDAD", colorGroup: "pink", price: 140 },
-  { index: 14, id: "virginia", name: "Virginia", type: "PROPIEDAD", colorGroup: "pink", price: 160 },
-  { index: 15, id: "rr2", name: "Pennsylvania RR", type: "FERROCARRIL", price: 200 },
-  { index: 16, id: "stjames", name: "St. James", type: "PROPIEDAD", colorGroup: "orange", price: 180 },
+  { index: 11, id: "stcharles", name: "Arequipa", shortName: "AQP", type: "PROPIEDAD", colorGroup: "pink", price: 140 },
+  { index: 12, id: "electric", name: "Red Andina", type: "SERVICIO_PUBLICO", price: 150 },
+  { index: 13, id: "states", name: "Cusco", type: "PROPIEDAD", colorGroup: "pink", price: 140 },
+  { index: 14, id: "virginia", name: "Lima", type: "PROPIEDAD", colorGroup: "pink", price: 160 },
+  { index: 15, id: "rr2", name: "Tren Pacífico", type: "FERROCARRIL", price: 200 },
+  { index: 16, id: "stjames", name: "Valparaiso", shortName: "Valpo", type: "PROPIEDAD", colorGroup: "orange", price: 180 },
   { index: 17, id: "cc2", name: "Arca", type: "ARCA_COMUNAL" },
-  { index: 18, id: "tennessee", name: "Tennessee", type: "PROPIEDAD", colorGroup: "orange", price: 180 },
-  { index: 19, id: "newyork", name: "Nueva York", type: "PROPIEDAD", colorGroup: "orange", price: 200 },
+  { index: 18, id: "tennessee", name: "Concepcion", shortName: "CCP", type: "PROPIEDAD", colorGroup: "orange", price: 180 },
+  { index: 19, id: "newyork", name: "Santiago", shortName: "STGO", type: "PROPIEDAD", colorGroup: "orange", price: 200 },
   { index: 20, id: "free", name: "Libre", type: "PARADA_LIBRE" },
-  { index: 21, id: "kentucky", name: "Kentucky", type: "PROPIEDAD", colorGroup: "red", price: 220 },
+  { index: 21, id: "kentucky", name: "Rosario", shortName: "ROS", type: "PROPIEDAD", colorGroup: "red", price: 220 },
   { index: 22, id: "chance2", name: "Casualidad", type: "CASUALIDAD" },
-  { index: 23, id: "indiana", name: "Indiana", type: "PROPIEDAD", colorGroup: "red", price: 220 },
-  { index: 24, id: "illinois", name: "Illinois", type: "PROPIEDAD", colorGroup: "red", price: 240 },
-  { index: 25, id: "rr3", name: "B&O", type: "FERROCARRIL", price: 200 },
-  { index: 26, id: "atlantic", name: "Atlantic", type: "PROPIEDAD", colorGroup: "yellow", price: 260 },
-  { index: 27, id: "ventnor", name: "Ventnor", type: "PROPIEDAD", colorGroup: "yellow", price: 260 },
-  { index: 28, id: "water", name: "Agua", type: "SERVICIO_PUBLICO", price: 150 },
-  { index: 29, id: "marvin", name: "Marvin", type: "PROPIEDAD", colorGroup: "yellow", price: 280 },
+  { index: 23, id: "indiana", name: "Cordoba", shortName: "CBA", type: "PROPIEDAD", colorGroup: "red", price: 220 },
+  { index: 24, id: "illinois", name: "Buenos Aires", shortName: "BSAS", type: "PROPIEDAD", colorGroup: "red", price: 240 },
+  { index: 25, id: "rr3", name: "Tren Pampa", type: "FERROCARRIL", price: 200 },
+  { index: 26, id: "atlantic", name: "Cali", shortName: "Cali", type: "PROPIEDAD", colorGroup: "yellow", price: 260 },
+  { index: 27, id: "ventnor", name: "Medellin", shortName: "MDE", type: "PROPIEDAD", colorGroup: "yellow", price: 260 },
+  { index: 28, id: "water", name: "Aguas Caribe", type: "SERVICIO_PUBLICO", price: 150 },
+  { index: 29, id: "marvin", name: "Bogota", shortName: "BOG", type: "PROPIEDAD", colorGroup: "yellow", price: 280 },
   { index: 30, id: "gotojail", name: "Ve a carcel", type: "VAYASE_A_LA_CARCEL" },
-  { index: 31, id: "pacific", name: "Pacific", type: "PROPIEDAD", colorGroup: "green", price: 300 },
-  { index: 32, id: "northcarolina", name: "N. Carolina", type: "PROPIEDAD", colorGroup: "green", price: 300 },
+  { index: 31, id: "pacific", name: "Brasilia", shortName: "BSB", type: "PROPIEDAD", colorGroup: "green", price: 300 },
+  { index: 32, id: "northcarolina", name: "Rio de Janeiro", shortName: "RIO", type: "PROPIEDAD", colorGroup: "green", price: 300 },
   { index: 33, id: "cc3", name: "Arca", type: "ARCA_COMUNAL" },
-  { index: 34, id: "pennsylvania", name: "Pennsylvania", type: "PROPIEDAD", colorGroup: "green", price: 320 },
-  { index: 35, id: "rr4", name: "Short Line", type: "FERROCARRIL", price: 200 },
+  { index: 34, id: "pennsylvania", name: "Sao Paulo", shortName: "SP", type: "PROPIEDAD", colorGroup: "green", price: 320 },
+  { index: 35, id: "rr4", name: "Tren Austral", type: "FERROCARRIL", price: 200 },
   { index: 36, id: "chance3", name: "Casualidad", type: "CASUALIDAD" },
-  { index: 37, id: "park", name: "Park Place", type: "PROPIEDAD", colorGroup: "dark_blue", price: 350 },
+  { index: 37, id: "park", name: "Guadalajara", shortName: "GDL", type: "PROPIEDAD", colorGroup: "dark_blue", price: 350 },
   { index: 38, id: "tax2", name: "Lujo", type: "IMPUESTO" },
-  { index: 39, id: "boardwalk", name: "Boardwalk", type: "PROPIEDAD", colorGroup: "dark_blue", price: 400 }
+  { index: 39, id: "boardwalk", name: "Ciudad de Mexico", shortName: "CDMX", type: "PROPIEDAD", colorGroup: "dark_blue", price: 400 }
 ];
+
+const boardShortNameById = {
+  mediterranean_avenue: "LPZ",
+  baltic_avenue: "Sucre",
+  reading_railroad: "Tren Maya",
+  oriental_avenue: "Quito",
+  vermont_avenue: "Cuenca",
+  connecticut_avenue: "GYE",
+  st_charles_place: "AQP",
+  electric_company: "Red Andina",
+  states_avenue: "Cusco",
+  virginia_avenue: "Lima",
+  pennsylvania_railroad: "Tren PAC",
+  st_james_place: "Valpo",
+  tennessee_avenue: "CCP",
+  new_york_avenue: "STGO",
+  kentucky_avenue: "ROS",
+  indiana_avenue: "CBA",
+  illinois_avenue: "BSAS",
+  bo_railroad: "Tren Pampa",
+  atlantic_avenue: "Cali",
+  ventnor_avenue: "MDE",
+  water_works: "Aguas Caribe",
+  marvin_gardens: "BOG",
+  pacific_avenue: "BSB",
+  north_carolina_avenue: "RIO",
+  pennsylvania_avenue: "SP",
+  short_line: "Tren Austral",
+  park_place: "GDL",
+  boardwalk: "CDMX"
+};
+
+const boardCountryCodeById = {
+  mediterranean_avenue: "BOL",
+  baltic_avenue: "BOL",
+  oriental_avenue: "ECU",
+  vermont_avenue: "ECU",
+  connecticut_avenue: "ECU",
+  st_charles_place: "PER",
+  states_avenue: "PER",
+  virginia_avenue: "PER",
+  st_james_place: "CHL",
+  tennessee_avenue: "CHL",
+  new_york_avenue: "CHL",
+  kentucky_avenue: "ARG",
+  indiana_avenue: "ARG",
+  illinois_avenue: "ARG",
+  atlantic_avenue: "COL",
+  ventnor_avenue: "COL",
+  marvin_gardens: "COL",
+  pacific_avenue: "BRA",
+  north_carolina_avenue: "BRA",
+  pennsylvania_avenue: "BRA",
+  park_place: "MEX",
+  boardwalk: "MEX"
+};
+
+function boardDisplayName(space) {
+  switch (space?.type) {
+    case "CASUALIDAD":
+      return "Carta";
+    case "ARCA_COMUNAL":
+      return "Arca";
+    case "IMPUESTO":
+      return space?.id === "luxury_tax" ? "Imp. lujo" : "Imp. ingresos";
+    case "CARCEL_VISITA":
+      return "Carcel";
+    case "VAYASE_A_LA_CARCEL":
+      return "A carcel";
+    case "PARADA_LIBRE":
+      return "Libre";
+    case "SALIDA":
+      return "Salida";
+    default:
+      break;
+  }
+  return boardShortNameById[space?.id] || space?.shortName || space?.name || "";
+}
+
+function boardMetaLabel(space, owner) {
+  if (space?.ownerId) return initialLetters(owner?.name || "Propietario");
+  if (space?.colorGroup) return boardCountryCodeById[space.id] || colorGroupMeta[space.colorGroup]?.shortLabel || spaceTypeLabel(space);
+  switch (space?.type) {
+    case "FERROCARRIL":
+      return "TREN";
+    case "SERVICIO_PUBLICO":
+      return "SERV.";
+    case "IMPUESTO":
+      return "IMP.";
+    case "CASUALIDAD":
+      return "CARTA";
+    case "ARCA_COMUNAL":
+      return "ARCA";
+    case "CARCEL_VISITA":
+      return "CARCEL";
+    case "VAYASE_A_LA_CARCEL":
+      return "CARCEL";
+    case "PARADA_LIBRE":
+      return "LIBRE";
+    default:
+      return spaceTypeLabel(space);
+  }
+}
 
 const moneyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -257,6 +411,14 @@ const ruleCards = [
 
 function cx(...classes) {
   return classes.filter(Boolean).join(" ");
+}
+
+function sameEntityId(left, right) {
+  if (left === null || left === undefined || right === null || right === undefined) {
+    return false;
+  }
+
+  return String(left) === String(right);
 }
 
 function Money({ amount, className = "" }) {
@@ -317,6 +479,15 @@ function boardCell(index) {
   return { row: index - 30, col: 10, side: "right", corner: false };
 }
 
+const boardTokenColumnWeights = [1.5, ...Array(9).fill(0.9), 1.5];
+const boardTokenRowWeights = [1.85, ...Array(9).fill(0.72), 1.85];
+
+function trackCenterPercent(weights, index) {
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const before = weights.slice(0, index).reduce((sum, weight) => sum + weight, 0);
+  return ((before + weights[index] / 2) / total) * 100;
+}
+
 function spaceTypeLabel(space) {
   if (space.colorGroup) return colorGroupMeta[space.colorGroup]?.label || "Solar";
   switch (space.type) {
@@ -345,7 +516,7 @@ function spaceTypeLabel(space) {
 
 function currentPrompt({ state, playersById, currentUserId, pendingPurchaseSpace, pendingTax, pendingDebt, pendingCard, auction }) {
   const currentPlayer = playersById.get(state.currentPlayerId);
-  const me = state.currentPlayerId === currentUserId;
+  const me = sameEntityId(state.currentPlayerId, currentUserId);
 
   if (state.winnerId) {
     return {
@@ -552,7 +723,7 @@ function formatCountdown(deadlineAt) {
 
 function buildModalState({ state, currentUserId, playersById, boardById }) {
   const currentPlayerName = playersById.get(state.currentPlayerId)?.name || "Jugador";
-  const myTurn = state.currentPlayerId === currentUserId;
+  const myTurn = sameEntityId(state.currentPlayerId, currentUserId);
 
   if (state.turn.pendingPurchase) {
     const property = boardById.get(state.turn.pendingPurchase.propertyId);
@@ -666,18 +837,21 @@ function ActionButton({ tone = "primary", children, className = "", tooltip = ""
 }
 
 function TokenChip({ tokenStyle, className = "", style = {}, title }) {
+  const Icon = tokenIconMap[tokenStyle.icon];
+
   return (
     <span
       className={cx(
         "monopoly-token",
         `shape-${tokenStyle.shape}`,
+        Icon && "has-icon",
         tokenStyle.emoji && "emoji",
         className
       )}
-      style={{ "--token-bg": tokenStyle.bg, "--token-ring": tokenStyle.ring, ...style }}
+      style={{ "--token-bg": tokenStyle.bg, "--token-ring": tokenStyle.ring, "--token-fg": tokenStyle.fg || "#ffffff", ...style }}
       title={title}
     >
-      <span className="token-glyph">{tokenStyle.label}</span>
+      <span className="token-glyph">{Icon ? <Icon size="70%" strokeWidth={2.8} /> : tokenStyle.label}</span>
     </span>
   );
 }
@@ -729,6 +903,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
   const cell = boardCell(space.index);
   const Icon = spaceIcon(space);
   const group = colorGroupMeta[space.colorGroup];
+  const displayName = boardDisplayName(space);
   const ownerAccent = owner?.colorIndex !== undefined ? playerAccent(owner.colorIndex) : null;
   const style = {
     gridRowStart: cell.row + 1,
@@ -765,17 +940,17 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
       {group && <span className="monopoly-band" style={{ "--group-color": group.color }} />}
       {ownerAccent && <span className="monopoly-owner-mark" style={{ "--owner-color": ownerAccent.bg }} />}
       <div className="monopoly-space-inner">
-        <div className="flex items-start justify-between gap-1">
+        <div className="monopoly-space-head">
           <span className="text-[9px] font-black uppercase tracking-[0.14em] text-[#7c5d38]">
             {space.index}
           </span>
           <Icon size={cell.corner ? 16 : 12} className="shrink-0 text-[#3b2b18]" />
         </div>
 
-        <div className="flex-1">
-          <p className="monopoly-space-name">{space.name}</p>
+        <div className="monopoly-space-copy">
+          <p className="monopoly-space-name">{displayName}</p>
           <p className="monopoly-space-meta">
-            {space.ownerId ? owner?.name || "Propietario" : spaceTypeLabel(space)}
+            {boardMetaLabel(space, owner)}
           </p>
         </div>
 
@@ -935,6 +1110,13 @@ function MonopolySocialRail({ connectionStatus, currentUser, messages, players, 
     () => [...players].sort((a, b) => b.balance - a.balance || a.username.localeCompare(b.username)),
     [players]
   );
+  const playersById = useMemo(() => {
+    const map = new Map();
+    sortedPlayers.forEach((player, index) => {
+      map.set(String(player.userId), { player, index });
+    });
+    return map;
+  }, [sortedPlayers]);
 
   useEffect(() => {
     if (chatRef.current) {
@@ -976,7 +1158,7 @@ function MonopolySocialRail({ connectionStatus, currentUser, messages, players, 
 
         <div className="grid gap-3">
           {sortedPlayers.map((player, index) => {
-            const tokenStyle = resolveTokenStyle({ id: player.userId, name: player.username, colorIndex: index }, customTokens);
+            const tokenStyle = resolveTokenStyle({ id: player.userId, name: player.username, colorIndex: index, token: player.token }, customTokens);
             return (
               <div key={player.userId} className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4">
                 <div className="flex items-center gap-3">
@@ -1025,9 +1207,17 @@ function MonopolySocialRail({ connectionStatus, currentUser, messages, players, 
             </div>
           ) : (
             messages.map((message) => {
-              const isMe = message.userId === currentUser.id;
+              const isMe = sameEntityId(message.userId, currentUser.id);
+              const participant = playersById.get(String(message.userId));
+              const tokenStyle = resolveTokenStyle({
+                id: message.userId,
+                name: message.username,
+                colorIndex: participant?.index ?? 0,
+                token: participant?.player?.token
+              }, customTokens);
               return (
-                <div key={message.id} className={cx("flex gap-2", isMe && "justify-end")}>
+                <div key={message.id} className={cx("flex items-end gap-2", isMe && "justify-end")}>
+                  {!isMe && <TokenChip tokenStyle={tokenStyle} className="h-8 w-8 shrink-0 text-[10px]" />}
                   <div className={cx("monopoly-chat-bubble", isMe ? "mine" : "theirs")}>
                     <div className="mb-1 flex items-center justify-between gap-3">
                       <span className="text-[10px] font-extrabold uppercase tracking-[0.16em]">
@@ -1042,6 +1232,7 @@ function MonopolySocialRail({ connectionStatus, currentUser, messages, players, 
                     </div>
                     <p className="break-words text-sm font-semibold leading-5">{message.text}</p>
                   </div>
+                  {isMe && <TokenChip tokenStyle={tokenStyle} className="h-8 w-8 shrink-0 text-[10px]" />}
                 </div>
               );
             })
@@ -1097,13 +1288,13 @@ function DiceStage({ rolling, dice, playerName, total, cinematicActive }) {
   );
 }
 
-function TokenOverlay({ players, currentPlayerId, tokenStyles = {} }) {
+function TokenOverlay({ players, currentPlayerId, tokenStyles = {}, moverId = null, moverPhase = null }) {
   return (
     <div className="monopoly-token-overlay">
       {players.map((player) => {
         const cell = boardCell(player.position);
-        const baseX = ((cell.col + 0.5) / 11) * 100;
-        const baseY = ((cell.row + 0.5) / 11) * 100;
+        const baseX = trackCenterPercent(boardTokenColumnWeights, cell.col);
+        const baseY = trackCenterPercent(boardTokenRowWeights, cell.row);
         const sharedCellPlayers = players.filter((candidate) => candidate.position === player.position && !candidate.bankrupt);
         const localIndex = sharedCellPlayers.findIndex((candidate) => candidate.id === player.id);
         const shift = tokenTransformForIndex(localIndex, sharedCellPlayers.length);
@@ -1112,7 +1303,13 @@ function TokenOverlay({ players, currentPlayerId, tokenStyles = {} }) {
         return (
           <div
             key={player.id}
-            className={cx("token-piece", player.id === currentPlayerId && "active", player.bankrupt && "bankrupt")}
+            className={cx(
+              "token-piece",
+              player.id === currentPlayerId && "active",
+              player.bankrupt && "bankrupt",
+              player.id === moverId && moverPhase === "move" && "moving",
+              player.id === moverId && moverPhase === "settle" && "landing"
+            )}
             style={{
               left: `${baseX}%`,
               top: `${baseY}%`,
@@ -1270,7 +1467,7 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
 
   const closeAllowed = !modalState.blocking;
   const property = modalState.property;
-  const isMyAuctionTurn = modalState.type === "auction" && modalState.auction.activeBidderId === currentUserId;
+  const isMyAuctionTurn = modalState.type === "auction" && sameEntityId(modalState.auction.activeBidderId, currentUserId);
   const canBidAuction = isMyAuctionTurn || myActions.includes("hacerOferta");
   const canPassAuction = isMyAuctionTurn || myActions.includes("retirarseDeSubasta");
 
@@ -1436,8 +1633,10 @@ function TokenCustomizer({ open, onClose, currentPlayer, currentTokenStyle, onCh
   function applyAndClose() {
     onChange({
       label: draft.label,
+      icon: draft.icon || "",
       bg: draft.bg,
       ring: draft.ring,
+      fg: draft.fg || "#ffffff",
       shape: draft.shape
     });
     onClose();
@@ -1445,102 +1644,1824 @@ function TokenCustomizer({ open, onClose, currentPlayer, currentTokenStyle, onCh
 
   return (
     <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="monopoly-modal tone-info" style={{ maxWidth: "640px" }}>
-        <div className="flex items-start justify-between gap-3">
+      <div className="monopoly-modal tone-info token-customizer-modal">
+        <div className="token-customizer-head">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Personalización</p>
-            <h3 className="mt-1 text-2xl font-black uppercase">Tu ficha en el tablero</h3>
+            <h3 className="mt-1 text-2xl font-black uppercase">Tu ficha</h3>
             <p className="mt-2 text-sm font-semibold opacity-85">
               {currentPlayer?.name ? `${currentPlayer.name}, elige cómo te ven en la mesa.` : "Elige cómo se verá tu ficha."}
             </p>
           </div>
-          <button type="button" className="toast-close" onClick={onClose}>
+          <button type="button" className="toast-close token-customizer-close" onClick={onClose} aria-label="Cerrar editor de ficha">
             <X size={16} />
           </button>
         </div>
 
-        <div className="mt-5 flex items-center gap-4 rounded-[18px] border border-[#86c9b2] bg-white/60 px-4 py-4">
-          <TokenChip tokenStyle={{ ...draft, emoji: isEmojiToken(draft.label) }} className="h-16 w-16 text-lg monopoly-token-large" />
-          <div className="min-w-0">
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] opacity-75">Vista previa</p>
-            <p className="text-lg font-black uppercase">{draft.label || "?"}</p>
-            <p className="text-xs font-semibold opacity-80">Forma: {tokenShapes.find((s) => s.id === draft.shape)?.label || draft.shape}</p>
-          </div>
-        </div>
+        <div className="token-customizer-body">
+          <aside className="token-preview-stage">
+            <div className="token-preview-orbit">
+              <TokenChip tokenStyle={{ ...draft, emoji: isEmojiToken(draft.label) }} className="token-preview-hero monopoly-token-large" />
+            </div>
+            <div className="token-preview-card">
+              <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] opacity-75">Vista previa</p>
+              <p className="mt-1 text-xl font-black uppercase">{tokenIconPresets.find((icon) => icon.id === draft.icon)?.label || draft.label || "?"}</p>
+              <p className="mt-1 text-xs font-semibold opacity-80">Figura: {tokenShapes.find((s) => s.id === draft.shape)?.label || draft.shape}</p>
+              <div className="token-preview-swatches">
+                <span style={{ background: draft.bg }} title="Interior" />
+                <span style={{ background: draft.ring }} title="Exterior" />
+                <span style={{ background: draft.fg || "#ffffff" }} title="Figura" />
+              </div>
+            </div>
+          </aside>
 
-        <div className="mt-5">
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Texto / iniciales</p>
-          <input
-            className="monopoly-input mt-2"
-            value={draft.label}
-            maxLength={4}
-            onChange={(event) => update({ label: event.target.value })}
-            placeholder="Ej: JR, STAR, K, 7"
-          />
-          <p className="mt-2 text-xs font-semibold opacity-80">Hasta 4 caracteres. Acepta letras, números o símbolos.</p>
-        </div>
-
-        <div className="mt-5">
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Emojis sugeridos</p>
-          <div className="token-customizer-grid mt-2">
-            {tokenEmojiPresets.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                className={cx("token-option", draft.label === emoji && "active")}
-                onClick={() => update({ label: emoji })}
-                title={emoji}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-5">
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Forma</p>
-          <div className="token-shape-row mt-2">
-            {tokenShapes.map((shape) => (
-              <button
-                key={shape.id}
-                type="button"
-                className={cx(draft.shape === shape.id && "active")}
-                onClick={() => update({ shape: shape.id })}
-                title={shape.label}
-              >
-                <TokenChip
-                  tokenStyle={{ label: draft.label || "A", bg: draft.bg, ring: draft.ring, shape: shape.id, emoji: isEmojiToken(draft.label) }}
-                  className="h-9 w-9 text-xs"
+          <section className="token-editor-column">
+            <div className="token-editor-scroll">
+              <div>
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Iniciales de respaldo</p>
+                <input
+                  className="monopoly-input mt-2"
+                  value={draft.label}
+                  maxLength={4}
+                  onChange={(event) => update({ label: event.target.value.toUpperCase(), icon: "" })}
+                  placeholder="Ej: JR, 404, CSS, GG"
                 />
-                <span className="ml-2 align-middle text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#23160c]">{shape.label}</span>
-              </button>
-            ))}
-          </div>
-        </div>
+                <p className="mt-2 text-xs font-semibold opacity-80">Hasta 4 caracteres. Si eliges un icono, estas iniciales quedan como respaldo.</p>
+              </div>
 
-        <div className="mt-5">
-          <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Color</p>
-          <div className="token-color-row mt-2">
-            {tokenColorPresets.map((color) => (
-              <button
-                key={color.bg}
-                type="button"
-                className={cx("token-color-swatch", draft.bg === color.bg && "active")}
-                style={{ background: color.bg, borderColor: draft.bg === color.bg ? "#0f766e" : color.ring }}
-                onClick={() => update({ bg: color.bg, ring: color.ring })}
-                aria-label={`Color ${color.bg}`}
-              />
-            ))}
-          </div>
-        </div>
+              <div className="mt-5">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Iconos de personalidad</p>
+                <div className="token-customizer-grid mt-2">
+                  {tokenIconPresets.map((preset) => {
+                    const Icon = tokenIconMap[preset.id];
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={cx("token-option", draft.icon === preset.id && "active")}
+                        onClick={() => update({ icon: preset.id, label: preset.label.slice(0, 4).toUpperCase() })}
+                        title={`${preset.label} - ${preset.copy}`}
+                      >
+                        {Icon && <Icon size={18} />}
+                        <span>{preset.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <ActionButton onClick={applyAndClose}>Guardar ficha</ActionButton>
-          <ActionButton tone="secondary" onClick={() => { onReset(); onClose(); }}>Restablecer</ActionButton>
-          <ActionButton tone="secondary" onClick={onClose}>Cancelar</ActionButton>
+              <div className="mt-5">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Figura</p>
+                <div className="token-shape-row mt-2">
+                  {tokenShapes.map((shape) => (
+                    <button
+                      key={shape.id}
+                      type="button"
+                      className={cx(draft.shape === shape.id && "active")}
+                      onClick={() => update({ shape: shape.id })}
+                      title={shape.label}
+                    >
+                      <TokenChip
+                        tokenStyle={{ label: draft.label || "A", icon: draft.icon || "", bg: draft.bg, ring: draft.ring, fg: draft.fg || "#ffffff", shape: shape.id, emoji: isEmojiToken(draft.label) }}
+                        className="h-9 w-9 text-xs"
+                      />
+                      <span className="ml-2 align-middle text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#23160c]">{shape.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-5">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Interior</p>
+                <div className="token-color-row mt-2">
+                  {tokenColorChoices.map((color) => (
+                    <button
+                      key={`bg-${color}`}
+                      type="button"
+                      className={cx("token-color-swatch", draft.bg === color && "active")}
+                      style={{ background: color, borderColor: draft.bg === color ? "#0f766e" : "rgba(35,22,12,0.18)" }}
+                      onClick={() => update({ bg: color })}
+                      aria-label={`Color interior ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Exterior</p>
+                <div className="token-color-row mt-2">
+                  {tokenColorChoices.map((color) => (
+                    <button
+                      key={`ring-${color}`}
+                      type="button"
+                      className={cx("token-color-swatch token-color-ring", draft.ring === color && "active")}
+                      style={{ background: color, borderColor: draft.ring === color ? "#0f766e" : color }}
+                      onClick={() => update({ ring: color })}
+                      aria-label={`Color exterior ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4">
+                <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Color de figura</p>
+                <div className="token-color-row mt-2">
+                  {tokenFigureColorChoices.map((color) => (
+                    <button
+                      key={`fg-${color}`}
+                      type="button"
+                      className={cx("token-color-swatch token-color-glyph", (draft.fg || "#ffffff") === color && "active")}
+                      style={{ background: color, borderColor: (draft.fg || "#ffffff") === color ? "#0f766e" : "rgba(35,22,12,0.18)" }}
+                      onClick={() => update({ fg: color })}
+                      aria-label={`Color de figura ${color}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="token-customizer-actions">
+              <ActionButton onClick={applyAndClose}>Guardar ficha</ActionButton>
+              <ActionButton tone="secondary" onClick={() => { onReset(); onClose(); }}>Restablecer</ActionButton>
+              <ActionButton tone="secondary" onClick={onClose}>Cancelar</ActionButton>
+            </div>
+          </section>
         </div>
       </div>
     </div>
+  );
+}
+
+function GameLayout({ children }) {
+  return <section className="monopoly-game-layout">{children}</section>;
+}
+
+function TopHud({
+  tableName,
+  state,
+  currentPlayer,
+  myPlayer,
+  myTokenStyle,
+  turnCountdown,
+  onToken,
+  onRules,
+  onMenu,
+  onLeave,
+  onSurrender,
+  onCloseTable,
+  canLeave,
+  canSurrender,
+  canCloseTable
+}) {
+  return (
+    <header className="monopoly-top-hud">
+      <div className="monopoly-hud-title">
+        <div className="monopoly-logo monopoly-hud-logo">MONOPOLY</div>
+        <div className="min-w-0">
+          <p className="monopoly-hud-kicker">{tableName || "Mesa Monopoly"}</p>
+          <h2>{currentPlayer?.name || "Partida"}</h2>
+        </div>
+      </div>
+
+      <div className="monopoly-hud-stats">
+        <div className="monopoly-hud-pill is-current">
+          <TokenChip tokenStyle={myTokenStyle} className="h-8 w-8 text-xs" />
+          <div>
+            <span>Turno</span>
+            <strong>{currentPlayer?.name || "-"}</strong>
+          </div>
+        </div>
+        <div className="monopoly-hud-pill">
+          <Wallet size={18} />
+          <div>
+            <span>Dinero</span>
+            <strong><Money amount={myPlayer?.cash || 0} /></strong>
+          </div>
+        </div>
+        <div className="monopoly-hud-pill">
+          <Building2 size={18} />
+          <div>
+            <span>Props</span>
+            <strong>{myPlayer?.properties?.length || 0}</strong>
+          </div>
+        </div>
+        <div className="monopoly-hud-pill">
+          <TimerReset size={18} />
+          <div>
+            <span>Reloj</span>
+            <strong>{turnCountdown}</strong>
+          </div>
+        </div>
+        <div className="monopoly-hud-pill">
+          <Sparkles size={18} />
+          <div>
+            <span>Estado</span>
+            <strong>{phaseLabel[state.turn.phase] || state.turn.phase}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="monopoly-hud-actions">
+        <button type="button" className="monopoly-icon-button" onClick={onToken} title="Personalizar ficha">
+          <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
+        </button>
+        <button type="button" className="monopoly-icon-button" onClick={onRules} title="Reglas">
+          <Info size={18} />
+        </button>
+        <button type="button" className="monopoly-icon-button" onClick={onMenu} title="Menu de mesa">
+          <MapIcon size={18} />
+        </button>
+        <div className="monopoly-table-menu">
+          <ActionButton tone="secondary" onClick={onLeave} disabled={!canLeave}>
+            <DoorOpen size={16} />
+            Salir
+          </ActionButton>
+          <ActionButton tone="danger" onClick={onSurrender} disabled={!canSurrender}>
+            <AlertTriangle size={16} />
+            Rendirse
+          </ActionButton>
+          {canCloseTable && (
+            <ActionButton tone="secondary" onClick={onCloseTable}>
+              <LogOut size={16} />
+              Cerrar
+            </ActionButton>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function BoardArea({
+  board,
+  selectedSpace,
+  coloredPlayersById,
+  playersById,
+  displayBoardPlayers,
+  state,
+  tokenStylesById,
+  cameraFocus,
+  cinematic,
+  prompt,
+  diceFaces,
+  rollingDice,
+  myPlayer,
+  isMyTurn,
+  myActions,
+  pendingPurchaseSpace,
+  pendingTax,
+  pendingDebt,
+  pendingCard,
+  auction,
+  bidAmount,
+  setBidAmount,
+  canBidAuction,
+  canPassAuction,
+  onAction,
+  onSelect
+}) {
+  const locked = rollingDice || Boolean(cinematic);
+
+  return (
+    <section className="monopoly-board-area" aria-label="Tablero de Monopoly">
+      <div className="monopoly-table-shell monopoly-board-shell-main monopoly-board-stage">
+        <div className="monopoly-board-viewport monopoly-board-viewport-main">
+          <div
+            className={cx("monopoly-board", cameraFocus && "cam-zoom")}
+            style={cameraFocus ? {
+              "--cam-x": `${cameraFocus.x}%`,
+              "--cam-y": `${cameraFocus.y}%`,
+              "--cam-scale": cameraFocus.scale
+            } : undefined}
+          >
+            {board.map((space) => (
+              <BoardSpace
+                key={space.id}
+                space={space}
+                owner={space.ownerId ? coloredPlayersById.get(space.ownerId) || playersById.get(space.ownerId) : null}
+                players={displayBoardPlayers.filter((player) => player.position === space.index && !player.bankrupt)}
+                selected={selectedSpace?.id === space.id}
+                current={displayBoardPlayers.find((player) => player.id === state.currentPlayerId)?.position === space.index}
+                onSelect={onSelect}
+                showTokens={false}
+                cameraTarget={cameraFocus?.spaceIndex === space.index}
+                tokenStyles={tokenStylesById}
+              />
+            ))}
+
+            <TokenOverlay
+              players={displayBoardPlayers.filter((player) => !player.bankrupt)}
+              currentPlayerId={state.currentPlayerId}
+              tokenStyles={tokenStylesById}
+              moverId={cinematic?.playerId}
+              moverPhase={cinematic?.phase}
+            />
+
+            <div className={cx("monopoly-center", cinematic?.phase === "dice" && "de-emphasized", cinematic?.phase === "move" && "board-live", cinematic?.phase === "settle" && "board-live")}>
+              <div className="monopoly-board-core">
+                <div className={cx("monopoly-callout monopoly-center-callout", prompt?.tone && `tone-${prompt.tone}`)}>
+                  <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] truncate">
+                    {cinematic?.phase === "dice" ? "Dados en mesa" : cinematic?.phase === "move" ? "Ficha en movimiento" : cinematic?.phase === "settle" ? "Casilla enfocada" : prompt?.eyebrow}
+                  </p>
+                  <h2 className="mt-1 text-xl font-black uppercase leading-tight line-clamp-2">
+                    {cinematic?.phase === "dice"
+                      ? `${playersById.get(cinematic.playerId)?.name || "Jugador"} esta lanzando`
+                      : cinematic?.phase === "move"
+                        ? "La ficha avanza casilla por casilla"
+                        : cinematic?.phase === "settle"
+                          ? "Resolviendo la casilla"
+                          : prompt?.title}
+                  </h2>
+                </div>
+
+                <div className="monopoly-board-dice-lockup">
+                  <div className="monopoly-center-dice" aria-live="polite">
+                    <Dice value={diceFaces[0]} rolling={rollingDice} size={64} />
+                    <Dice value={diceFaces[1]} rolling={rollingDice} size={64} />
+                  </div>
+                  <p className="monopoly-center-dice-total">
+                    {rollingDice || cinematic
+                      ? "Lanzando dados..."
+                      : state.turn.lastRoll
+                        ? `Total ${state.turn.lastRoll.total}`
+                        : "Listo para tirar"}
+                  </p>
+                  <div className="monopoly-logo monopoly-logo-sm">MONOPOLY</div>
+                </div>
+
+                <div className="monopoly-center-stats-row">
+                  <div className="monopoly-center-stat">
+                    <Wallet size={16} />
+                    <div className="min-w-0">
+                      <p>Efectivo</p>
+                      <Money amount={myPlayer?.cash || 0} className="block text-sm font-black text-[#14532d] truncate" />
+                    </div>
+                  </div>
+                  <div className="monopoly-center-stat">
+                    <Crown size={16} />
+                    <div className="min-w-0">
+                      <p>Lider</p>
+                      <span className="block text-sm font-black text-[#23160c] truncate">{state.ranking[0]?.name || "-"}</span>
+                    </div>
+                  </div>
+                  <div className="monopoly-center-stat">
+                    <Dice5 size={16} />
+                    <div className="min-w-0">
+                      <p>Turno</p>
+                      <span className="block text-sm font-black text-[#23160c] truncate">{state.turn.turnNumber}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <BoardCenterActions
+                  locked={locked}
+                  isMyTurn={isMyTurn}
+                  myActions={myActions}
+                  pendingPurchaseSpace={pendingPurchaseSpace}
+                  pendingTax={pendingTax}
+                  pendingDebt={pendingDebt}
+                  pendingCard={pendingCard}
+                  auction={auction}
+                  playersById={playersById}
+                  bidAmount={bidAmount}
+                  setBidAmount={setBidAmount}
+                  canBidAuction={canBidAuction}
+                  canPassAuction={canPassAuction}
+                  onAction={onAction}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function VictoryCeremony({ state, playersById, currentUserId, onExit }) {
+  if (!state?.winnerId) return null;
+
+  const winner = playersById.get(state.winnerId);
+  const isWinner = sameEntityId(state.winnerId, currentUserId);
+  const podium = (state.ranking || []).slice(0, 3);
+
+  return (
+    <div className="monopoly-victory-overlay" role="dialog" aria-modal="true" aria-label="Resultado de la partida">
+      <section className={cx("monopoly-victory-card", isWinner ? "is-winner" : "is-defeat")}>
+        <div className="monopoly-victory-crown">
+          {isWinner ? <Crown size={42} /> : <Trophy size={42} />}
+        </div>
+        <p className="monopoly-victory-kicker">{isWinner ? "Victoria total" : "Partida terminada"}</p>
+        <h2>{winner?.name || "Jugador"} domina el tablero</h2>
+        <p className="monopoly-victory-copy">
+          {isWinner
+            ? "Tus rivales quedaron fuera y el tablero queda bajo tu control."
+            : "La mesa se cerro y el resultado final ya esta registrado."}
+        </p>
+
+        <div className="monopoly-victory-podium">
+          {podium.map((entry, index) => (
+            <article key={entry.playerId} className={cx(index === 0 && "champion")}>
+              <span>{index + 1}</span>
+              <strong>{entry.name}</strong>
+              <Money amount={entry.wealth} />
+            </article>
+          ))}
+        </div>
+
+        <button type="button" className="monopoly-menu-button primary compact" onClick={onExit}>
+          <DoorOpen size={18} /> Volver al lobby
+        </button>
+      </section>
+    </div>
+  );
+}
+
+function BoardCenterActions({
+  locked,
+  isMyTurn,
+  myActions,
+  pendingPurchaseSpace,
+  pendingTax,
+  pendingDebt,
+  pendingCard,
+  auction,
+  playersById,
+  bidAmount,
+  setBidAmount,
+  canBidAuction,
+  canPassAuction,
+  onAction
+}) {
+  const canAct = isMyTurn && myActions.length > 0;
+
+  if (locked) {
+    return (
+      <div className="monopoly-center-action-zone is-locked">
+        <span>Animacion en curso</span>
+      </div>
+    );
+  }
+
+  if (!canAct && !auction) {
+    return (
+      <div className="monopoly-center-action-zone is-passive">
+        <span>{isMyTurn ? "Esperando resolucion" : "Observando turno rival"}</span>
+      </div>
+    );
+  }
+
+  if (isMyTurn && myActions.includes("tirarDados")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" onClick={() => onAction("tirarDados")}>
+          <Dice5 size={22} />
+          Tirar dados
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (pendingPurchaseSpace && isMyTurn && myActions.includes("comprarPropiedad")) {
+    return (
+      <div className="monopoly-center-action-zone is-decision">
+        <div className="monopoly-board-decision-copy">
+          <span>Propiedad disponible</span>
+          <strong>{pendingPurchaseSpace.name}</strong>
+          <em>{moneyFormatter.format(pendingPurchaseSpace.price || 0)}</em>
+        </div>
+        <div className="monopoly-board-action-row">
+          <ActionButton onClick={() => onAction("comprarPropiedad")}>Comprar</ActionButton>
+          <ActionButton tone="danger" onClick={() => onAction("rechazarCompra")}>Subastar</ActionButton>
+        </div>
+      </div>
+    );
+  }
+
+  if (pendingCard && isMyTurn && myActions.includes("resolverCarta")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" onClick={() => onAction("resolverCarta")}>
+          <Receipt size={20} />
+          Tomar carta
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (isMyTurn && myActions.includes("pagarRenta")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" tone="secondary" onClick={() => onAction("pagarRenta")}>
+          <Wallet size={22} />
+          Pagar renta
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (pendingTax && isMyTurn && myActions.includes("pagarImpuesto")) {
+    return (
+      <div className="monopoly-center-action-zone is-decision">
+        <div className="monopoly-board-decision-copy">
+          <span>Impuesto</span>
+          <strong>Elige pago</strong>
+        </div>
+        <div className="monopoly-board-action-row">
+          <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "FIXED" })}>
+            Fijo {moneyFormatter.format(pendingTax.fixedAmount)}
+          </ActionButton>
+          <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "PERCENT" })}>
+            Patrimonio {moneyFormatter.format(pendingTax.percentAmount)}
+          </ActionButton>
+        </div>
+      </div>
+    );
+  }
+
+  if (auction) {
+    return (
+      <div className="monopoly-center-action-zone is-decision">
+        <div className="monopoly-board-decision-copy">
+          <span>Subasta</span>
+          <strong>{playersById.get(auction.activeBidderId)?.name || "Jugador"}</strong>
+          <em>{moneyFormatter.format(auction.currentBid || 0)}</em>
+        </div>
+        {(canBidAuction || canPassAuction) && (
+          <div className="monopoly-board-auction-row">
+            {canBidAuction && (
+              <>
+                <input
+                  className="monopoly-input"
+                  type="number"
+                  min={(auction.currentBid || 0) + 1}
+                  value={bidAmount}
+                  onChange={(event) => setBidAmount(Number(event.target.value))}
+                />
+                <ActionButton onClick={() => onAction("hacerOferta", { monto: bidAmount })}>Ofertar</ActionButton>
+              </>
+            )}
+            {canPassAuction && <ActionButton tone="danger" onClick={() => onAction("retirarseDeSubasta")}>Pasar</ActionButton>}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (isMyTurn && myActions.includes("pagarMultaCarcel")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" tone="secondary" onClick={() => onAction("pagarMultaCarcel")}>
+          Pagar multa
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (isMyTurn && myActions.includes("usarCartaSalirCarcel")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" tone="secondary" onClick={() => onAction("usarCartaSalirCarcel")}>
+          Usar carta
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (pendingDebt && isMyTurn && myActions.includes("resolverDeudaPendiente")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" onClick={() => onAction("resolverDeudaPendiente")}>
+          Pagar deuda
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (isMyTurn && myActions.includes("terminarTurno")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" onClick={() => onAction("terminarTurno")}>
+          <TimerReset size={22} />
+          Terminar turno
+        </ActionButton>
+      </div>
+    );
+  }
+
+  if (isMyTurn && myActions.includes("resolverQuiebra")) {
+    return (
+      <div className="monopoly-center-action-zone">
+        <ActionButton className="monopoly-board-main-action" tone="danger" onClick={() => onAction("resolverQuiebra")}>
+          Declarar quiebra
+        </ActionButton>
+      </div>
+    );
+  }
+
+  return (
+    <div className="monopoly-center-action-zone is-passive">
+      <span>Esperando mesa</span>
+    </div>
+  );
+}
+
+function TurnActionPanel({
+  state,
+  currentPlayer,
+  isMyTurn,
+  prompt,
+  myActions,
+  pendingPurchaseSpace,
+  pendingTax,
+  pendingDebt,
+  pendingCard,
+  auction,
+  playersById,
+  bidAmount,
+  setBidAmount,
+  canBidAuction,
+  canPassAuction,
+  onAction,
+  onOpenRanking,
+  onOpenTrade
+}) {
+  const canAct = isMyTurn && myActions.length > 0;
+
+  return (
+    <aside className="monopoly-turn-panel">
+      <div className={cx("monopoly-turn-card", prompt?.tone && `tone-${prompt.tone}`)}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="monopoly-panel-eyebrow">{prompt?.eyebrow || "Turno"}</p>
+            <h3>{prompt?.title || "Esperando accion"}</h3>
+            <p>{prompt?.body || "La mesa esta lista."}</p>
+          </div>
+          <span className={cx("monopoly-chip", isMyTurn ? "bg-[#0f766e] text-white" : "bg-[#ece3cf] text-[#23160c]")}>
+            {isMyTurn ? "Tu turno" : currentPlayer?.name || "Mesa"}
+          </span>
+        </div>
+      </div>
+
+      {rollingContextLabel(state.turn.phase, isMyTurn, canAct) && (
+        <div className="monopoly-step-hint">
+          <Sparkles size={18} />
+          <span>{rollingContextLabel(state.turn.phase, isMyTurn, canAct)}</span>
+        </div>
+      )}
+
+      <div className="monopoly-context-actions">
+        {isMyTurn && myActions.includes("tirarDados") && (
+          <ActionButton className="monopoly-main-turn-button" onClick={() => onAction("tirarDados")}>
+            <Dice5 size={22} />
+            Tirar dados
+          </ActionButton>
+        )}
+
+        {pendingPurchaseSpace && isMyTurn && myActions.includes("comprarPropiedad") && (
+          <div className="monopoly-context-box is-buy">
+            <p className="monopoly-panel-eyebrow">Propiedad disponible</p>
+            <h4>{pendingPurchaseSpace.name}</h4>
+            <div className="monopoly-mini-stats">
+              <span>Precio <strong>{moneyFormatter.format(pendingPurchaseSpace.price || 0)}</strong></span>
+              <span>Renta <strong>{moneyFormatter.format(pendingPurchaseSpace.rent || pendingPurchaseSpace.baseRent || 0)}</strong></span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <ActionButton onClick={() => onAction("comprarPropiedad")}>Comprar propiedad</ActionButton>
+              <ActionButton tone="danger" onClick={() => onAction("rechazarCompra")}>Subastar</ActionButton>
+            </div>
+          </div>
+        )}
+
+        {pendingCard && isMyTurn && myActions.includes("resolverCarta") && (
+          <div className="monopoly-context-box is-card">
+            <p className="monopoly-panel-eyebrow">{pendingCard.deck === "CASUALIDAD" ? "Casualidad" : "Arca comunal"}</p>
+            <h4>{pendingCard.card?.title || "Carta activa"}</h4>
+            <p>{pendingCard.card?.text || "Resuelve el efecto de la carta."}</p>
+            <ActionButton onClick={() => onAction("resolverCarta")}>
+              <Receipt size={18} />
+              Tomar carta
+            </ActionButton>
+          </div>
+        )}
+
+        {isMyTurn && myActions.includes("pagarRenta") && (
+          <ActionButton className="monopoly-main-turn-button" tone="secondary" onClick={() => onAction("pagarRenta")}>
+            <Wallet size={22} />
+            Pagar renta
+          </ActionButton>
+        )}
+
+        {pendingTax && isMyTurn && myActions.includes("pagarImpuesto") && (
+          <div className="monopoly-context-box is-tax">
+            <p className="monopoly-panel-eyebrow">Impuesto pendiente</p>
+            <h4>Elige como pagar</h4>
+            <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "FIXED" })}>
+              Pagar fijo - {moneyFormatter.format(pendingTax.fixedAmount)}
+            </ActionButton>
+            <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "PERCENT" })}>
+              Pagar patrimonio - {moneyFormatter.format(pendingTax.percentAmount)}
+            </ActionButton>
+          </div>
+        )}
+
+        {auction && (
+          <div className="monopoly-context-box is-auction">
+            <p className="monopoly-panel-eyebrow">Subasta en vivo</p>
+            <h4>{playersById.get(auction.activeBidderId)?.name || "Jugador"} decide</h4>
+            <p>Puja actual: {moneyFormatter.format(auction.currentBid || 0)}</p>
+            {(canBidAuction || canPassAuction) && (
+              <div className="grid gap-2">
+                {canBidAuction && (
+                  <>
+                    <input
+                      className="monopoly-input"
+                      type="number"
+                      min={(auction.currentBid || 0) + 1}
+                      value={bidAmount}
+                      onChange={(event) => setBidAmount(Number(event.target.value))}
+                    />
+                    <ActionButton onClick={() => onAction("hacerOferta", { monto: bidAmount })}>
+                      <Gavel size={18} />
+                      Ofertar
+                    </ActionButton>
+                  </>
+                )}
+                {canPassAuction && <ActionButton tone="danger" onClick={() => onAction("retirarseDeSubasta")}>Pasar</ActionButton>}
+              </div>
+            )}
+          </div>
+        )}
+
+        {isMyTurn && myActions.includes("pagarMultaCarcel") && (
+          <ActionButton tone="secondary" onClick={() => onAction("pagarMultaCarcel")}>
+            <PauseCircle size={18} />
+            Pagar multa
+          </ActionButton>
+        )}
+
+        {isMyTurn && myActions.includes("usarCartaSalirCarcel") && (
+          <ActionButton tone="secondary" onClick={() => onAction("usarCartaSalirCarcel")}>
+            <ShieldAlert size={18} />
+            Usar carta
+          </ActionButton>
+        )}
+
+        {pendingDebt && isMyTurn && myActions.includes("resolverDeudaPendiente") && (
+          <ActionButton onClick={() => onAction("resolverDeudaPendiente")}>
+            <Hammer size={18} />
+            Pagar deuda - {moneyFormatter.format(pendingDebt.amount)}
+          </ActionButton>
+        )}
+
+        {isMyTurn && myActions.includes("terminarTurno") && (
+          <ActionButton className="monopoly-main-turn-button" onClick={() => onAction("terminarTurno")}>
+            <TimerReset size={22} />
+            Terminar turno
+          </ActionButton>
+        )}
+
+        {isMyTurn && myActions.includes("resolverQuiebra") && (
+          <ActionButton tone="danger" onClick={() => onAction("resolverQuiebra")}>
+            <AlertTriangle size={18} />
+            Declarar quiebra
+          </ActionButton>
+        )}
+
+        {!canAct && (
+          <div className="monopoly-wait-card">
+            <HourglassMessage />
+            <div>
+              <strong>{isMyTurn ? "Sin acciones pendientes" : "Observando la mesa"}</strong>
+              <span>{isMyTurn ? "El motor abrira la siguiente decision cuando corresponda." : "Cuando sea tu turno, este panel cambiara automaticamente."}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="monopoly-secondary-actions">
+        <button type="button" onClick={onOpenTrade}>
+          <Scale size={16} />
+          Negocios
+        </button>
+        <button type="button" onClick={onOpenRanking}>
+          <Trophy size={16} />
+          Ranking
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function rollingContextLabel(phase, isMyTurn, canAct) {
+  if (!isMyTurn) return "Sigue el movimiento rival desde el tablero.";
+  if (!canAct) return "El siguiente paso aparecera automaticamente.";
+  if (phase === "AWAITING_ROLL") return "Es tu turno: tira los dados.";
+  if (phase === "AWAITING_PURCHASE_DECISION") return "Decide si compras o abres subasta.";
+  if (phase === "AWAITING_RENT_CLAIM") return "Confirma el pago de renta.";
+  if (phase === "AWAITING_TURN_END") return "Accion resuelta: cierra tu turno.";
+  return "Resuelve la accion destacada para continuar.";
+}
+
+function PlayerStatusBar({ players, currentUserId, currentPlayerId, tokenStylesById, customTokens }) {
+  return (
+    <div className="monopoly-player-strip">
+      {players.map((player, index) => (
+        <article
+          key={player.id}
+          className={cx(
+            "monopoly-player-chip-card",
+            player.id === currentPlayerId && "active",
+            player.bankrupt && "bankrupt"
+          )}
+        >
+          <TokenChip tokenStyle={tokenStylesById[player.id] || resolveTokenStyle({ ...player, colorIndex: index }, customTokens)} className="h-10 w-10 text-xs" />
+          <div className="min-w-0">
+            <strong>{player.name}{sameEntityId(player.id, currentUserId) ? " - tu" : ""}</strong>
+            <span><Money amount={player.cash} /> · {player.properties.length} props</span>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function PropertySummary({ player, onSelect, onOpenTrade }) {
+  const groups = useMemo(() => {
+    const next = new Map();
+    (player?.properties || []).forEach((property) => {
+      const key = property.colorGroup || property.type || "otros";
+      if (!next.has(key)) next.set(key, []);
+      next.get(key).push(property);
+    });
+    return [...next.entries()];
+  }, [player?.properties]);
+
+  return (
+    <div className="monopoly-property-summary">
+      <div className="monopoly-bottom-head">
+        <div>
+          <p className="monopoly-panel-eyebrow">Tus activos</p>
+          <h3>{player?.properties?.length || 0} propiedades</h3>
+        </div>
+        <ActionButton tone="secondary" onClick={onOpenTrade}>
+          <Scale size={16} />
+          Negocios
+        </ActionButton>
+      </div>
+
+      {!player?.properties?.length ? (
+        <div className="monopoly-empty-state">Todavia no controlas ninguna propiedad.</div>
+      ) : (
+        <div className="monopoly-property-groups">
+          {groups.map(([groupKey, properties]) => {
+            const group = colorGroupMeta[groupKey];
+            return (
+              <section key={groupKey} className="monopoly-property-group">
+                <div className="monopoly-property-group-title">
+                  <span style={{ backgroundColor: group?.color || "#d8c8ae" }} />
+                  <strong>{group?.label || groupKey}</strong>
+                  <em>{properties.length}</em>
+                </div>
+                <div className="monopoly-property-mini-list">
+                  {properties.map((property) => (
+                    <button key={property.id} type="button" onClick={() => onSelect(property.id)} title={property.name}>
+                      <span>{property.name}</span>
+                      {property.isMortgaged && <em>Hip.</em>}
+                      {property.hasHotel && <em>Hotel</em>}
+                      {property.houses > 0 && <em>{property.houses} casas</em>}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecentEvents({ events, playersById, boardById }) {
+  const visibleEvents = [...(events || [])].reverse().slice(0, 6);
+  return (
+    <div className="monopoly-recent-events">
+      <div className="monopoly-bottom-head">
+        <div>
+          <p className="monopoly-panel-eyebrow">Ultimos eventos</p>
+          <h3>Bitacora de mesa</h3>
+        </div>
+      </div>
+      {visibleEvents.length === 0 ? (
+        <div className="monopoly-empty-state">Todavia no hay eventos para mostrar.</div>
+      ) : (
+        <div className="monopoly-event-timeline">
+          {visibleEvents.map((event) => {
+            const summary = describeEvent(event, playersById, boardById);
+            return (
+              <article key={`${event.id}-${summary.title}`} className={cx("monopoly-event-line", `tone-${eventTone(event.type)}`)}>
+                <strong>{summary.title}</strong>
+                <span>{summary.body}</span>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BottomDock({
+  activeTab,
+  onTabChange,
+  players,
+  currentUserId,
+  currentPlayerId,
+  tokenStylesById,
+  customTokens,
+  myPlayer,
+  selectedSpace,
+  selectedOwner,
+  selectedVisitors,
+  selectedOwnerProperty,
+  onSelectSpace,
+  onManage,
+  events,
+  playersById,
+  boardById,
+  onOpenTrade,
+  onOpenRanking,
+  onToggleChat
+}) {
+  const tabs = [
+    ["players", "Jugadores", Users],
+    ["assets", "Activos", Building2],
+    ["events", "Eventos", Receipt],
+    ["space", "Casilla", MapIcon]
+  ];
+
+  return (
+    <section className="monopoly-bottom-dock">
+      <div className="monopoly-dock-actions">
+        <button type="button" onClick={onOpenTrade}>
+          <Scale size={16} />
+          Negocios
+        </button>
+        <button type="button" onClick={onOpenRanking}>
+          <Trophy size={16} />
+          Ranking
+        </button>
+        <button type="button" onClick={onToggleChat}>
+          <MessageCircle size={16} />
+          Chat
+        </button>
+      </div>
+
+      <nav className="monopoly-dock-tabs" aria-label="Informacion de mesa">
+        {tabs.map(([id, label, Icon]) => (
+          <button key={id} type="button" className={activeTab === id ? "active" : ""} onClick={() => onTabChange(id)}>
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="monopoly-dock-panel">
+        {activeTab === "players" && (
+          <PlayerStatusBar
+            players={players}
+            currentUserId={currentUserId}
+            currentPlayerId={currentPlayerId}
+            tokenStylesById={tokenStylesById}
+            customTokens={customTokens}
+          />
+        )}
+
+        {activeTab === "assets" && (
+          <PropertySummary player={myPlayer} onSelect={onSelectSpace} onOpenTrade={onOpenTrade} />
+        )}
+
+        {activeTab === "events" && (
+          <RecentEvents events={events} playersById={playersById} boardById={boardById} />
+        )}
+
+        {activeTab === "space" && (
+          <SelectedSpaceCard
+            space={selectedSpace}
+            owner={selectedOwner}
+            visitors={selectedVisitors}
+            ownerProperty={selectedOwnerProperty}
+            managementOptions={selectedOwnerProperty?.management || null}
+            isOwnedByMe={sameEntityId(selectedOwner?.id, currentUserId)}
+            onManage={onManage}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+function RulesModal({ open, onClose }) {
+  if (!open) return null;
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="monopoly-modal tone-warn">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Reglas</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Reglas de esta mesa</h3>
+          </div>
+          <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          {ruleCards.map((rule) => (
+            <article key={rule.title} className="modal-stat-card">
+              <span>{rule.title}</span>
+              <p className="mt-2 text-sm font-semibold leading-6 text-[#6b4b2c]">{rule.body}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RankingModal({ open, onClose, ranking }) {
+  if (!open) return null;
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="monopoly-modal tone-success">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Ranking</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Fortunas</h3>
+          </div>
+          <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="mt-5 grid gap-3">
+          {(ranking || []).map((entry, index) => (
+            <div key={entry.playerId} className="flex items-center justify-between rounded-[18px] border border-[#d8c8ae] bg-white/55 px-4 py-3">
+              <strong className="text-sm uppercase text-[#23160c]">{index + 1}. {entry.name}</strong>
+              <Money amount={entry.wealth} className="font-black text-[#14532d]" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TradeModal({
+  open,
+  onClose,
+  myPlayer,
+  players,
+  currentUserId,
+  propertyTrade,
+  setPropertyTrade,
+  cardTrade,
+  setCardTrade,
+  onAction
+}) {
+  if (!open) return null;
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="monopoly-modal tone-info">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Negocios</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Acciones secundarias</h3>
+            <p className="mt-2 text-sm font-semibold opacity-85">Transferencias y venta de cartas viven aqui para no ensuciar el turno.</p>
+          </div>
+          <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <section className="modal-stat-card">
+            <span>Transferir propiedad</span>
+            <div className="mt-3 grid gap-3">
+              <select
+                className="monopoly-input"
+                value={propertyTrade.propertyId}
+                onChange={(event) => setPropertyTrade((current) => ({ ...current, propertyId: event.target.value }))}
+              >
+                <option value="">Selecciona propiedad</option>
+                {(myPlayer?.properties || []).map((property) => (
+                  <option key={property.id} value={property.id}>{property.name}</option>
+                ))}
+              </select>
+              <select
+                className="monopoly-input"
+                value={propertyTrade.buyerId}
+                onChange={(event) => setPropertyTrade((current) => ({ ...current, buyerId: event.target.value }))}
+              >
+                <option value="">Comprador</option>
+                {players.filter((player) => !sameEntityId(player.id, currentUserId) && !player.bankrupt).map((player) => (
+                  <option key={player.id} value={player.id}>{player.name}</option>
+                ))}
+              </select>
+              <input
+                className="monopoly-input"
+                type="number"
+                min={0}
+                value={propertyTrade.price}
+                onChange={(event) => setPropertyTrade((current) => ({ ...current, price: Number(event.target.value) }))}
+              />
+              <label className="flex items-center gap-3 rounded-[16px] border border-[#d8c8ae] bg-white/70 px-3 py-3 text-sm font-semibold text-[#6b4b2c]">
+                <input
+                  type="checkbox"
+                  checked={propertyTrade.liftMortgage}
+                  onChange={(event) => setPropertyTrade((current) => ({ ...current, liftMortgage: event.target.checked }))}
+                />
+                Levantar hipoteca al transferir
+              </label>
+              <ActionButton
+                tone="secondary"
+                onClick={() => onAction("venderPropiedad", {
+                  compradorId: Number(propertyTrade.buyerId),
+                  propiedadId: propertyTrade.propertyId,
+                  precio: Number(propertyTrade.price),
+                  levantarHipotecaAhora: propertyTrade.liftMortgage
+                })}
+                disabled={!propertyTrade.propertyId || !propertyTrade.buyerId}
+              >
+                Transferir propiedad
+              </ActionButton>
+            </div>
+          </section>
+
+          <section className="modal-stat-card">
+            <span>Vender carta de carcel</span>
+            <div className="mt-3 grid gap-3">
+              <select
+                className="monopoly-input"
+                value={cardTrade.deck}
+                onChange={(event) => setCardTrade((current) => ({ ...current, deck: event.target.value }))}
+              >
+                <option value="CASUALIDAD">Casualidad</option>
+                <option value="ARCA_COMUNAL">Arca comunal</option>
+              </select>
+              <select
+                className="monopoly-input"
+                value={cardTrade.buyerId}
+                onChange={(event) => setCardTrade((current) => ({ ...current, buyerId: event.target.value }))}
+              >
+                <option value="">Comprador</option>
+                {players.filter((player) => !sameEntityId(player.id, currentUserId) && !player.bankrupt).map((player) => (
+                  <option key={player.id} value={player.id}>{player.name}</option>
+                ))}
+              </select>
+              <input
+                className="monopoly-input"
+                type="number"
+                min={0}
+                value={cardTrade.price}
+                onChange={(event) => setCardTrade((current) => ({ ...current, price: Number(event.target.value) }))}
+              />
+              <ActionButton
+                tone="secondary"
+                onClick={() => onAction("comprarCartaSalirCarcel", {
+                  compradorId: Number(cardTrade.buyerId),
+                  deck: cardTrade.deck,
+                  precio: Number(cardTrade.price)
+                })}
+                disabled={!cardTrade.buyerId}
+              >
+                Vender carta
+              </ActionButton>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TableMenuModal({ open, onClose, connectionStatus, currentUser, messages, presence, onSendMessage, customTokens }) {
+  if (!open) return null;
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="monopoly-modal tone-info monopoly-menu-modal">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Menu</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Sala y chat</h3>
+          </div>
+          <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="mt-5">
+          <MonopolySocialRail
+            connectionStatus={connectionStatus}
+            currentUser={currentUser}
+            messages={messages}
+            players={presence}
+            onSendMessage={onSendMessage}
+            customTokens={customTokens}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FloatingChat({ open, onToggle, connectionStatus, currentUser, messages, players = [], onSendMessage, customTokens = {} }) {
+  const [text, setText] = useState("");
+  const [chatError, setChatError] = useState("");
+  const chatRef = useRef(null);
+  const playersById = useMemo(() => {
+    const map = new Map();
+    (players || []).forEach((player, index) => {
+      const id = player?.id ?? player?.userId;
+      if (id != null) {
+        map.set(String(id), { player, index });
+      }
+    });
+    return map;
+  }, [players]);
+
+  useEffect(() => {
+    if (open && chatRef.current) {
+      chatRef.current.scrollTop = chatRef.current.scrollHeight;
+    }
+  }, [open, messages.length]);
+
+  function submit(event) {
+    event.preventDefault();
+    const nextText = text.trim();
+    if (!nextText) return;
+
+    onSendMessage(nextText, (response) => {
+      if (!response?.ok) {
+        setChatError(response?.error || "No se pudo enviar");
+        return;
+      }
+
+      setText("");
+      setChatError("");
+    });
+  }
+
+  return (
+    <div className={cx("monopoly-floating-chat", open && "open")}>
+      {open && (
+        <section className="monopoly-floating-chat-panel">
+          <header>
+            <div>
+              <p className="monopoly-panel-eyebrow">Chat</p>
+              <h3>Mesa</h3>
+            </div>
+            <span className={cx("monopoly-chip", connectionStatus === "online" ? "bg-[#0f766e] text-white" : "bg-[#6b7280] text-white")}>
+              {connectionStatus === "online" ? "En vivo" : "Offline"}
+            </span>
+          </header>
+
+          <div ref={chatRef} className="monopoly-floating-chat-log">
+            {messages.length === 0 ? (
+              <div className="monopoly-empty-state">Aun no hay mensajes.</div>
+            ) : (
+              messages.slice(-40).map((message) => {
+                const isMe = sameEntityId(message.userId, currentUser.id);
+                const participant = playersById.get(String(message.userId));
+                const tokenStyle = resolveTokenStyle({
+                  id: message.userId,
+                  name: message.username,
+                  colorIndex: participant?.index ?? 0,
+                  token: participant?.player?.token
+                }, customTokens);
+                return (
+                  <div key={message.id} className={cx("monopoly-floating-message-row", isMe && "mine")}>
+                    {!isMe && <TokenChip tokenStyle={tokenStyle} className="h-7 w-7 shrink-0 text-[9px]" />}
+                    <div className={cx("monopoly-floating-message", isMe && "mine")}>
+                      <span>{message.username}</span>
+                      <p>{message.text}</p>
+                    </div>
+                    {isMe && <TokenChip tokenStyle={tokenStyle} className="h-7 w-7 shrink-0 text-[9px]" />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <form className="monopoly-floating-chat-form" onSubmit={submit}>
+            <input
+              className="monopoly-input"
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              placeholder="Mensaje..."
+              maxLength={240}
+            />
+            <ActionButton className="px-4">
+              <Send size={18} />
+            </ActionButton>
+          </form>
+
+          {chatError && <div className="monopoly-chat-error">{chatError}</div>}
+        </section>
+      )}
+
+      <button type="button" className="monopoly-floating-chat-button" onClick={onToggle} title={open ? "Cerrar chat" : "Abrir chat"}>
+        {open ? <X size={20} /> : <MessageCircle size={20} />}
+      </button>
+    </div>
+  );
+}
+
+function DiceRollOverlay({ open, diceFaces, rolling, playerName }) {
+  if (!open) return null;
+
+  return (
+    <div className="dice-roll-overlay" aria-hidden="true">
+      <div className="dice-roll-card">
+        <p>{playerName || "Jugador"} tira los dados</p>
+        <div>
+          <Dice value={diceFaces[0]} rolling={rolling} size={92} />
+          <Dice value={diceFaces[1]} rolling={rolling} size={92} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PropertyModal(props) {
+  return <ActionModal {...props} />;
+}
+
+// ============================================================================
+// LOBBY REDISEÑADO
+// Flujo estilo videojuego multijugador:
+//   1) Pantalla principal: tablero como escenario + botones Unirse / Crear.
+//   2) Unirse -> selector de salas (lista de servidores) + contraseña.
+//   3) Crear  -> configuración de sala.
+//   4) Sala de espera al sentarse, antes de que arranque la partida.
+// ============================================================================
+
+function roomStatusMeta(table, currentUserId) {
+  const max = table.maxPlayers || 4;
+  const seated = table.playerCount || 0;
+  const mine = (table.players || []).some((player) => sameEntityId(player.id, currentUserId));
+  const protectedRoom = Boolean(table.isPrivate || table.hasPassword);
+  const full = seated >= max;
+  if (table.status === "FINISHED") return { key: "finished", label: "Finalizada", tone: "muted", mine, full };
+  if (table.status === "PLAYING") return { key: "playing", label: "En partida", tone: "playing", mine, full };
+  if (full) return { key: "full", label: "Llena", tone: "full", mine, full };
+  if (protectedRoom) return { key: "private", label: "Privada", tone: "private", mine, full };
+  return { key: "waiting", label: "Esperando jugadores", tone: "waiting", mine, full };
+}
+
+function LobbyStage({ children, dim = false, overlayClassName = "" }) {
+  return (
+    <div className={cx("monopoly-lobby-stage", dim && "is-dim")}>
+      <div className="monopoly-lobby-board" aria-hidden="true">
+        <div className="monopoly-board monopoly-board-preview monopoly-board-stage">
+          {previewBoard.map((space) => (
+            <BoardSpace
+              key={space.id}
+              space={space}
+              owner={null}
+              players={[]}
+              selected={false}
+              current={false}
+              onSelect={() => {}}
+              showTokens={false}
+            />
+          ))}
+          <div className="monopoly-center monopoly-center-stage">
+            <div className="monopoly-logo monopoly-logo-preview">MONOPOLY</div>
+          </div>
+        </div>
+      </div>
+      <div className={cx("monopoly-lobby-overlay", overlayClassName)}>{children}</div>
+    </div>
+  );
+}
+
+function LobbyMenu({ world, myTokenStyle, onJoin, onCreate, onHelp, onToken, error }) {
+  return (
+    <section className="monopoly-lobby">
+      <div className="monopoly-lobby-topbar">
+        <div className="monopoly-lobby-world">
+          <span className="monopoly-lobby-world-dot" />
+          Mundo · {world.name}
+        </div>
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Personaliza tu ficha">
+          <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
+          <span>Mi ficha</span>
+        </button>
+      </div>
+
+      <LobbyStage overlayClassName="monopoly-lobby-overlay-actions">
+        <div className="monopoly-lobby-actions">
+          <button type="button" className="monopoly-menu-button primary" onClick={onJoin}>
+            <span className="monopoly-menu-button-icon"><LogIn size={26} /></span>
+            <span className="monopoly-menu-button-text">
+              <span className="monopoly-menu-button-title">Unirse a partida</span>
+              <span className="monopoly-menu-button-sub">Explora salas abiertas</span>
+            </span>
+          </button>
+          <button type="button" className="monopoly-menu-button secondary" onClick={onCreate}>
+            <span className="monopoly-menu-button-icon"><PlusCircle size={26} /></span>
+            <span className="monopoly-menu-button-text">
+              <span className="monopoly-menu-button-title">Crear partida</span>
+              <span className="monopoly-menu-button-sub">Configura tu propia sala</span>
+            </span>
+          </button>
+        </div>
+
+        <button type="button" className="monopoly-lobby-help" onClick={onHelp}>
+          <Info size={16} /> Ayuda / Reglas
+        </button>
+
+        {error && <div className="monopoly-lobby-error">{error}</div>}
+      </LobbyStage>
+    </section>
+  );
+}
+
+function RoomCard({ table, currentUserId, onJoin, customTokens = {} }) {
+  const meta = roomStatusMeta(table, currentUserId);
+  const max = table.maxPlayers || 4;
+  const seated = table.playerCount || 0;
+  const protectedRoom = Boolean(table.isPrivate || table.hasPassword);
+  const disabled = (meta.key === "playing" || meta.key === "finished" || meta.full) && !meta.mine;
+  const label = meta.mine ? "Volver" : meta.key === "playing" ? "En curso" : meta.full ? "Llena" : "Unirse";
+
+  return (
+    <article className={cx("monopoly-room-card", `tone-${meta.tone}`)}>
+      <div className="monopoly-room-card-body">
+        <div className="monopoly-room-card-head">
+          {protectedRoom && <Lock size={15} className="monopoly-room-lock" />}
+          <h4 className="monopoly-room-name">{table.name}</h4>
+          <span className={cx("monopoly-room-status", `tone-${meta.tone}`)}>{meta.label}</span>
+        </div>
+        <div className="monopoly-room-meta">
+          <span className={cx("monopoly-room-meta-item", meta.full && "is-full")}>
+            <Users size={14} /> {seated}/{max}
+          </span>
+          <span className="monopoly-room-meta-item">
+            <MapIcon size={14} /> {modeLabel[table.mode] || table.mode}
+          </span>
+          <span className="monopoly-room-meta-item">
+            <TimerReset size={14} /> {table.turnTimeSeconds}s
+          </span>
+          {table.mode === "TIMED" && (
+            <span className="monopoly-room-meta-item">{table.timedMinutes} min</span>
+          )}
+        </div>
+        <div className="monopoly-room-seats">
+          {Array.from({ length: max }, (_, index) => {
+            const player = (table.players || [])[index];
+            const tokenStyle = player
+              ? resolveTokenStyle({ id: player.id, name: player.name, colorIndex: index, token: player.token }, customTokens)
+              : null;
+            return (
+              <span
+                key={index}
+                className={cx("monopoly-room-seat", player ? "is-taken" : "is-open")}
+                title={player ? player.name : "Asiento libre"}
+              >
+                {player ? <TokenChip tokenStyle={tokenStyle} className="h-full w-full text-[8px]" /> : ""}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+      <button
+        type="button"
+        className={cx("monopoly-room-join", meta.mine && "is-mine")}
+        disabled={disabled}
+        onClick={() => onJoin(table)}
+      >
+        {protectedRoom && !meta.mine && <Lock size={15} />}
+        {label}
+      </button>
+    </article>
+  );
+}
+
+function JoinGameModal({ open, onClose, tables, currentUserId, onSelectJoin, customTokens = {} }) {
+  if (!open) return null;
+  const ordered = tables.filter((table) => table.status !== "FINISHED").sort((a, b) => {
+    const rank = (table) => (table.status === "WAITING" ? 0 : table.status === "PLAYING" ? 1 : 2);
+    return rank(a) - rank(b);
+  });
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={onClose}>
+      <div className="monopoly-game-modal monopoly-join-modal" onClick={(event) => event.stopPropagation()}>
+        <header className="monopoly-game-modal-head">
+          <div>
+            <p className="monopoly-game-modal-kicker">Multijugador</p>
+            <h3 className="monopoly-game-modal-title">Salas disponibles</h3>
+          </div>
+          <button type="button" className="monopoly-modal-close" onClick={onClose} aria-label="Cerrar">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="monopoly-room-list">
+          {ordered.length === 0 ? (
+            <div className="monopoly-room-empty">
+              <Sparkles size={28} />
+              <p>No hay salas todavía.</p>
+              <span>Crea la primera y sé el anfitrión.</span>
+            </div>
+          ) : (
+            ordered.map((table) => (
+              <RoomCard key={table.id} table={table} currentUserId={currentUserId} onJoin={onSelectJoin} customTokens={customTokens} />
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PasswordPromptModal({ table, onClose, onSubmit, error }) {
+  const [value, setValue] = useState("");
+  useEffect(() => {
+    setValue("");
+  }, [table?.id]);
+
+  if (!table) return null;
+
+  function submit(event) {
+    event.preventDefault();
+    onSubmit(value);
+  }
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={onClose}>
+      <form className="monopoly-game-modal monopoly-password-modal" onClick={(event) => event.stopPropagation()} onSubmit={submit}>
+        <div className="monopoly-password-icon"><Lock size={26} /></div>
+        <h3 className="monopoly-game-modal-title">Sala protegida</h3>
+        <p className="monopoly-password-copy">«{table.name}» necesita contraseña para entrar.</p>
+        <input
+          className="monopoly-input"
+          type="password"
+          autoFocus
+          value={value}
+          maxLength={32}
+          placeholder="Contraseña"
+          onChange={(event) => setValue(event.target.value)}
+        />
+        {error && <p className="monopoly-form-error">{error}</p>}
+        <div className="monopoly-modal-actions">
+          <button type="button" className="monopoly-ghost-button" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="monopoly-menu-button primary compact">
+            <LogIn size={18} /> Entrar
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function CreateGameModal({
+  open,
+  onClose,
+  tableName,
+  setTableName,
+  mode,
+  setMode,
+  maxPlayers,
+  setMaxPlayers,
+  turnTimeSeconds,
+  setTurnTimeSeconds,
+  timedMinutes,
+  setTimedMinutes,
+  isPrivate,
+  setIsPrivate,
+  tablePassword,
+  setTablePassword,
+  onCreate
+}) {
+  if (!open) return null;
+
+  const canCreate = tableName.trim().length > 0 && (!isPrivate || tablePassword.trim().length > 0);
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={onClose}>
+      <div className="monopoly-game-modal monopoly-create-modal" onClick={(event) => event.stopPropagation()}>
+        <header className="monopoly-game-modal-head">
+          <div>
+            <p className="monopoly-game-modal-kicker">Nueva sala</p>
+            <h3 className="monopoly-game-modal-title">Crear partida</h3>
+          </div>
+          <button type="button" className="monopoly-modal-close" onClick={onClose} aria-label="Cerrar">
+            <X size={20} />
+          </button>
+        </header>
+
+        <div className="monopoly-create-body">
+          <label className="monopoly-field">
+            <span className="monopoly-field-label">Nombre de la partida</span>
+            <input
+              className="monopoly-input"
+              value={tableName}
+              maxLength={48}
+              placeholder="Mesa Monopoly"
+              onChange={(event) => setTableName(event.target.value)}
+            />
+          </label>
+
+          <div className="monopoly-field">
+            <span className="monopoly-field-label">Modo de juego</span>
+            <div className="monopoly-mode-grid">
+              {[
+                { id: "NORMAL", label: "Clásico", copy: "Gana el último solvente" },
+                { id: "SHORT", label: "Corto", copy: "Hoteles con 3 casas" },
+                { id: "TIMED", label: "Con límite", copy: "Gana por riqueza" }
+              ].map((choice) => (
+                <button
+                  key={choice.id}
+                  type="button"
+                  className={cx("monopoly-mode-chip", mode === choice.id && "is-active")}
+                  onClick={() => setMode(choice.id)}
+                >
+                  <span className="monopoly-mode-chip-title">{choice.label}</span>
+                  <span className="monopoly-mode-chip-copy">{choice.copy}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="monopoly-field-row">
+            <label className="monopoly-field">
+              <span className="monopoly-field-label">Máx. jugadores</span>
+              <select className="monopoly-input" value={maxPlayers} onChange={(event) => setMaxPlayers(Number(event.target.value))}>
+                {[2, 3, 4, 5, 6, 7, 8].map((count) => (
+                  <option key={count} value={count}>{count} jugadores</option>
+                ))}
+              </select>
+            </label>
+            <label className="monopoly-field">
+              <span className="monopoly-field-label">Tiempo por turno</span>
+              <select className="monopoly-input" value={turnTimeSeconds} onChange={(event) => setTurnTimeSeconds(Number(event.target.value))}>
+                {[30, 45, 60, 90, 120].map((seconds) => (
+                  <option key={seconds} value={seconds}>{seconds} segundos</option>
+                ))}
+              </select>
+            </label>
+            <label className="monopoly-field">
+              <span className="monopoly-field-label">Duración (min)</span>
+              <input
+                className="monopoly-input"
+                type="number"
+                min={30}
+                max={240}
+                value={timedMinutes}
+                disabled={mode !== "TIMED"}
+                onChange={(event) => setTimedMinutes(Number(event.target.value))}
+              />
+            </label>
+          </div>
+
+          <div className="monopoly-field">
+            <span className="monopoly-field-label">Tipo de sala</span>
+            <div className="monopoly-toggle-grid">
+              <button
+                type="button"
+                className={cx("monopoly-toggle-chip", !isPrivate && "is-active")}
+                onClick={() => setIsPrivate(false)}
+              >
+                <Globe size={18} />
+                <span>Pública</span>
+              </button>
+              <button
+                type="button"
+                className={cx("monopoly-toggle-chip", isPrivate && "is-active")}
+                onClick={() => setIsPrivate(true)}
+              >
+                <Lock size={18} />
+                <span>Privada</span>
+              </button>
+            </div>
+          </div>
+
+          {isPrivate && (
+            <label className="monopoly-field">
+              <span className="monopoly-field-label">Contraseña</span>
+              <input
+                className="monopoly-input"
+                type="text"
+                value={tablePassword}
+                maxLength={32}
+                placeholder="Solo quien la tenga podrá entrar"
+                onChange={(event) => setTablePassword(event.target.value)}
+              />
+            </label>
+          )}
+        </div>
+
+        <div className="monopoly-modal-actions">
+          <button type="button" className="monopoly-ghost-button" onClick={onClose}>Cancelar</button>
+          <button type="button" className="monopoly-menu-button primary compact" disabled={!canCreate} onClick={onCreate}>
+            <PlusCircle size={18} /> Crear partida
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaitingRoom({
+  table,
+  currentUserId,
+  isHost,
+  onStart,
+  onLeave,
+  onCloseTable,
+  onToken,
+  myTokenStyle,
+  connectionStatus,
+  currentUser,
+  messages,
+  onSendMessage,
+  customTokens,
+  error
+}) {
+  const max = table.maxPlayers || 4;
+  const seated = table.playerCount || 0;
+  const seats = Array.from({ length: max }, (_, index) => (table.players || [])[index] || null);
+  const canStart = seated >= 2;
+
+  return (
+    <section className="monopoly-lobby">
+      <div className="monopoly-lobby-topbar">
+        <div className="monopoly-lobby-world">
+          <span className="monopoly-lobby-world-dot waiting" />
+          Sala de espera
+        </div>
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Personaliza tu ficha">
+          <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
+          <span>Mi ficha</span>
+        </button>
+      </div>
+
+      <LobbyStage dim>
+        <div className="monopoly-waitroom">
+          <div className="monopoly-waitroom-main">
+            <div className="monopoly-waitroom-head">
+              {table.isPrivate && <Lock size={16} className="monopoly-room-lock" />}
+              <h3 className="monopoly-waitroom-title">{table.name}</h3>
+              <span className="monopoly-room-status tone-waiting">
+                {table.status === "WAITING" ? "Esperando jugadores" : "Lista"}
+              </span>
+            </div>
+
+            <div className="monopoly-waitroom-tags">
+              <span className="monopoly-room-meta-item"><MapIcon size={14} /> {modeLabel[table.mode] || table.mode}</span>
+              <span className="monopoly-room-meta-item"><TimerReset size={14} /> {table.turnTimeSeconds}s</span>
+              {table.mode === "TIMED" && <span className="monopoly-room-meta-item">{table.timedMinutes} min</span>}
+              <span className="monopoly-room-meta-item">{table.isPrivate ? <><Lock size={14} /> Privada</> : <><Globe size={14} /> Pública</>}</span>
+            </div>
+
+            <p className="monopoly-waitroom-count">{seated}/{max} jugadores en la sala</p>
+
+            <div className="monopoly-waitroom-seats">
+              {seats.map((player, index) => {
+                const tokenStyle = player
+                  ? resolveTokenStyle({ id: player.id, name: player.name, colorIndex: index, token: player.token }, customTokens)
+                  : null;
+                return (
+                <div key={index} className={cx("monopoly-waitroom-seat", player ? "is-taken" : "is-open")}>
+                  <span className="monopoly-waitroom-seat-avatar">
+                    {player ? <TokenChip tokenStyle={tokenStyle} className="h-full w-full text-xs" /> : "+"}
+                  </span>
+                  <span className="monopoly-waitroom-seat-name">
+                    {player ? player.name : "Esperando…"}
+                    {player && sameEntityId(player.id, table.hostId) && <span className="monopoly-waitroom-host">Anfitrión</span>}
+                  </span>
+                </div>
+                );
+              })}
+            </div>
+
+            {error && <div className="monopoly-lobby-error">{error}</div>}
+
+            <div className="monopoly-waitroom-actions">
+              {isHost && (
+                <button type="button" className="monopoly-menu-button primary compact" disabled={!canStart} onClick={onStart}>
+                  <PlayCircle size={18} /> {canStart ? "Iniciar partida" : "Faltan jugadores"}
+                </button>
+              )}
+              <button type="button" className="monopoly-ghost-button" onClick={onLeave}>
+                <DoorOpen size={18} /> Salir
+              </button>
+              {isHost && (
+                <button type="button" className="monopoly-danger-button" onClick={onCloseTable}>
+                  <LogOut size={18} /> Cerrar sala
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      </LobbyStage>
+    </section>
   );
 }
 
@@ -1566,12 +3487,30 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const [cinematic, setCinematic] = useState(null);
   const [customTokens, setCustomTokens] = useState(() => loadCustomTokens());
   const [tokenEditorOpen, setTokenEditorOpen] = useState(false);
+  const [bottomTab, setBottomTab] = useState("players");
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [rankingOpen, setRankingOpen] = useState(false);
+  const [tradeOpen, setTradeOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  // Lobby rediseñado: control de modales y configuración de sala.
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [maxPlayers, setMaxPlayers] = useState(4);
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [tablePassword, setTablePassword] = useState("");
+  const [passwordPrompt, setPasswordPrompt] = useState(null);
+  const [passwordError, setPasswordError] = useState("");
   const seenEventIdsRef = useRef(new Set());
   const lastRollSignatureRef = useRef("");
   const previousSnapshotRef = useRef(null);
   const diceIntervalRef = useRef(null);
   const diceTimeoutRef = useRef(null);
   const cinematicTimeoutsRef = useRef([]);
+  // Bloqueo anti doble-clic / reentrada de acciones (robustez de interaccion).
+  const actionLockRef = useRef(false);
+  const actionLockTimeoutRef = useRef(null);
   const [tick, setTick] = useState(Date.now());
   const currentUserId = Number.isFinite(Number(currentUser.id)) ? Number(currentUser.id) : currentUser.id;
 
@@ -1616,7 +3555,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         return;
       }
       if (payload.tableId && !activeTableId) {
-        const shouldAutoOpen = payload.table?.seatedPlayers?.some((player) => player.id === currentUserId);
+        const shouldAutoOpen = payload.table?.seatedPlayers?.some((player) => sameEntityId(player.id, currentUserId));
         if (!shouldAutoOpen) {
           return;
         }
@@ -1652,6 +3591,10 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   }, []);
 
   useEffect(() => {
+    if (state?.winnerId && activeTableId) {
+      return;
+    }
+
     if (!tables.length) {
       setActiveTableId("");
       setTableMeta(null);
@@ -1664,14 +3607,20 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       return;
     }
 
-    const preferredTable =
-      tables.find((table) => table.players.some((player) => player.id === currentUserId) && table.status !== "FINISHED") ||
-      tables[0];
+    const preferredTable = tables.find((table) =>
+      table.players.some((player) => sameEntityId(player.id, currentUserId)) &&
+      table.status !== "FINISHED"
+    );
 
     if (preferredTable) {
       setActiveTableId(preferredTable.id);
+      return;
     }
-  }, [tables, activeTableId, currentUserId]);
+
+    setActiveTableId("");
+    setTableMeta(null);
+    setState(null);
+  }, [tables, activeTableId, currentUserId, state?.winnerId]);
 
   useEffect(() => {
     if (!socket || !world || !activeTableId) {
@@ -1695,15 +3644,15 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const pendingDebt = state?.turn?.pendingDebt || null;
   const pendingCard = state?.turn?.pendingCard || null;
   const auction = state?.turn?.auction || null;
-  const isMyAuctionTurn = auction?.activeBidderId === currentUserId;
+  const isMyAuctionTurn = sameEntityId(auction?.activeBidderId, currentUserId);
   const canBidAuction = isMyAuctionTurn || myActions.includes("hacerOferta");
   const canPassAuction = isMyAuctionTurn || myActions.includes("retirarseDeSubasta");
   const activeTable = useMemo(
     () => tables.find((table) => table.id === activeTableId) || null,
     [tables, activeTableId]
   );
-  const isSeatedAtActiveTable = Boolean(activeTable?.players.some((player) => player.id === currentUserId));
-  const isHostAtActiveTable = activeTable?.hostId === currentUserId;
+  const isSeatedAtActiveTable = Boolean(activeTable?.players.some((player) => sameEntityId(player.id, currentUserId)));
+  const isHostAtActiveTable = sameEntityId(activeTable?.hostId, currentUserId);
   const turnCountdown = formatCountdown(tableMeta?.turnDeadlineAt || activeTable?.turnDeadlineAt || null);
 
   useEffect(() => {
@@ -1738,18 +3687,83 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   }, [boardPlayers, customTokens]);
 
   const myTokenStyle = useMemo(() => {
-    const me = boardPlayers.find((player) => player.id === currentUserId);
+    const me = boardPlayers.find((player) => sameEntityId(player.id, currentUserId));
     if (me) return resolveTokenStyle(me, customTokens);
     // Fallback for the pre-game lobby (no in-game player yet)
     const fallbackIndex = boardPlayers.length;
     return resolveTokenStyle({ id: currentUserId, name: currentUser.username || "Tú", colorIndex: fallbackIndex }, customTokens);
   }, [boardPlayers, currentUserId, currentUser.username, customTokens]);
 
-  function persistMyToken(next) {
+  useEffect(() => {
+    if (!token) return undefined;
+
+    let active = true;
+    api("/api/monopoly/token", { token })
+      .then((payload) => {
+        if (!active || !payload?.token) return;
+        setCustomTokens((prev) => {
+          const updated = { ...prev, [currentUserId]: payload.token };
+          saveCustomTokens(updated);
+          return updated;
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      active = false;
+    };
+  }, [token, currentUserId]);
+
+  useEffect(() => {
+    const playersWithTokens = [
+      ...tables.flatMap((table) => table.players || []),
+      ...(tableMeta?.seatedPlayers || []),
+      ...(state?.players || [])
+    ].filter((player) => player?.id && player.token);
+
+    if (playersWithTokens.length === 0) return;
+
     setCustomTokens((prev) => {
-      const updated = { ...prev, [currentUserId]: next };
+      let changed = false;
+      const updated = { ...prev };
+      playersWithTokens.forEach((player) => {
+        const current = updated[player.id];
+        if (JSON.stringify(current) !== JSON.stringify(player.token)) {
+          updated[player.id] = player.token;
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        saveCustomTokens(updated);
+      }
+
+      return changed ? updated : prev;
+    });
+  }, [tables, tableMeta?.seatedPlayers, state?.players]);
+
+  function persistMyToken(next) {
+    const normalized = {
+      label: String(next.label || "").trim().slice(0, 4).toUpperCase(),
+      icon: next.icon || "",
+      bg: next.bg,
+      ring: next.ring,
+      fg: next.fg || "#ffffff",
+      shape: next.shape
+    };
+
+    setCustomTokens((prev) => {
+      const updated = { ...prev, [currentUserId]: normalized };
       saveCustomTokens(updated);
       return updated;
+    });
+
+    api("/api/monopoly/token", {
+      method: "PUT",
+      token,
+      body: { token: normalized }
+    }).catch((nextError) => {
+      setError(nextError.message || "No se pudo guardar tu ficha");
     });
   }
 
@@ -1759,6 +3773,13 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       delete updated[currentUserId];
       saveCustomTokens(updated);
       return updated;
+    });
+
+    api("/api/monopoly/token", {
+      method: "DELETE",
+      token
+    }).catch((nextError) => {
+      setError(nextError.message || "No se pudo restablecer tu ficha");
     });
   }
 
@@ -1778,6 +3799,9 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
 
   useEffect(() => {
     if (!board.length) return;
+    // No revelar la casilla/propiedad de aterrizaje hasta que la animacion de
+    // dados + movimiento termine (cinematic === null y sin tirada en curso).
+    if (cinematic || rollingDice) return;
     const focusId =
       pendingPurchaseSpace?.id ||
       board.find((space) => space.index === currentPlayer?.position)?.id ||
@@ -1786,7 +3810,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     if (focusId) {
       setSelectedSpaceId(focusId);
     }
-  }, [board, currentPlayer?.position, pendingPurchaseSpace?.id, state?.turn?.turnNumber, state?.turn?.lastRoll?.total]);
+  }, [board, currentPlayer?.position, pendingPurchaseSpace?.id, state?.turn?.turnNumber, state?.turn?.lastRoll?.total, cinematic, rollingDice]);
 
   const selectedSpace =
     board.find((space) => space.id === selectedSpaceId) ||
@@ -1808,7 +3832,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const modalKey = rawModalState
     ? `${rawModalState.type}:${rawModalState.property?.id || rawModalState.card?.id || rawModalState.auction?.id || rawModalState.debt?.debtorId || state.turn.currentPlayerId}:${state.turn.turnNumber}`
     : "";
-  const activeModal = cinematic
+  const activeModal = (cinematic || rollingDice)
     ? null
     : rawModalState && modalShouldBlock
     ? { ...rawModalState, blocking: true }
@@ -1970,7 +3994,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     if (lastTurnAudioKeyRef.current === key) return;
     lastTurnAudioKeyRef.current = key;
 
-    if (state.currentPlayerId === currentUserId && !state.winnerId) {
+    if (sameEntityId(state.currentPlayerId, currentUserId) && !state.winnerId) {
       // Pequeño delay para no superponer otros audios de cierre del turno previo
       const timeoutId = window.setTimeout(() => {
         audio.play("tuturno");
@@ -1979,6 +4003,29 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     }
     return undefined;
   }, [state?.currentPlayerId, state?.turn?.turnNumber, currentUserId, state?.winnerId]);
+
+  // Cuando la partida termina (winnerId aparece): reproducir audio de victoria y
+  // volver automáticamente al menú/lobby después de unos segundos.
+  const gameEndHandledRef = useRef(false);
+  useEffect(() => {
+    if (!state?.winnerId) {
+      gameEndHandledRef.current = false;
+      return undefined;
+    }
+    if (gameEndHandledRef.current) return undefined;
+    gameEndHandledRef.current = true;
+
+    audio.play("win");
+
+    const timer = window.setTimeout(() => {
+      setActiveTableId("");
+      setTableMeta(null);
+      setState(null);
+      setMenuOpen(false);
+      setChatOpen(false);
+    }, 7000);
+    return () => window.clearTimeout(timer);
+  }, [state?.winnerId]);
 
   // Audio cuando el cinematic cambia a fase "settle" (la ficha llegó a destino).
   // También dispara sonidos especiales de compra cuando llega a propiedades libres.
@@ -2008,7 +4055,10 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       name: tableName,
       mode,
       timedMinutes,
-      turnTimeSeconds
+      turnTimeSeconds,
+      maxPlayers,
+      isPrivate,
+      password: isPrivate ? tablePassword : ""
     }, (response) => {
       if (!response?.ok) {
         setError(response?.error || "No se pudo crear la mesa");
@@ -2020,24 +4070,45 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         setActiveTableId(nextTableId);
       }
       setError("");
+      setCreateOpen(false);
     });
   }
 
-  function joinTable(tableId) {
+  function joinTable(tableId, password = "", { onError } = {}) {
     if (!socket) {
       setError("Socket desconectado");
       return;
     }
 
-    socket.emit("join_monopoly_table", { worldId: world.id, tableId }, (response) => {
+    socket.emit("join_monopoly_table", { worldId: world.id, tableId, password }, (response) => {
       if (!response?.ok) {
-        setError(response?.error || "No se pudo entrar a la mesa");
+        const message = response?.error || "No se pudo entrar a la mesa";
+        setError(message);
+        if (onError) onError(message);
         return;
       }
 
       setActiveTableId(tableId);
       setError("");
+      setJoinOpen(false);
+      setPasswordPrompt(null);
+      setPasswordError("");
     });
+  }
+
+  function requestJoin(table) {
+    const mine = (table.players || []).some((player) => sameEntityId(player.id, currentUserId));
+    if (!mine && (table.isPrivate || table.hasPassword)) {
+      setPasswordError("");
+      setPasswordPrompt(table);
+      return;
+    }
+    joinTable(table.id);
+  }
+
+  function submitPassword(password) {
+    if (!passwordPrompt) return;
+    joinTable(passwordPrompt.id, password, { onError: (message) => setPasswordError(message) });
   }
 
   function startGame() {
@@ -2062,6 +4133,22 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       return;
     }
 
+    // Guard anti doble-clic: si ya hay una accion en vuelo, ignoramos el clic.
+    if (actionLockRef.current) return;
+    actionLockRef.current = true;
+    if (actionLockTimeoutRef.current) window.clearTimeout(actionLockTimeoutRef.current);
+    // Red de seguridad: liberar el bloqueo si el servidor no responde.
+    actionLockTimeoutRef.current = window.setTimeout(() => {
+      actionLockRef.current = false;
+    }, 8000);
+    const releaseActionLock = () => {
+      actionLockRef.current = false;
+      if (actionLockTimeoutRef.current) {
+        window.clearTimeout(actionLockTimeoutRef.current);
+        actionLockTimeoutRef.current = null;
+      }
+    };
+
     // Sonido de feedback de menú/acción
     const audioKey = actionAudioMap[action];
     if (audioKey) {
@@ -2082,6 +4169,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     }
 
     socket.emit("monopoly_action", { worldId: world.id, tableId: activeTableId, action, payload }, (response) => {
+      releaseActionLock();
       if (!response?.ok) {
         if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
         setRollingDice(false);
@@ -2123,6 +4211,11 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         return;
       }
 
+      setActiveTableId("");
+      setTableMeta(null);
+      setState(null);
+      setMenuOpen(false);
+      setChatOpen(false);
       setError("");
     });
   }
@@ -2147,299 +4240,76 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   }
 
   if (!state) {
+    const seatedWaiting = Boolean(activeTable && isSeatedAtActiveTable && activeTable.status === "WAITING");
+
     return (
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_360px]">
-        <div className="monopoly-panel overflow-hidden p-0">
-          <div className="border-b-2 border-[#d3c2a4] bg-[linear-gradient(180deg,#fbf5e8,#f0e2c7)] px-6 py-6">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.28em] text-[#b02016]">Monopoly</p>
-                <h2 className="mt-2 text-4xl font-black uppercase text-[#23160c]">Mesas de Monopoly</h2>
-                <p className="mt-2 max-w-2xl text-sm font-semibold text-[#6b4b2c]">
-                  Crea una mesa, define el reloj por turno y entra a jugar sin perderte: cada mesa tiene reglas visibles, estado claro y controles de anfitrion.
-                </p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setTokenEditorOpen(true)}
-                  className="monopoly-secondary-button"
-                  title="Personaliza tu ficha: elige un emoji, letra o forma propia."
-                >
-                  <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
-                  <span className="ml-1">Mi ficha</span>
-                </button>
-                <div className="flex items-center gap-2 rounded-[18px] border-2 border-[#cdb591] bg-white/75 px-4 py-3 text-sm font-extrabold uppercase tracking-[0.14em] text-[#6b4b2c]">
-                  Mundo - {world.name}
-                  <InfoTip label="Las mesas de Monopoly viven dentro de este mundo. Puedes observar cualquier mesa y sentarte solo en una mesa activa a la vez." />
-                </div>
-              </div>
-            </div>
-          </div>
+      <>
+        {seatedWaiting ? (
+          <WaitingRoom
+            table={activeTable}
+            currentUserId={currentUserId}
+            isHost={isHostAtActiveTable}
+            onStart={startGame}
+            onLeave={leaveTable}
+            onCloseTable={closeTable}
+            onToken={() => setTokenEditorOpen(true)}
+            myTokenStyle={myTokenStyle}
+            connectionStatus={connectionStatus}
+            currentUser={currentUser}
+            messages={messages}
+            onSendMessage={onSendMessage}
+            customTokens={customTokens}
+            error={error}
+          />
+        ) : (
+          <LobbyMenu
+            world={world}
+            myTokenStyle={myTokenStyle}
+            onJoin={() => setJoinOpen(true)}
+            onCreate={() => setCreateOpen(true)}
+            onHelp={() => setHelpOpen(true)}
+            onToken={() => setTokenEditorOpen(true)}
+            error={error}
+          />
+        )}
 
-          <div className="grid gap-6 p-6 2xl:grid-cols-[minmax(0,1.28fr)_360px]">
-            <div className="grid gap-6">
-              <div className="monopoly-table-shell">
-                <div className="monopoly-board monopoly-board-preview">
-                  {previewBoard.map((space) => (
-                    <BoardSpace
-                      key={space.id}
-                      space={space}
-                      owner={null}
-                      players={[]}
-                      selected={false}
-                      current={false}
-                      onSelect={() => {}}
-                      showTokens={false}
-                    />
-                  ))}
-                  <div className="monopoly-center">
-                    <div className="monopoly-logo">MONOPOLY</div>
-                    <div className="mx-auto mt-5 max-w-2xl rounded-[24px] border border-[#d8c8ae] bg-[#fff8ec]/90 p-5 shadow-[0_20px_40px_rgba(0,0,0,0.12)]">
-                      <p className="text-center text-sm font-extrabold uppercase tracking-[0.18em] text-[#6b4b2c]">
-                        Crea tu propia mesa
-                      </p>
-                      <div className="mt-4 grid gap-3">
-                        <label className="grid gap-2">
-                          <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.16em] text-[#7c5d38]">
-                            Nombre de mesa
-                            <InfoTip label="Ponle un nombre corto para distinguirla del resto. Ejemplo: Mesa Clasica, Reloj 60s o Solo valientes." />
-                          </span>
-                          <input
-                            className="monopoly-input"
-                            value={tableName}
-                            maxLength={48}
-                            onChange={(event) => setTableName(event.target.value)}
-                          />
-                        </label>
-
-                        <div className="grid gap-3 sm:grid-cols-3">
-                          {[
-                            { id: "NORMAL", label: "Clasico", copy: "Gana el ultimo jugador solvente" },
-                            { id: "SHORT", label: "Corto", copy: "Hotels con 3 casas; termina antes" },
-                            { id: "TIMED", label: "Con limite", copy: "Se decide por riqueza al acabar el reloj" }
-                          ].map((choice) => (
-                            <button
-                              key={choice.id}
-                              type="button"
-                              title={choice.copy}
-                              className={cx(
-                                "rounded-[20px] border-2 px-4 py-4 text-left transition",
-                                mode === choice.id
-                                  ? "border-[#0f766e] bg-[#ebfaf3] shadow-[0_12px_28px_rgba(15,118,110,0.14)]"
-                                  : "border-[#d3c2a4] bg-[#fff8ec] hover:border-[#bfa57f]"
-                              )}
-                              onClick={() => setMode(choice.id)}
-                            >
-                              <p className="text-sm font-black uppercase text-[#23160c]">{choice.label}</p>
-                              <p className="mt-1 text-xs font-semibold text-[#7c5d38]">{choice.copy}</p>
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="grid gap-2">
-                            <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.16em] text-[#7c5d38]">
-                              Tiempo por turno
-                              <InfoTip label="Cuando el reloj llega a cero, el servidor resuelve la accion minima para que la mesa no quede atorada." />
-                            </span>
-                            <select
-                              className="monopoly-input"
-                              value={turnTimeSeconds}
-                              onChange={(event) => setTurnTimeSeconds(Number(event.target.value))}
-                            >
-                              {[30, 45, 60, 90, 120].map((seconds) => (
-                                <option key={seconds} value={seconds}>{seconds} segundos</option>
-                              ))}
-                            </select>
-                          </label>
-
-                          <label className="grid gap-2">
-                            <span className="flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.16em] text-[#7c5d38]">
-                              Duracion de partida
-                              <InfoTip label="Solo aplica al modo con limite. En Clasico y Corto, la partida termina por quiebras y reglas del modo." />
-                            </span>
-                            <input
-                              className="monopoly-input"
-                              type="number"
-                              min={30}
-                              max={240}
-                              value={timedMinutes}
-                              onChange={(event) => setTimedMinutes(Number(event.target.value))}
-                              disabled={mode !== "TIMED"}
-                            />
-                          </label>
-                        </div>
-
-                        <ActionButton onClick={createTable} tooltip="Crea una mesa nueva y te sienta como anfitrion.">
-                          <PlayCircle size={18} />
-                          Crear mesa
-                        </ActionButton>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid gap-3">
-                <div className="flex items-center gap-3">
-                  <Users size={18} className="text-[#0f766e]" />
-                  <p className="text-sm font-black uppercase text-[#23160c]">Mesas disponibles en {world.name}</p>
-                  <InfoTip label="Puedes observar cualquier mesa. Solo puedes estar sentado en una mesa activa de Monopoly a la vez." />
-                </div>
-                {tables.length === 0 ? (
-                  <div className="rounded-[20px] border-2 border-dashed border-[#d3c2a4] bg-[#fff8ec] px-4 py-6 text-sm font-semibold text-[#7c5d38]">
-                    Aun no hay mesas creadas. La primera mesa buena puede ser tuya.
-                  </div>
-                ) : (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {tables.map((table) => (
-                      <button
-                        key={table.id}
-                        type="button"
-                        className={cx(
-                          "rounded-[20px] border-2 px-4 py-4 text-left transition",
-                          activeTableId === table.id ? "border-[#0f766e] bg-[#eef7f2]" : "border-[#d3c2a4] bg-[#fbf5e8]"
-                        )}
-                        onClick={() => setActiveTableId(table.id)}
-                        title={`Mesa ${table.name}. ${table.playerCount} jugador(es). Turnos de ${table.turnTimeSeconds}s.`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-black uppercase text-[#23160c]">{table.name}</p>
-                            <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.14em] text-[#7c5d38]">
-                              {modeLabel[table.mode] || table.mode} - {table.playerCount} jugadores
-                            </p>
-                          </div>
-                          <span className={cx(
-                            "monopoly-chip",
-                            table.status === "PLAYING" ? "bg-[#0f766e] text-white" : table.status === "FINISHED" ? "bg-[#c08a1a] text-white" : "bg-[#ece3cf] text-[#23160c]"
-                          )}>
-                            {table.status === "WAITING" ? "Lobby" : table.status === "PLAYING" ? "En juego" : "Finalizada"}
-                          </span>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <span className="monopoly-chip bg-[#fff] text-[#23160c]">Turno {table.turnTimeSeconds}s</span>
-                          {table.mode === "TIMED" && <span className="monopoly-chip bg-[#fff] text-[#23160c]">{table.timedMinutes} min</span>}
-                          {table.players.slice(0, 3).map((player) => (
-                            <span key={player.id} className="monopoly-chip bg-[#ece3cf] text-[#23160c]">{player.name}</span>
-                          ))}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <aside className="grid gap-5">
-              <section className="monopoly-panel p-5">
-                <div className="flex items-center gap-3">
-                  <Users size={20} className="text-[#0f766e]" />
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Mesa</p>
-                    <h3 className="text-2xl font-black uppercase text-[#23160c]">Resumen de mesa</h3>
-                  </div>
-                </div>
-                <div className="mt-5 grid gap-3">
-                  {!activeTable ? (
-                    <div className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-5 text-sm font-semibold text-[#7c5d38]">
-                      Selecciona una mesa para ver sus asientos, reloj y reglas activas.
-                    </div>
-                  ) : (
-                    <>
-                      <div className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4">
-                        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#7c5d38]">Nombre</p>
-                        <p className="mt-2 text-2xl font-black text-[#23160c]">{activeTable.name}</p>
-                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#7c5d38]">
-                          {activeTable.status === "WAITING" ? "Esperando jugadores" : activeTable.status === "PLAYING" ? "Partida en curso" : "Partida cerrada"}
-                        </p>
-                      </div>
-                      <div className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4">
-                        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#7c5d38]">Reglas activas</p>
-                        <div className="mt-3 grid gap-2 text-sm font-semibold text-[#6b4b2c]">
-                          <p>Modo: {modeLabel[activeTable.mode] || activeTable.mode}</p>
-                          <p>Reloj por turno: {activeTable.turnTimeSeconds} segundos</p>
-                          {activeTable.mode === "TIMED" && <p>Limite total: {activeTable.timedMinutes} minutos</p>}
-                          <p>Jugadores sentados: {activeTable.playerCount}</p>
-                        </div>
-                      </div>
-                      <div className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4">
-                        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#7c5d38]">Asientos</p>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {activeTable.players.map((player) => (
-                            <span key={player.id} className="monopoly-chip bg-[#ece3cf] text-[#23160c]">
-                              {player.name}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="grid gap-2">
-                        {!isSeatedAtActiveTable && activeTable.status === "WAITING" && (
-                          <ActionButton onClick={() => joinTable(activeTable.id)} tooltip="Te sienta en la mesa seleccionada mientras siga en lobby.">
-                            <PlayCircle size={18} />
-                            Sentarme en mesa
-                          </ActionButton>
-                        )}
-                        {isSeatedAtActiveTable && isHostAtActiveTable && activeTable.status === "WAITING" && (
-                          <ActionButton onClick={startGame} disabled={activeTable.playerCount < 2} tooltip="El anfitrion inicia la partida usando a los jugadores sentados en esta mesa.">
-                            <PlayCircle size={18} />
-                            Iniciar partida
-                          </ActionButton>
-                        )}
-                        {isSeatedAtActiveTable && activeTable.status === "WAITING" && (
-                          <ActionButton tone="secondary" onClick={leaveTable} tooltip="Te levanta de la mesa antes de empezar la partida.">
-                            <DoorOpen size={18} />
-                            Salir de mesa
-                          </ActionButton>
-                        )}
-                        {isHostAtActiveTable && activeTable.status !== "PLAYING" && (
-                          <ActionButton tone="danger" onClick={closeTable} tooltip="Cierra la mesa completa y la elimina del mundo.">
-                            <LogOut size={18} />
-                            Cerrar mesa
-                          </ActionButton>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </section>
-
-              <section className="monopoly-panel p-5">
-                <div className="mb-4 flex items-center gap-3">
-                  <Info size={20} className="text-[#8a5a00]" />
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Reglas</p>
-                    <h3 className="text-2xl font-black uppercase text-[#23160c]">Ayuda rapida</h3>
-                  </div>
-                </div>
-                <div className="grid gap-3">
-                  {ruleCards.map((rule) => (
-                    <div key={rule.title} className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4" title={rule.body}>
-                      <p className="text-sm font-black uppercase text-[#23160c]">{rule.title}</p>
-                      <p className="mt-2 text-sm font-semibold leading-6 text-[#6b4b2c]">{rule.body}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              {error && (
-                <div className="rounded-[20px] border-2 border-[#b91c1c] bg-[#fee2e2] px-4 py-4 text-sm font-bold text-[#7f1d1d]">
-                  {error}
-                </div>
-              )}
-            </aside>
-          </div>
-        </div>
-
-        <MonopolySocialRail
-          connectionStatus={connectionStatus}
-          currentUser={currentUser}
-          messages={messages}
-          players={presence}
-          onSendMessage={onSendMessage}
+        <JoinGameModal
+          open={joinOpen && !seatedWaiting}
+          onClose={() => setJoinOpen(false)}
+          tables={tables}
+          currentUserId={currentUserId}
+          onSelectJoin={requestJoin}
           customTokens={customTokens}
         />
+
+        <CreateGameModal
+          open={createOpen && !seatedWaiting}
+          onClose={() => setCreateOpen(false)}
+          tableName={tableName}
+          setTableName={setTableName}
+          mode={mode}
+          setMode={setMode}
+          maxPlayers={maxPlayers}
+          setMaxPlayers={setMaxPlayers}
+          turnTimeSeconds={turnTimeSeconds}
+          setTurnTimeSeconds={setTurnTimeSeconds}
+          timedMinutes={timedMinutes}
+          setTimedMinutes={setTimedMinutes}
+          isPrivate={isPrivate}
+          setIsPrivate={setIsPrivate}
+          tablePassword={tablePassword}
+          setTablePassword={setTablePassword}
+          onCreate={createTable}
+        />
+
+        <PasswordPromptModal
+          table={passwordPrompt}
+          onClose={() => { setPasswordPrompt(null); setPasswordError(""); }}
+          onSubmit={submitPassword}
+          error={passwordError}
+        />
+
+        <RulesModal open={helpOpen} onClose={() => setHelpOpen(false)} />
 
         <TokenCustomizer
           open={tokenEditorOpen}
@@ -2449,592 +4319,99 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
           onChange={persistMyToken}
           onReset={resetMyToken}
         />
-      </section>
+      </>
     );
   }
 
+  const isMyTurn = sameEntityId(state.currentPlayerId, currentUserId);
+
   return (
-    <section className="grid gap-6">
+    <GameLayout>
       <EventToasts toasts={toasts} onDismiss={dismissToast} playersById={playersById} boardById={boardById} />
-      <div className="monopoly-toolbar">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="monopoly-chip bg-[#b02016] text-white" title="Estas jugando una partida de Monopoly dentro de la mesa seleccionada.">Monopoly</span>
-          <span className="monopoly-chip bg-[#ece3cf] text-[#23160c]" title="Modo de juego actual de la mesa.">
-            {modeLabel[state.mode] || state.mode}
-          </span>
-          <span className="monopoly-chip bg-[#ece3cf] text-[#23160c]" title="Fase exacta del turno segun el motor.">
-            {phaseLabel[state.turn.phase] || state.turn.phase}
-          </span>
-          <span className="monopoly-chip bg-[#fff8ec] text-[#23160c]" title="Tiempo restante antes de que el servidor resuelva automaticamente el turno.">
-            Reloj {turnCountdown}
-          </span>
-          {state.turn.lastRoll && (
-            <span className="monopoly-chip bg-[#0f766e] text-white" title="Ultimo resultado de dados que movio una ficha en esta mesa.">
-              Dados {state.turn.lastRoll.dice.join(" + ")} = {state.turn.lastRoll.total}
-            </span>
-          )}
-          {state.winnerId && (
-            <span className="monopoly-chip bg-[#c08a1a] text-white" title="Ganador segun las reglas del modo actual.">
-              Ganador - {playersById.get(state.winnerId)?.name}
-            </span>
-          )}
+
+      <TopHud
+        tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
+        state={state}
+        currentPlayer={currentPlayer}
+        myPlayer={myPlayer}
+        myTokenStyle={myTokenStyle}
+        turnCountdown={turnCountdown}
+        onToken={() => setTokenEditorOpen(true)}
+        onRules={() => setRulesOpen(true)}
+        onMenu={() => setMenuOpen(true)}
+        onLeave={leaveTable}
+        onSurrender={surrenderGame}
+        onCloseTable={closeTable}
+        canLeave={tableMeta?.status !== "PLAYING" || state?.status === "FINALIZADO" || Boolean(state?.winnerId)}
+        canSurrender={tableMeta?.status === "PLAYING" && state?.status !== "FINALIZADO" && !state?.winnerId && !myPlayer?.bankrupt}
+        canCloseTable={isHostAtActiveTable && (tableMeta?.status !== "PLAYING" || state?.status === "FINALIZADO" || Boolean(state?.winnerId))}
+      />
+
+      {error && (
+        <div className="monopoly-inline-error">
+          <AlertTriangle size={18} />
+          {error}
         </div>
-        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-          <button
-            type="button"
-            onClick={() => setTokenEditorOpen(true)}
-            className="monopoly-secondary-button w-full sm:w-auto"
-            title="Personaliza tu ficha: elige un emoji, letra o forma propia."
-          >
-            <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
-            <span className="ml-1">Mi ficha</span>
-          </button>
-          <ActionButton
-            tone="secondary"
-            onClick={leaveTable}
-            className="w-full sm:w-auto"
-            tooltip="Abandonas la mesa cuando la partida ya termino. Si sigue en curso, usa Rendirse."
-            disabled={tableMeta?.status === "PLAYING"}
-          >
-            <DoorOpen size={18} />
-            Salir mesa
-          </ActionButton>
-          <ActionButton
-            tone="danger"
-            onClick={surrenderGame}
-            className="w-full sm:w-auto"
-            tooltip="Te declaras fuera de la partida. El banco liquida tus activos y la mesa continua."
-            disabled={tableMeta?.status !== "PLAYING" || myPlayer?.bankrupt}
-          >
-            <AlertTriangle size={18} />
-            Rendirse
-          </ActionButton>
-          {isHostAtActiveTable && (
-            <ActionButton
-              tone="secondary"
-              onClick={closeTable}
-              className="w-full sm:w-auto"
-              tooltip="Cierra por completo la mesa seleccionada y la elimina de este mundo."
-              disabled={tableMeta?.status === "PLAYING"}
-            >
-              <LogOut size={18} />
-              Cerrar mesa
-            </ActionButton>
-          )}
-        </div>
-      </div>
+      )}
 
-      <div className="monopoly-play-layout">
-        <div className="grid min-w-0 gap-4">
-          <div className="monopoly-tabletop-row">
-            <div className="monopoly-table-shell monopoly-board-shell-main">
-            <div className="monopoly-board-viewport monopoly-board-viewport-main">
-            <div
-              className={cx("monopoly-board", cameraFocus && "cam-zoom")}
-              style={cameraFocus ? {
-                "--cam-x": `${cameraFocus.x}%`,
-                "--cam-y": `${cameraFocus.y}%`,
-                "--cam-scale": cameraFocus.scale
-              } : undefined}
-            >
-              {board.map((space) => (
-                <BoardSpace
-                  key={space.id}
-                  space={space}
-                  owner={space.ownerId ? coloredPlayersById.get(space.ownerId) || playersById.get(space.ownerId) : null}
-                  players={displayBoardPlayers.filter((player) => player.position === space.index && !player.bankrupt)}
-                  selected={selectedSpace?.id === space.id}
-                  current={displayBoardPlayers.find((player) => player.id === state.currentPlayerId)?.position === space.index}
-                  onSelect={setSelectedSpaceId}
-                  showTokens={false}
-                  cameraTarget={cameraFocus?.spaceIndex === space.index}
-                  tokenStyles={tokenStylesById}
-                />
-              ))}
+      <main className="monopoly-game-main">
+        <BoardArea
+          board={board}
+          selectedSpace={selectedSpace}
+          coloredPlayersById={coloredPlayersById}
+          playersById={playersById}
+          displayBoardPlayers={displayBoardPlayers}
+          state={state}
+          tokenStylesById={tokenStylesById}
+          cameraFocus={cameraFocus}
+          cinematic={cinematic}
+          prompt={prompt}
+          diceFaces={diceFaces}
+          rollingDice={rollingDice}
+          myPlayer={myPlayer}
+          isMyTurn={isMyTurn}
+          myActions={myActions}
+          pendingPurchaseSpace={pendingPurchaseSpace}
+          pendingTax={pendingTax}
+          pendingDebt={pendingDebt}
+          pendingCard={pendingCard}
+          auction={auction}
+          bidAmount={bidAmount}
+          setBidAmount={setBidAmount}
+          canBidAuction={canBidAuction}
+          canPassAuction={canPassAuction}
+          onAction={act}
+          onSelect={setSelectedSpaceId}
+        />
+      </main>
 
-              <TokenOverlay players={displayBoardPlayers.filter((player) => !player.bankrupt)} currentPlayerId={state.currentPlayerId} tokenStyles={tokenStylesById} />
+      <BottomDock
+        activeTab={bottomTab}
+        onTabChange={setBottomTab}
+        players={state.players}
+        currentUserId={currentUserId}
+        currentPlayerId={state.currentPlayerId}
+        tokenStylesById={tokenStylesById}
+        customTokens={customTokens}
+        myPlayer={myPlayer}
+        selectedSpace={selectedSpace}
+        selectedOwner={selectedOwner}
+        selectedVisitors={selectedVisitors}
+        selectedOwnerProperty={selectedOwnerProperty}
+        onSelectSpace={(spaceId) => {
+          setSelectedSpaceId(spaceId);
+          setBottomTab("space");
+        }}
+        onManage={(action, propertyId) => act(action, { propertyId })}
+        events={state.recentEvents || []}
+        playersById={playersById}
+        boardById={boardById}
+        onOpenTrade={() => setTradeOpen(true)}
+        onOpenRanking={() => setRankingOpen(true)}
+        onToggleChat={() => setChatOpen((current) => !current)}
+      />
 
-              <div className={cx("monopoly-center", cinematic?.phase === "dice" && "de-emphasized", cinematic?.phase === "move" && "board-live", cinematic?.phase === "settle" && "board-live")}>
-                <div className="monopoly-center-stack">
-                  <div className={cx("monopoly-callout monopoly-center-callout", prompt?.tone && `tone-${prompt.tone}`)}>
-                    <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] truncate">
-                      {cinematic?.phase === "dice" ? "Lanzamiento en curso" : cinematic?.phase === "move" ? "Recorrido de ficha" : cinematic?.phase === "settle" ? "Casilla de destino" : prompt?.eyebrow}
-                    </p>
-                    <h2 className="mt-1 text-xl font-black uppercase leading-tight line-clamp-2">
-                      {cinematic?.phase === "dice"
-                        ? `${playersById.get(cinematic.playerId)?.name || "Jugador"} está lanzando`
-                        : cinematic?.phase === "move"
-                          ? "La ficha avanza paso a paso"
-                          : cinematic?.phase === "settle"
-                            ? "Preparando la resolución"
-                            : prompt?.title}
-                    </h2>
-                  </div>
-
-                  <div className="monopoly-center-board-block">
-                    <div className="monopoly-logo monopoly-logo-sm">MONOPOLY</div>
-                    <div className="monopoly-center-stats-row">
-                      <div className="monopoly-center-stat">
-                        <Wallet size={16} />
-                        <div className="min-w-0">
-                          <p>Efectivo</p>
-                          <Money amount={myPlayer?.cash || 0} className="block text-sm font-black text-[#14532d] truncate" />
-                        </div>
-                      </div>
-                      <div className="monopoly-center-stat">
-                        <Crown size={16} />
-                        <div className="min-w-0">
-                          <p>Líder</p>
-                          <span className="block text-sm font-black text-[#23160c] truncate">{state.ranking[0]?.name || "-"}</span>
-                        </div>
-                      </div>
-                      <div className="monopoly-center-stat">
-                        <Dice5 size={16} />
-                        <div className="min-w-0">
-                          <p>Turno</p>
-                          <span className="block text-sm font-black text-[#23160c] truncate">{currentPlayer?.name || "-"}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="monopoly-center-action">
-                    {mainQuickAction ? (
-                      <ActionButton onClick={() => act(mainQuickAction.action)} className="min-w-[220px]">
-                        <Sparkles size={18} />
-                        {mainQuickAction.label}
-                      </ActionButton>
-                    ) : (
-                      <span className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38] opacity-70">
-                        {phaseLabel[state.turn.phase] || ""}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-            </div>
-            </div>
-
-            <div className="monopoly-status-strip">
-              <TurnAssist
-                currentPlayer={currentPlayer}
-                isMyTurn={state.currentPlayerId === currentUserId}
-                phase={state.turn.phase}
-                modalState={activeModal}
-                myActions={myActions}
-                onAction={act}
-              />
-              <DiceStage
-                rolling={rollingDice}
-                dice={diceFaces}
-                playerName={playersById.get(cinematic?.playerId || state.currentPlayerId)?.name || currentPlayer?.name}
-                total={state.turn.lastRoll?.total || diceFaces[0] + diceFaces[1]}
-                cinematicActive={cinematic?.phase === "dice"}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="grid gap-5">
-              <section className="monopoly-panel p-5">
-                <div className="mb-4 flex items-center gap-3">
-                  <Users size={20} className="text-[#0f766e]" />
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Jugadores</p>
-                    <h3 className="text-2xl font-black uppercase text-[#23160c]">Mesa activa</h3>
-                  </div>
-                </div>
-                <div className="grid gap-3 lg:grid-cols-2">
-                  {state.players.map((player, index) => (
-                    <PlayerStandee
-                      key={player.id}
-                      player={player}
-                      index={index}
-                      isCurrent={player.id === state.currentPlayerId}
-                      isMe={player.id === currentUserId}
-                      tokenStyle={tokenStylesById[player.id] || resolveTokenStyle({ ...player, colorIndex: index }, customTokens)}
-                    />
-                  ))}
-                </div>
-              </section>
-
-              <SelectedSpaceCard
-                space={selectedSpace}
-                owner={selectedOwner}
-                visitors={selectedVisitors}
-                ownerProperty={selectedOwnerProperty}
-                managementOptions={selectedOwnerProperty?.management || null}
-                isOwnedByMe={selectedOwner?.id === currentUserId}
-                onManage={(action, propertyId) => act(action, { propertyId })}
-              />
-
-              <EventFeed events={state.recentEvents || []} playersById={playersById} boardById={boardById} />
-            </div>
-
-            <aside className="grid gap-4">
-              {myPlayer && (
-                <section className="monopoly-panel p-5">
-                  <div className="mb-4 flex items-center gap-3">
-                    <Building2 size={20} className="text-[#0f766e]" />
-                    <div>
-                      <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Propiedades</p>
-                      <h3 className="text-2xl font-black uppercase text-[#23160c]">Tus activos</h3>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-3">
-                    {myPlayer.properties.length === 0 ? (
-                      <div className="rounded-[20px] border-2 border-dashed border-[#d3c2a4] bg-[#fff8ec] px-4 py-5 text-sm font-semibold text-[#7c5d38]">
-                        Todavia no controlas ninguna propiedad.
-                      </div>
-                    ) : (
-                      myPlayer.properties.map((property) => {
-                        const group = colorGroupMeta[property.colorGroup];
-                        return (
-                          <button
-                            key={property.id}
-                            type="button"
-                            className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4 text-left transition hover:border-[#bfa57f]"
-                            onClick={() => setSelectedSpaceId(property.id)}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-black uppercase text-[#23160c]">{property.name}</p>
-                                <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.14em] text-[#7c5d38]">
-                                  {group?.label || property.type}
-                                </p>
-                              </div>
-                              {group ? (
-                                <span className="h-5 w-12 rounded-full border border-black/15" style={{ backgroundColor: group.color }} />
-                              ) : (
-                                <span className="monopoly-chip bg-[#ece3cf] text-[#23160c]">{property.type}</span>
-                              )}
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <span className="monopoly-chip bg-[#e7f6ed] text-[#14532d]">
-                                <Money amount={property.price} />
-                              </span>
-                              {property.houses > 0 && <span className="monopoly-chip bg-[#d9f8e8] text-[#14532d]">{property.houses} casas</span>}
-                              {property.hasHotel && <span className="monopoly-chip bg-[#fce7f3] text-[#831843]">Hotel</span>}
-                              {property.isMortgaged && <span className="monopoly-chip bg-[#4b5563] text-white">Hipotecada</span>}
-                            </div>
-                          </button>
-                        );
-                      })
-                    )}
-                  </div>
-                </section>
-              )}
-            </aside>
-          </div>
-        </div>
-
-        <aside className="monopoly-action-rail">
-          <section className="monopoly-panel monopoly-action-panel p-4">
-            <div className="mb-4 flex items-center gap-3">
-              <Sparkles size={20} className="text-[#b02016]" />
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Control</p>
-                <h3 className="text-xl font-black uppercase text-[#23160c]">Acciones del turno</h3>
-              </div>
-            </div>
-
-            <div className="monopoly-action-stack">
-              {myActions.includes("tirarDados") && (
-                <ActionButton onClick={() => act("tirarDados")} tooltip="Lanza dos dados. Si sacas dobles, normalmente juegas otra vez; tres dobles seguidos te mandan a la carcel.">
-                  <Dice5 size={18} />
-                  {actionLabel.tirarDados}
-                </ActionButton>
-              )}
-
-              {pendingPurchaseSpace && myActions.includes("comprarPropiedad") && (
-                <div className="rounded-[22px] border-2 border-[#86c9b2] bg-[#edf9f3] p-4">
-                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#0f766e]">Compra pendiente</p>
-                  <p className="mt-2 text-lg font-black uppercase text-[#23160c]">{pendingPurchaseSpace.name}</p>
-                  <p className="mt-1 text-sm font-semibold text-[#6b4b2c]">
-                    Precio de compra: {moneyFormatter.format(pendingPurchaseSpace.price || 0)}
-                  </p>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    <ActionButton onClick={() => act("comprarPropiedad")} tooltip="Pagas el precio impreso y la propiedad pasa a tu inventario.">Comprar</ActionButton>
-                    <ActionButton tone="danger" onClick={() => act("rechazarCompra")} tooltip="Si no compras, el banco abre una subasta para toda la mesa.">Subastar</ActionButton>
-                  </div>
-                </div>
-              )}
-
-              {pendingCard && myActions.includes("resolverCarta") && (
-                <ActionButton onClick={() => act("resolverCarta")} tooltip="Aplica el efecto completo de la carta y deja que el motor resuelva su consecuencia.">
-                  <Receipt size={18} />
-                  Resolver carta
-                </ActionButton>
-              )}
-
-              {myActions.includes("pagarRenta") && (
-                <ActionButton tone="secondary" onClick={() => act("pagarRenta")} tooltip="Confirma el cobro de renta correspondiente a la casilla donde cayo el rival.">
-                  <Wallet size={18} />
-                  Cobrar renta
-                </ActionButton>
-              )}
-
-              {pendingTax && myActions.includes("pagarImpuesto") && (
-                <div className="rounded-[22px] border-2 border-[#e7c98f] bg-[#fff4dc] p-4">
-                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#8a5a00]">Impuesto pendiente</p>
-                  <div className="mt-4 grid gap-2">
-                    <ActionButton tone="secondary" onClick={() => act("pagarImpuesto", { opcion: "FIXED" })} tooltip="Pagas la cuota fija indicada por la casilla de impuesto.">
-                      Pagar fijo - {moneyFormatter.format(pendingTax.fixedAmount)}
-                    </ActionButton>
-                    <ActionButton tone="secondary" onClick={() => act("pagarImpuesto", { opcion: "PERCENT" })} tooltip="Pagas el porcentaje sobre tu patrimonio calculado por el motor.">
-                      Pagar patrimonio - {moneyFormatter.format(pendingTax.percentAmount)}
-                    </ActionButton>
-                  </div>
-                </div>
-              )}
-
-              {auction && (
-                <div className="rounded-[22px] border-2 border-[#d8a5a0] bg-[#fff1ef] p-4">
-                  <div className="flex items-center gap-2">
-                    <Gavel size={18} className="text-[#b02016]" />
-                    <p className="text-sm font-black uppercase text-[#23160c]">Subasta abierta</p>
-                  </div>
-                  <p className="mt-2 text-sm font-semibold text-[#6b4b2c]">
-                    Turno de {playersById.get(auction.activeBidderId)?.name || "-"} - actual {moneyFormatter.format(auction.currentBid || 0)}
-                  </p>
-                  {(canBidAuction || canPassAuction) && (
-                    <div className="mt-4 grid gap-2">
-                      {canBidAuction && (
-                        <>
-                          <input
-                            className="monopoly-input"
-                            type="number"
-                            min={(auction.currentBid || 0) + 1}
-                            value={bidAmount}
-                            onChange={(event) => setBidAmount(Number(event.target.value))}
-                          />
-                          <ActionButton onClick={() => act("hacerOferta", { monto: bidAmount })} tooltip="Ofreces una cantidad mayor a la puja actual, siempre que tengas ese efectivo.">
-                            <Gavel size={18} />
-                            Ofertar
-                          </ActionButton>
-                        </>
-                      )}
-                      {canPassAuction && (
-                        <ActionButton tone="danger" onClick={() => act("retirarseDeSubasta")} tooltip="Te retiras de la subasta y dejas de competir por esta propiedad.">
-                          Pasar
-                        </ActionButton>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {myActions.includes("usarCartaSalirCarcel") && (
-                <ActionButton tone="secondary" onClick={() => act("usarCartaSalirCarcel")} tooltip="Gastas una carta para salir de la carcel sin pagar multa.">
-                  <ShieldAlert size={18} />
-                  {actionLabel.usarCartaSalirCarcel}
-                </ActionButton>
-              )}
-
-              {myActions.includes("pagarMultaCarcel") && (
-                <ActionButton tone="secondary" onClick={() => act("pagarMultaCarcel")} tooltip="Pagas $50 al banco para salir de la carcel y continuar tu turno normal.">
-                  <PauseCircle size={18} />
-                  {actionLabel.pagarMultaCarcel}
-                </ActionButton>
-              )}
-
-              {myActions.includes("resolverDeudaPendiente") && pendingDebt && (
-                <ActionButton onClick={() => act("resolverDeudaPendiente")} tooltip="Paga la deuda abierta solo cuando ya reuniste el efectivo suficiente.">
-                  <Hammer size={18} />
-                  Pagar deuda - {moneyFormatter.format(pendingDebt.amount)}
-                </ActionButton>
-              )}
-
-              {myActions.includes("terminarTurno") && (
-                <ActionButton onClick={() => act("terminarTurno")} tooltip="Cierra tu turno actual. Si habias sacado dobles, el motor te dara la repeticion correspondiente.">
-                  <TimerReset size={18} />
-                  {actionLabel.terminarTurno}
-                </ActionButton>
-              )}
-
-              {myActions.includes("resolverQuiebra") && (
-                <ActionButton tone="danger" onClick={() => act("resolverQuiebra")} tooltip="Declara que no puedes cubrir la deuda ni liquidando activos; el motor resuelve la quiebra.">
-                  <AlertTriangle size={18} />
-                  Declarar quiebra
-                </ActionButton>
-              )}
-            </div>
-          </section>
-
-          <section className="monopoly-panel p-4">
-            <div className="mb-4 flex items-center gap-3">
-              <Info size={20} className="text-[#8a5a00]" />
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Ayuda</p>
-                  <h3 className="text-xl font-black uppercase text-[#23160c]">Reglas de esta mesa</h3>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              {ruleCards.map((rule) => (
-                <div key={rule.title} className="rounded-[18px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4" title={rule.body}>
-                  <p className="text-sm font-black uppercase text-[#23160c]">{rule.title}</p>
-                  <p className="mt-2 text-sm font-semibold leading-6 text-[#6b4b2c]">{rule.body}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {myPlayer && (
-            <section className="monopoly-panel p-4">
-              <div className="mb-4 flex items-center gap-3">
-                <Scale size={20} className="text-[#0f766e]" />
-                <div>
-                  <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Gestion</p>
-                  <h3 className="text-xl font-black uppercase text-[#23160c]">Negocios</h3>
-                </div>
-              </div>
-
-              <div className="grid gap-4">
-                <details className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] p-4" open>
-                  <summary className="cursor-pointer list-none text-sm font-black uppercase text-[#23160c]">
-                    Transferir propiedad
-                  </summary>
-                  <div className="mt-4 grid gap-3">
-                    <select
-                      className="monopoly-input"
-                      value={propertyTrade.propertyId}
-                      onChange={(event) => setPropertyTrade((current) => ({ ...current, propertyId: event.target.value }))}
-                    >
-                      <option value="">Selecciona propiedad</option>
-                      {myPlayer.properties.map((property) => (
-                        <option key={property.id} value={property.id}>{property.name}</option>
-                      ))}
-                    </select>
-                    <select
-                      className="monopoly-input"
-                      value={propertyTrade.buyerId}
-                      onChange={(event) => setPropertyTrade((current) => ({ ...current, buyerId: event.target.value }))}
-                    >
-                      <option value="">Comprador</option>
-                      {state.players.filter((player) => player.id !== currentUserId && !player.bankrupt).map((player) => (
-                        <option key={player.id} value={player.id}>{player.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      className="monopoly-input"
-                      type="number"
-                      min={0}
-                      value={propertyTrade.price}
-                      onChange={(event) => setPropertyTrade((current) => ({ ...current, price: Number(event.target.value) }))}
-                    />
-                    <label className="flex items-center gap-3 rounded-[16px] border border-[#d8c8ae] bg-white/70 px-3 py-3 text-sm font-semibold text-[#6b4b2c]">
-                      <input
-                        type="checkbox"
-                        checked={propertyTrade.liftMortgage}
-                        onChange={(event) => setPropertyTrade((current) => ({ ...current, liftMortgage: event.target.checked }))}
-                      />
-                      Levantar hipoteca al transferir
-                    </label>
-                    <ActionButton
-                      tone="secondary"
-                      onClick={() => act("venderPropiedad", {
-                        compradorId: Number(propertyTrade.buyerId),
-                        propiedadId: propertyTrade.propertyId,
-                        precio: Number(propertyTrade.price),
-                        levantarHipotecaAhora: propertyTrade.liftMortgage
-                      })}
-                      disabled={!propertyTrade.propertyId || !propertyTrade.buyerId}
-                    >
-                      Transferir propiedad
-                    </ActionButton>
-                  </div>
-                </details>
-
-                <details className="rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] p-4">
-                  <summary className="cursor-pointer list-none text-sm font-black uppercase text-[#23160c]">
-                    Vender carta de salir de carcel
-                  </summary>
-                  <div className="mt-4 grid gap-3">
-                    <select
-                      className="monopoly-input"
-                      value={cardTrade.deck}
-                      onChange={(event) => setCardTrade((current) => ({ ...current, deck: event.target.value }))}
-                    >
-                      <option value="CASUALIDAD">Casualidad</option>
-                      <option value="ARCA_COMUNAL">Arca comunal</option>
-                    </select>
-                    <select
-                      className="monopoly-input"
-                      value={cardTrade.buyerId}
-                      onChange={(event) => setCardTrade((current) => ({ ...current, buyerId: event.target.value }))}
-                    >
-                      <option value="">Comprador</option>
-                      {state.players.filter((player) => player.id !== currentUserId && !player.bankrupt).map((player) => (
-                        <option key={player.id} value={player.id}>{player.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      className="monopoly-input"
-                      type="number"
-                      min={0}
-                      value={cardTrade.price}
-                      onChange={(event) => setCardTrade((current) => ({ ...current, price: Number(event.target.value) }))}
-                    />
-                    <ActionButton
-                      tone="secondary"
-                      onClick={() => act("comprarCartaSalirCarcel", {
-                        compradorId: Number(cardTrade.buyerId),
-                        deck: cardTrade.deck,
-                        precio: Number(cardTrade.price)
-                      })}
-                      disabled={!cardTrade.buyerId}
-                    >
-                      Vender carta
-                    </ActionButton>
-                  </div>
-                </details>
-              </div>
-            </section>
-          )}
-
-          <section className="monopoly-panel p-5">
-            <div className="mb-4 flex items-center gap-3">
-              <Trophy size={20} className="text-[#c08a1a]" />
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-[#7c5d38]">Ranking</p>
-                <h3 className="text-2xl font-black uppercase text-[#23160c]">Fortunas</h3>
-              </div>
-            </div>
-
-            <div className="grid gap-3">
-              {state.ranking.map((entry, index) => (
-                <div key={entry.playerId} className="flex items-center justify-between rounded-[20px] border border-[#d8c8ae] bg-[#fff8ec] px-4 py-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-black uppercase text-[#23160c]">{index + 1}. {entry.name}</p>
-                    <p className="mt-1 text-xs font-extrabold uppercase tracking-[0.14em] text-[#7c5d38]">Patrimonio</p>
-                  </div>
-                  <Money amount={entry.wealth} className="text-sm font-black text-[#14532d]" />
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {error && (
-            <div className="rounded-[20px] border-2 border-[#b91c1c] bg-[#fee2e2] px-4 py-4 text-sm font-bold text-[#7f1d1d]">
-              {error}
-            </div>
-          )}
-
-          <MonopolySocialRail
-            connectionStatus={connectionStatus}
-            currentUser={currentUser}
-            messages={messages}
-            players={presence}
-            onSendMessage={onSendMessage}
-            customTokens={customTokens}
-          />
-        </aside>
-      </div>
-
-      <ActionModal
+      <PropertyModal
         modalState={activeModal}
         myActions={myActions}
         currentUserId={currentUserId}
@@ -3045,6 +4422,55 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         onClose={() => setModalDismissKey(modalKey)}
       />
 
+      <TradeModal
+        open={tradeOpen}
+        onClose={() => setTradeOpen(false)}
+        myPlayer={myPlayer}
+        players={state.players}
+        currentUserId={currentUserId}
+        propertyTrade={propertyTrade}
+        setPropertyTrade={setPropertyTrade}
+        cardTrade={cardTrade}
+        setCardTrade={setCardTrade}
+        onAction={act}
+      />
+
+      <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />
+      <RankingModal open={rankingOpen} onClose={() => setRankingOpen(false)} ranking={state.ranking} />
+      <VictoryCeremony
+        state={state}
+        playersById={playersById}
+        currentUserId={currentUserId}
+        onExit={() => {
+          setActiveTableId("");
+          setTableMeta(null);
+          setState(null);
+          setMenuOpen(false);
+          setChatOpen(false);
+        }}
+      />
+      <TableMenuModal
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        connectionStatus={connectionStatus}
+        currentUser={currentUser}
+        messages={messages}
+        presence={presence}
+        onSendMessage={onSendMessage}
+        customTokens={customTokens}
+      />
+
+      <FloatingChat
+        open={chatOpen}
+        onToggle={() => setChatOpen((current) => !current)}
+        connectionStatus={connectionStatus}
+        currentUser={currentUser}
+        messages={messages}
+        players={state.players}
+        onSendMessage={onSendMessage}
+        customTokens={customTokens}
+      />
+
       <TokenCustomizer
         open={tokenEditorOpen}
         onClose={() => setTokenEditorOpen(false)}
@@ -3053,6 +4479,11 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         onChange={persistMyToken}
         onReset={resetMyToken}
       />
-    </section>
+
+      {(rollingDice || cinematic) && (
+        <div className="monopoly-anim-veil" aria-hidden="true" />
+      )}
+    </GameLayout>
   );
+
 }

@@ -7,7 +7,10 @@
     "dev": "npm run dev --prefix backend",
     "dev:backend": "npm run dev --prefix backend",
     "dev:frontend": "npm run dev --prefix frontend",
-    "test:monopoly": "node --test shared/monopoly-engine/monopoly-engine.test.mjs"
+    "test:monopoly": "node --test shared/monopoly-engine/monopoly-engine.test.mjs",
+    "test:monopoly:sim": "node --test shared/monopoly-engine/bots-sim.test.mjs",
+    "test:monopoly:all": "node --test shared/monopoly-engine/monopoly-engine.test.mjs shared/monopoly-engine/bots-sim.test.mjs",
+    "sim:monopoly": "node shared/monopoly-engine/simulate.mjs"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }

@@ -307,7 +307,7 @@ export default function App() {
 
   return (
     <main className="min-h-screen text-zinc-100">
-      <header className="sticky top-0 z-20 border-b border-amber-300/20 bg-black/80 backdrop-blur">
+      <header className={`${monopolyView ? "relative app-header-monopoly" : "sticky top-0"} z-20 border-b border-amber-300/20 bg-black/80 backdrop-blur`}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/60 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-amber-300/40 to-transparent" />
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -404,7 +404,7 @@ export default function App() {
         </div>
       </header>
 
-      <section className={`mx-auto px-4 py-8 ${monopolyView ? "max-w-[1800px]" : "max-w-7xl"}`}>
+      <section className={`mx-auto px-4 ${monopolyView ? "max-w-[1800px] py-3" : "max-w-7xl py-8"}`}>
         {!world && (
           <WorldSelector
             token={token}
