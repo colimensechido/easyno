@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
@@ -29,6 +30,24 @@ const TABLE_STATUS = Object.freeze({
 
 let modulePromise = null;
 
+function resolveMonopolyModulePath() {
+  const engineFromEnv = process.env.MONOPOLY_ENGINE_PATH;
+  const candidates = [
+    engineFromEnv,
+    path.join(__dirname, "shared", "monopoly-engine", "index.mjs"),
+    path.join(__dirname, "..", "shared", "monopoly-engine", "index.mjs")
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const modulePath = path.resolve(candidate);
+    if (fs.existsSync(modulePath)) {
+      return modulePath;
+    }
+  }
+
+  throw new Error(`No se encontro el motor de Monopoly. Rutas probadas: ${candidates.map((candidate) => path.resolve(candidate)).join(", ")}`);
+}
+
 function asClientError(error, fallbackMessage = "No se pudo completar la accion de Monopoly", status = 400) {
   if (error instanceof Error) {
     if (!error.status) {
@@ -44,9 +63,7 @@ function asClientError(error, fallbackMessage = "No se pudo completar la accion 
 
 function loadMonopolyModule() {
   if (!modulePromise) {
-    // El motor vive en la raiz del repo (shared/monopoly-engine), no dentro de
-    // backend/. Apuntamos un nivel arriba para no depender de un symlink/junction.
-    const modulePath = pathToFileURL(path.join(__dirname, "..", "shared", "monopoly-engine", "index.mjs")).href;
+    const modulePath = pathToFileURL(resolveMonopolyModulePath()).href;
     modulePromise = import(modulePath);
   }
 
