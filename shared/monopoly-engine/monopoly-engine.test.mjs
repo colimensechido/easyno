@@ -63,6 +63,22 @@ test("si el jugador no puede comprar una propiedad, se abre subasta y puede qued
   assert.equal(game.state.auction, null);
 });
 
+test("las subastas exigen al menos 25 por ciento sobre la puja actual", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+
+  game.iniciarSubasta({ objetivoId: "baltic_avenue" });
+
+  assert.equal(game.state.auction.meta.basePrice, 60);
+  assert.equal(game.state.auction.minimumBid, 15);
+  assert.throws(() => game.hacerOferta({ jugadorId: "player_1", monto: 14 }), /oferta minima/i);
+
+  game.hacerOferta({ jugadorId: "player_1", monto: 100 });
+
+  assert.equal(game.state.auction.currentBid, 100);
+  assert.equal(game.state.auction.minimumBid, 125);
+  assert.throws(() => game.hacerOferta({ jugadorId: "player_2", monto: 124 }), /oferta minima/i);
+});
+
 test("tres dobles consecutivos envian al jugador a la carcel", () => {
   const game = createGame({ players: ["Ana", "Luis"] });
   const player = game.currentPlayer();
@@ -286,6 +302,125 @@ test("al transferir una propiedad hipotecada se cobra el 10 por ciento al nuevo 
   assert.equal(mediterranean.ownerId, buyer.id);
   assert.equal(buyer.cash, 1397);
   assert.equal(seller.cash, 1600);
+});
+
+test("las ofertas de propiedad requieren aceptacion del comprador", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const seller = game.currentPlayer();
+  const buyer = game.findPlayer("player_2");
+  const mediterranean = game.findSpaceById("mediterranean_avenue");
+
+  game.assignPropertyToPlayer(mediterranean, seller);
+  game.crearOfertaPropiedad({
+    vendedorId: seller.id,
+    compradorId: buyer.id,
+    propiedadId: mediterranean.id,
+    precio: 120
+  });
+
+  const offer = game.state.tradeOffers[0];
+  assert.equal(mediterranean.ownerId, seller.id);
+  assert.equal(seller.cash, 1500);
+  assert.equal(buyer.cash, 1500);
+
+  game.aceptarOfertaTrato({ offerId: offer.id, actorId: buyer.id });
+
+  assert.equal(mediterranean.ownerId, buyer.id);
+  assert.equal(seller.cash, 1620);
+  assert.equal(buyer.cash, 1380);
+  assert.equal(game.state.tradeOffers.length, 0);
+});
+
+test("las ofertas de compra de propiedad requieren aceptacion del vendedor", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const seller = game.currentPlayer();
+  const buyer = game.findPlayer("player_2");
+  const mediterranean = game.findSpaceById("mediterranean_avenue");
+
+  game.assignPropertyToPlayer(mediterranean, seller);
+  game.crearOfertaCompraPropiedad({
+    compradorId: buyer.id,
+    vendedorId: seller.id,
+    propiedadId: mediterranean.id,
+    precio: 140
+  });
+
+  const offer = game.state.tradeOffers[0];
+  assert.equal(offer.direction, "BUY");
+  assert.equal(offer.recipientId, seller.id);
+  assert.throws(() => game.aceptarOfertaTrato({ offerId: offer.id, actorId: buyer.id }), /invitado/i);
+
+  game.aceptarOfertaTrato({ offerId: offer.id, actorId: seller.id });
+
+  assert.equal(mediterranean.ownerId, buyer.id);
+  assert.equal(seller.cash, 1640);
+  assert.equal(buyer.cash, 1360);
+  assert.equal(game.state.tradeOffers.length, 0);
+});
+
+test("las ofertas de carta de carcel se pueden rechazar", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const seller = game.findPlayer("player_1");
+  const buyer = game.findPlayer("player_2");
+
+  seller.getOutOfJailCards.CASUALIDAD = 1;
+  game.crearOfertaCartaCarcel({
+    vendedorId: seller.id,
+    compradorId: buyer.id,
+    deck: "CASUALIDAD",
+    precio: 200
+  });
+
+  const offer = game.state.tradeOffers[0];
+  game.rechazarOfertaTrato({ offerId: offer.id, actorId: buyer.id });
+
+  assert.equal(seller.getOutOfJailCards.CASUALIDAD, 1);
+  assert.equal(buyer.getOutOfJailCards.CASUALIDAD, 0);
+  assert.equal(game.state.tradeOffers.length, 0);
+});
+
+test("las ofertas de compra de carta de carcel las acepta el vendedor", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const seller = game.findPlayer("player_1");
+  const buyer = game.findPlayer("player_2");
+
+  seller.getOutOfJailCards.ARCA_COMUNAL = 1;
+  game.crearOfertaCompraCartaCarcel({
+    compradorId: buyer.id,
+    vendedorId: seller.id,
+    deck: "ARCA_COMUNAL",
+    precio: 180
+  });
+
+  const offer = game.state.tradeOffers[0];
+  assert.equal(offer.direction, "BUY");
+  assert.equal(offer.recipientId, seller.id);
+
+  game.aceptarOfertaTrato({ offerId: offer.id, actorId: seller.id });
+
+  assert.equal(seller.getOutOfJailCards.ARCA_COMUNAL, 0);
+  assert.equal(buyer.getOutOfJailCards.ARCA_COMUNAL, 1);
+  assert.equal(seller.cash, 1680);
+  assert.equal(buyer.cash, 1320);
+});
+
+test("la quiebra espera si el jugador aun puede liquidar activos", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const debtor = game.currentPlayer();
+  const mediterranean = game.findSpaceById("mediterranean_avenue");
+
+  debtor.cash = 0;
+  game.assignPropertyToPlayer(mediterranean, debtor);
+  game.state.pendingDebt = {
+    debtorId: debtor.id,
+    creditorType: CREDITOR_TYPES.BANK,
+    creditorId: null,
+    amount: mediterranean.mortgageValue,
+    reason: "TEST"
+  };
+
+  assert.throws(() => game.resolverQuiebra(), /vender casas|hipotecar/i);
+  assert.equal(debtor.bankrupt, false);
 });
 
 test("la quiebra contra el banco libera la propiedad e inicia subasta si aun hay rivales", () => {

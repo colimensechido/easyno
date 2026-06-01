@@ -42,6 +42,22 @@ function isUtility(space) {
   return isOwnable(space) && space.propertyKind === PROPERTY_KINDS.UTILITY;
 }
 
+function tradeOfferRecipientId(offer) {
+  return offer?.recipientId ?? offer?.buyerId;
+}
+
+function tradeOfferInitiatorId(offer) {
+  return offer?.initiatorId ?? offer?.sellerId;
+}
+
+function calculateMinimumAuctionBid(currentBid, basePrice = 0) {
+  if (currentBid > 0) {
+    return Math.ceil(currentBid * 1.25);
+  }
+
+  return Math.max(1, Math.ceil((basePrice || 0) * 0.25));
+}
+
 function buildPlayer(player, index) {
   const normalized = typeof player === "string"
     ? { id: `player_${index + 1}`, name: player }
@@ -78,6 +94,9 @@ export class MonopolyGameEngine {
       // comportamiento clasico (clon defensivo) para la app real.
       this._liveState = Boolean(config.liveState);
       this.state = clone(config.state);
+      if (!Array.isArray(this.state.tradeOffers)) {
+        this.state.tradeOffers = [];
+      }
       this.options = {
         ...DEFAULT_ENGINE_OPTIONS,
         ...((this.state.meta && this.state.meta.options) || {})
@@ -150,6 +169,7 @@ export class MonopolyGameEngine {
       pendingDebt: null,
       pendingContinuation: null,
       pendingBankruptcyAuctions: [],
+      tradeOffers: [],
       auction: null,
       winnerId: null,
       endedAt: null,
@@ -276,14 +296,23 @@ export class MonopolyGameEngine {
 
     assert(activePlayers.length > 0, "No hay jugadores activos para la subasta");
 
+    const target = this.findSpaceById(objetivoId);
+    const basePrice = target?.price || meta.basePrice || 0;
+    const minimumBid = calculateMinimumAuctionBid(0, basePrice);
+
     this.state.auction = {
       id: createId("auction", this.sequence++),
       kind: tipo,
       assetId: objetivoId,
       quantity: cantidad,
-      meta,
+      meta: {
+        ...meta,
+        basePrice,
+        minimumIncrementPercent: 25
+      },
       currentBid: 0,
       currentBidderId: null,
+      minimumBid,
       activeBidderId: activePlayers[0].id,
       participantIds: activePlayers.map((player) => player.id),
       passedPlayerIds: [],
@@ -301,15 +330,17 @@ export class MonopolyGameEngine {
     assert(auction && auction.status === "ACTIVE", "No hay subasta activa");
     assert(auction.activeBidderId === jugadorId, "No es el turno de puja de este jugador");
     const bidder = this.findPlayer(jugadorId);
+    const minimumBid = auction.minimumBid || calculateMinimumAuctionBid(auction.currentBid, auction.meta?.basePrice || 0);
 
     assert(!bidder.bankrupt, "Un jugador en quiebra no puede pujar");
-    assert(monto > auction.currentBid, "La oferta debe superar la puja actual");
+    assert(monto >= minimumBid, `La oferta minima es ${minimumBid}`);
     assert(bidder.cash >= monto, "El jugador no puede ofrecer mas dinero del que posee");
 
     auction.currentBid = monto;
     auction.currentBidderId = jugadorId;
+    auction.minimumBid = calculateMinimumAuctionBid(auction.currentBid, auction.meta?.basePrice || 0);
     auction.passedPlayerIds = auction.passedPlayerIds.filter((playerId) => playerId !== jugadorId);
-    this.log("AUCTION_BID", { auctionId: auction.id, playerId: jugadorId, amount: monto });
+    this.log("AUCTION_BID", { auctionId: auction.id, playerId: jugadorId, amount: monto, nextMinimumBid: auction.minimumBid });
     this.advanceAuctionTurn();
     return this.getState();
   }
@@ -567,6 +598,7 @@ export class MonopolyGameEngine {
 
     this.transferCash(buyer, CREDITOR_TYPES.PLAYER, precio, "VENTA_PROPIEDAD", seller.id);
     this.transferPropertyOwnership(property, seller, buyer);
+    this.removeTradeOffersForAsset("PROPERTY", property.id);
 
     if (property.isMortgaged) {
       const transferInterest = Math.ceil(property.mortgageValue * 0.1);
@@ -620,7 +652,258 @@ export class MonopolyGameEngine {
     this.transferCash(buyer, CREDITOR_TYPES.PLAYER, precio, "COMPRA_CARTA_SALIR_CARCEL", seller.id);
     seller.getOutOfJailCards[deck] -= 1;
     buyer.getOutOfJailCards[deck] += 1;
+    this.removeTradeOffersForAsset("JAIL_CARD", `${seller.id}:${deck}`);
     this.log("JAIL_CARD_TRADED", { sellerId: seller.id, buyerId: buyer.id, deck, price: precio });
+    return this.getState();
+  }
+
+  crearOfertaPropiedad({
+    vendedorId,
+    compradorId,
+    propiedadId,
+    precio,
+    levantarHipotecaAhora = false,
+    now = Date.now()
+  } = {}) {
+    this.ensureGameRunning(now);
+    assert(vendedorId && compradorId && propiedadId, "La oferta requiere vendedor, comprador y propiedad");
+    assert(vendedorId !== compradorId, "No puedes enviarte una oferta a ti mismo");
+    const seller = this.findPlayer(vendedorId);
+    const buyer = this.findPlayer(compradorId);
+    const property = this.findSpaceById(propiedadId);
+
+    assert(property.ownerId === seller.id, "La propiedad no pertenece al vendedor");
+    assert(!seller.bankrupt && !buyer.bankrupt, "Los jugadores en quiebra no pueden comerciar");
+    assert(precio >= 0, "El precio acordado es invalido");
+    assert(!this.groupHasBuildings(property), "No se puede ofertar una propiedad con edificios en su grupo");
+
+    this.removeTradeOffersForAsset("PROPERTY", propiedadId);
+    const offer = {
+      id: createId("trade", this.sequence++),
+      type: "PROPERTY",
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      propertyId: property.id,
+      price: precio,
+      liftMortgageNow: Boolean(levantarHipotecaAhora),
+      direction: "SELL",
+      initiatorId: seller.id,
+      recipientId: buyer.id,
+      status: "PENDING",
+      createdAt: now
+    };
+    this.state.tradeOffers.push(offer);
+    this.log("TRADE_OFFER_CREATED", {
+      offerId: offer.id,
+      type: offer.type,
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      propertyId: property.id,
+      price: precio,
+      direction: offer.direction,
+      initiatorId: offer.initiatorId,
+      recipientId: offer.recipientId
+    });
+    return this.getState();
+  }
+
+  crearOfertaCompraPropiedad({
+    compradorId,
+    vendedorId,
+    propiedadId,
+    precio,
+    levantarHipotecaAhora = false,
+    now = Date.now()
+  } = {}) {
+    this.ensureGameRunning(now);
+    assert(compradorId && vendedorId && propiedadId, "La oferta requiere comprador, vendedor y propiedad");
+    assert(compradorId !== vendedorId, "No puedes enviarte una oferta a ti mismo");
+    const buyer = this.findPlayer(compradorId);
+    const seller = this.findPlayer(vendedorId);
+    const property = this.findSpaceById(propiedadId);
+
+    assert(property.ownerId === seller.id, "La propiedad no pertenece al vendedor");
+    assert(!seller.bankrupt && !buyer.bankrupt, "Los jugadores en quiebra no pueden comerciar");
+    assert(precio >= 0, "El precio acordado es invalido");
+    assert(!this.groupHasBuildings(property), "No se puede ofertar una propiedad con edificios en su grupo");
+
+    this.removeTradeOffersForAsset("PROPERTY", propiedadId);
+    const offer = {
+      id: createId("trade", this.sequence++),
+      type: "PROPERTY",
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      propertyId: property.id,
+      price: precio,
+      liftMortgageNow: Boolean(levantarHipotecaAhora),
+      direction: "BUY",
+      initiatorId: buyer.id,
+      recipientId: seller.id,
+      status: "PENDING",
+      createdAt: now
+    };
+    this.state.tradeOffers.push(offer);
+    this.log("TRADE_OFFER_CREATED", {
+      offerId: offer.id,
+      type: offer.type,
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      propertyId: property.id,
+      price: precio,
+      direction: offer.direction,
+      initiatorId: offer.initiatorId,
+      recipientId: offer.recipientId
+    });
+    return this.getState();
+  }
+
+  crearOfertaCartaCarcel({
+    vendedorId,
+    compradorId,
+    deck,
+    precio,
+    now = Date.now()
+  } = {}) {
+    this.ensureGameRunning(now);
+    assert(vendedorId && compradorId && deck, "La oferta requiere vendedor, comprador y mazo");
+    assert(vendedorId !== compradorId, "No puedes enviarte una oferta a ti mismo");
+    assert(Object.values(CARD_DECKS).includes(deck), "Mazo invalido para carta de carcel");
+    assert(precio >= 0, "El precio acordado es invalido");
+    const seller = this.findPlayer(vendedorId);
+    const buyer = this.findPlayer(compradorId);
+
+    assert(!seller.bankrupt && !buyer.bankrupt, "Los jugadores en quiebra no pueden comerciar");
+    assert(seller.getOutOfJailCards[deck] > 0, "El vendedor no posee esa carta");
+
+    this.removeTradeOffersForAsset("JAIL_CARD", `${seller.id}:${deck}`);
+    const offer = {
+      id: createId("trade", this.sequence++),
+      type: "JAIL_CARD",
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      deck,
+      price: precio,
+      direction: "SELL",
+      initiatorId: seller.id,
+      recipientId: buyer.id,
+      status: "PENDING",
+      createdAt: now
+    };
+    this.state.tradeOffers.push(offer);
+    this.log("TRADE_OFFER_CREATED", {
+      offerId: offer.id,
+      type: offer.type,
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      deck,
+      price: precio,
+      direction: offer.direction,
+      initiatorId: offer.initiatorId,
+      recipientId: offer.recipientId
+    });
+    return this.getState();
+  }
+
+  crearOfertaCompraCartaCarcel({
+    compradorId,
+    vendedorId,
+    deck,
+    precio,
+    now = Date.now()
+  } = {}) {
+    this.ensureGameRunning(now);
+    assert(compradorId && vendedorId && deck, "La oferta requiere comprador, vendedor y mazo");
+    assert(compradorId !== vendedorId, "No puedes enviarte una oferta a ti mismo");
+    assert(Object.values(CARD_DECKS).includes(deck), "Mazo invalido para carta de carcel");
+    assert(precio >= 0, "El precio acordado es invalido");
+    const buyer = this.findPlayer(compradorId);
+    const seller = this.findPlayer(vendedorId);
+
+    assert(!seller.bankrupt && !buyer.bankrupt, "Los jugadores en quiebra no pueden comerciar");
+    assert(seller.getOutOfJailCards[deck] > 0, "El vendedor no posee esa carta");
+
+    this.removeTradeOffersForAsset("JAIL_CARD", `${seller.id}:${deck}`);
+    const offer = {
+      id: createId("trade", this.sequence++),
+      type: "JAIL_CARD",
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      deck,
+      price: precio,
+      direction: "BUY",
+      initiatorId: buyer.id,
+      recipientId: seller.id,
+      status: "PENDING",
+      createdAt: now
+    };
+    this.state.tradeOffers.push(offer);
+    this.log("TRADE_OFFER_CREATED", {
+      offerId: offer.id,
+      type: offer.type,
+      sellerId: seller.id,
+      buyerId: buyer.id,
+      deck,
+      price: precio,
+      direction: offer.direction,
+      initiatorId: offer.initiatorId,
+      recipientId: offer.recipientId
+    });
+    return this.getState();
+  }
+
+  aceptarOfertaTrato({ offerId, actorId, now = Date.now() } = {}) {
+    this.ensureGameRunning(now);
+    const offer = this.findTradeOffer(offerId);
+    assert(String(tradeOfferRecipientId(offer)) === String(actorId), "Solo el jugador invitado puede aceptar esta oferta");
+
+    if (offer.type === "PROPERTY") {
+      this.venderPropiedad({
+        vendedorId: offer.sellerId,
+        compradorId: offer.buyerId,
+        propiedadId: offer.propertyId,
+        precio: offer.price,
+        levantarHipotecaAhora: offer.liftMortgageNow,
+        now
+      });
+    } else if (offer.type === "JAIL_CARD") {
+      this.comprarCartaSalirCarcel({
+        vendedorId: offer.sellerId,
+        compradorId: offer.buyerId,
+        deck: offer.deck,
+        precio: offer.price,
+        now
+      });
+    } else {
+      throw new Error("Tipo de oferta no soportado");
+    }
+
+    this.log("TRADE_OFFER_ACCEPTED", {
+      offerId: offer.id,
+      type: offer.type,
+      sellerId: offer.sellerId,
+      buyerId: offer.buyerId,
+      propertyId: offer.propertyId || null,
+      deck: offer.deck || null,
+      price: offer.price
+    });
+    return this.getState();
+  }
+
+  rechazarOfertaTrato({ offerId, actorId, now = Date.now() } = {}) {
+    this.ensureGameRunning(now);
+    const offer = this.findTradeOffer(offerId);
+    assert(String(tradeOfferRecipientId(offer)) === String(actorId), "Solo el jugador invitado puede rechazar esta oferta");
+    this.state.tradeOffers = this.state.tradeOffers.filter((candidate) => candidate.id !== offer.id);
+    this.log("TRADE_OFFER_REJECTED", { offerId: offer.id, type: offer.type, sellerId: offer.sellerId, buyerId: offer.buyerId });
+    return this.getState();
+  }
+
+  cancelarOfertaTrato({ offerId, actorId, now = Date.now() } = {}) {
+    this.ensureGameRunning(now);
+    const offer = this.findTradeOffer(offerId);
+    assert(String(tradeOfferInitiatorId(offer)) === String(actorId), "Solo quien envio la oferta puede cancelarla");
+    this.state.tradeOffers = this.state.tradeOffers.filter((candidate) => candidate.id !== offer.id);
+    this.log("TRADE_OFFER_CANCELLED", { offerId: offer.id, type: offer.type, sellerId: offer.sellerId, buyerId: offer.buyerId });
     return this.getState();
   }
 
@@ -693,8 +976,14 @@ export class MonopolyGameEngine {
     this.ensureGameRunning(now);
     const debt = this.state.pendingDebt;
     assert(debt, "Solo se puede declarar quiebra durante una deuda pendiente");
+    const debtor = this.findPlayer(debt.debtorId);
 
-    this.resolveBankruptcy(this.findPlayer(debt.debtorId), debt.creditorType, debt.creditorId, debt.reason);
+    assert(
+      !this.canCoverDebtWithEmergencyLiquidation(debtor, debt.amount),
+      "Todavia puedes vender casas, vender hoteles o hipotecar propiedades antes de declarar quiebra"
+    );
+
+    this.resolveBankruptcy(debtor, debt.creditorType, debt.creditorId, debt.reason);
     this.state.pendingDebt = null;
     this.state.pendingContinuation = null;
     this.checkGameEnd(now);
@@ -785,6 +1074,14 @@ export class MonopolyGameEngine {
       return actions;
     }
 
+    if ((this.state.tradeOffers || []).some((offer) => offer.status === "PENDING" && String(tradeOfferRecipientId(offer)) === String(playerId))) {
+      actions.push(ENGINE_ACTIONS.ACEPTAR_OFERTA_TRATO, ENGINE_ACTIONS.RECHAZAR_OFERTA_TRATO);
+    }
+
+    if ((this.state.tradeOffers || []).some((offer) => offer.status === "PENDING" && String(tradeOfferInitiatorId(offer)) === String(playerId))) {
+      actions.push(ENGINE_ACTIONS.CANCELAR_OFERTA_TRATO);
+    }
+
     if (this.state.auction) {
       if (this.state.auction.activeBidderId === playerId) {
         actions.push(ENGINE_ACTIONS.HACER_OFERTA, ENGINE_ACTIONS.RETIRARSE_DE_SUBASTA);
@@ -861,7 +1158,11 @@ export class MonopolyGameEngine {
 
     actions.push(
       ENGINE_ACTIONS.VENDER_PROPIEDAD,
-      ENGINE_ACTIONS.COMPRAR_CARTA_SALIR_CARCEL
+      ENGINE_ACTIONS.COMPRAR_CARTA_SALIR_CARCEL,
+      ENGINE_ACTIONS.CREAR_OFERTA_PROPIEDAD,
+      ENGINE_ACTIONS.CREAR_OFERTA_CARTA_CARCEL,
+      ENGINE_ACTIONS.CREAR_OFERTA_COMPRA_PROPIEDAD,
+      ENGINE_ACTIONS.CREAR_OFERTA_COMPRA_CARTA_CARCEL
     );
 
     return [...new Set(actions)];
@@ -899,6 +1200,21 @@ export class MonopolyGameEngine {
       hipotecarPropiedad: evaluate(ENGINE_ACTIONS.HIPOTECAR_PROPIEDAD, () => this.validateMortgage(player, property)),
       levantarHipoteca: evaluate(ENGINE_ACTIONS.LEVANTAR_HIPOTECA, () => this.validateMortgageLift(player, property))
     };
+  }
+
+  findTradeOffer(offerId) {
+    const offer = (this.state.tradeOffers || []).find((candidate) => candidate.id === offerId && candidate.status === "PENDING");
+    assert(offer, "La oferta ya no esta disponible");
+    return offer;
+  }
+
+  removeTradeOffersForAsset(type, assetKey) {
+    this.state.tradeOffers = (this.state.tradeOffers || []).filter((offer) => {
+      if (offer.type !== type) return true;
+      if (type === "PROPERTY") return offer.propertyId !== assetKey;
+      if (type === "JAIL_CARD") return `${offer.sellerId}:${offer.deck}` !== assetKey;
+      return true;
+    });
   }
 
   ejecutarAccion(actionName, payload = {}) {
@@ -941,6 +1257,20 @@ export class MonopolyGameEngine {
         return this.venderPropiedad(payload);
       case ENGINE_ACTIONS.COMPRAR_CARTA_SALIR_CARCEL:
         return this.comprarCartaSalirCarcel(payload);
+      case ENGINE_ACTIONS.CREAR_OFERTA_PROPIEDAD:
+        return this.crearOfertaPropiedad(payload);
+      case ENGINE_ACTIONS.CREAR_OFERTA_CARTA_CARCEL:
+        return this.crearOfertaCartaCarcel(payload);
+      case ENGINE_ACTIONS.CREAR_OFERTA_COMPRA_PROPIEDAD:
+        return this.crearOfertaCompraPropiedad(payload);
+      case ENGINE_ACTIONS.CREAR_OFERTA_COMPRA_CARTA_CARCEL:
+        return this.crearOfertaCompraCartaCarcel(payload);
+      case ENGINE_ACTIONS.ACEPTAR_OFERTA_TRATO:
+        return this.aceptarOfertaTrato(payload);
+      case ENGINE_ACTIONS.RECHAZAR_OFERTA_TRATO:
+        return this.rechazarOfertaTrato(payload);
+      case ENGINE_ACTIONS.CANCELAR_OFERTA_TRATO:
+        return this.cancelarOfertaTrato(payload);
       case ENGINE_ACTIONS.USAR_CARTA_SALIR_CARCEL:
         return this.usarCartaSalirCarcel(payload);
       case ENGINE_ACTIONS.PAGAR_MULTA_CARCEL:
@@ -1039,16 +1369,26 @@ export class MonopolyGameEngine {
   }
 
   receiveMoney(player, amount, reason) {
+    const cashBefore = player.cash;
     player.cash += amount;
-    this.log("PLAYER_RECEIVED_MONEY", { playerId: player.id, amount, reason });
+    this.log("PLAYER_RECEIVED_MONEY", {
+      playerId: player.id,
+      amount,
+      reason,
+      cashBefore,
+      cashAfter: player.cash
+    });
   }
 
   transferCash(player, creditorType, amount, reason, creditorId = null) {
     assert(player.cash >= amount, "El jugador no tiene suficiente efectivo para transferir esa cantidad");
+    const cashBefore = player.cash;
+    const creditor = creditorType === CREDITOR_TYPES.PLAYER && creditorId ? this.findPlayer(creditorId) : null;
+    const creditorCashBefore = creditor ? creditor.cash : null;
     player.cash -= amount;
 
-    if (creditorType === CREDITOR_TYPES.PLAYER && creditorId) {
-      this.findPlayer(creditorId).cash += amount;
+    if (creditor) {
+      creditor.cash += amount;
     }
 
     this.log("PLAYER_PAID", {
@@ -1056,7 +1396,11 @@ export class MonopolyGameEngine {
       amount,
       creditorType,
       creditorId,
-      reason
+      reason,
+      cashBefore,
+      cashAfter: player.cash,
+      creditorCashBefore,
+      creditorCashAfter: creditor ? creditor.cash : null
     });
   }
 
@@ -1629,6 +1973,32 @@ export class MonopolyGameEngine {
     return property.mortgageValue + Math.ceil(property.mortgageValue * 0.1);
   }
 
+  estimateEmergencyLiquidationValue(player) {
+    return player.propertyIds.reduce((total, propertyId) => {
+      const property = this.findSpaceById(propertyId);
+      let value = 0;
+
+      if (isStreet(property)) {
+        if (property.hasHotel) {
+          value += Math.floor((property.hotelCost || property.houseCost || 0) / 2);
+          value += this.requiredHousesForHotel() * Math.floor((property.houseCost || 0) / 2);
+        } else if (property.houses > 0) {
+          value += property.houses * Math.floor((property.houseCost || 0) / 2);
+        }
+      }
+
+      if (!property.isMortgaged) {
+        value += property.mortgageValue || 0;
+      }
+
+      return total + value;
+    }, 0);
+  }
+
+  canCoverDebtWithEmergencyLiquidation(player, debtAmount) {
+    return player.cash + this.estimateEmergencyLiquidationValue(player) >= debtAmount;
+  }
+
   calculateRepairCost(player, perHouse, perHotel) {
     return player.propertyIds.reduce((total, propertyId) => {
       const property = this.findSpaceById(propertyId);
@@ -1646,6 +2016,9 @@ export class MonopolyGameEngine {
 
   resolveBankruptcy(debtor, creditorType, creditorId, reason) {
     this.state.status = GAME_STATUSES.RESOLVIENDO_QUIEBRA;
+    this.state.tradeOffers = (this.state.tradeOffers || []).filter((offer) => (
+      offer.sellerId !== debtor.id && offer.buyerId !== debtor.id
+    ));
     this.log("BANKRUPTCY_STARTED", { debtorId: debtor.id, creditorType, creditorId, reason });
 
     if (creditorType === CREDITOR_TYPES.PLAYER && creditorId) {
@@ -1831,6 +2204,7 @@ export class MonopolyGameEngine {
     this.state.pendingTax = null;
     this.state.pendingRentClaim = null;
     this.state.pendingDebt = null;
+    this.state.tradeOffers = [];
 
     this.log("GAME_FINISHED", { winnerId: this.state.winnerId });
   }

@@ -48,6 +48,7 @@ export function buildTurnSnapshot(game) {
     pendingTax: state.pendingTax,
     pendingRentClaim: state.pendingRentClaim,
     pendingDebt: state.pendingDebt,
+    tradeOffers: (state.tradeOffers || []).filter((offer) => offer.status === "PENDING"),
     auction: state.auction
   };
 }

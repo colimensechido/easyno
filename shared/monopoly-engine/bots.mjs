@@ -71,9 +71,14 @@ function decideAuction(engine, player, profile) {
   const listPrice = asset.price || 0;
   const maxBid = Math.min(player.cash, Math.floor(listPrice * profile.maxAuctionFactor));
   const increment = Math.max(10, Math.floor(listPrice * 0.1));
-  const nextBid = auction.currentBid + increment;
+  const minimumBid = auction.minimumBid || (
+    auction.currentBid > 0
+      ? Math.ceil(auction.currentBid * 1.25)
+      : Math.max(1, Math.ceil(listPrice * 0.25))
+  );
+  const nextBid = Math.max(minimumBid, auction.currentBid + increment);
 
-  if (nextBid <= maxBid && nextBid <= player.cash && nextBid > auction.currentBid) {
+  if (nextBid <= maxBid && nextBid <= player.cash) {
     return { action: ENGINE_ACTIONS.HACER_OFERTA, payload: { jugadorId: player.id, monto: nextBid } };
   }
 

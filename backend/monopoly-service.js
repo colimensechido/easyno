@@ -457,6 +457,18 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     if (actionName === "comprarCartaSalirCarcel") {
       payload.vendedorId = actorId;
     }
+
+    if (actionName === "crearOfertaPropiedad" || actionName === "crearOfertaCartaCarcel") {
+      payload.vendedorId = actorId;
+    }
+
+    if (actionName === "crearOfertaCompraPropiedad" || actionName === "crearOfertaCompraCartaCarcel") {
+      payload.compradorId = actorId;
+    }
+
+    if (actionName === "aceptarOfertaTrato" || actionName === "rechazarOfertaTrato" || actionName === "cancelarOfertaTrato") {
+      payload.actorId = actorId;
+    }
   }
 
   function syncRowStatusFromEngine(row, engine) {
@@ -505,8 +517,34 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     }
 
     if (engine.state.pendingDebt) {
+      const debt = engine.state.pendingDebt;
+      const debtor = engine.findPlayer(debt.debtorId);
+
+      if (debtor.cash >= debt.amount) {
+        return {
+          actorId: debt.debtorId,
+          actionName: "resolverDeudaPendiente",
+          payload: {}
+        };
+      }
+
+      for (const actionName of ["venderHotel", "venderCasa", "hipotecarPropiedad"]) {
+        const propertyId = debtor.propertyIds.find((candidateId) => {
+          const management = engine.describirAccionesDePropiedad(debtor.id, candidateId);
+          return management?.[actionName]?.allowed;
+        });
+
+        if (propertyId) {
+          return {
+            actorId: debt.debtorId,
+            actionName,
+            payload: { propertyId }
+          };
+        }
+      }
+
       return {
-        actorId: engine.state.pendingDebt.debtorId,
+        actorId: debt.debtorId,
         actionName: "resolverQuiebra",
         payload: {}
       };
@@ -651,6 +689,12 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     if (engine.state.pendingDebt?.debtorId === actorId) {
       engine.state.pendingDebt = null;
       engine.state.pendingContinuation = null;
+    }
+
+    if (Array.isArray(engine.state.tradeOffers)) {
+      engine.state.tradeOffers = engine.state.tradeOffers.filter((offer) => (
+        offer.sellerId !== actorId && offer.buyerId !== actorId
+      ));
     }
 
     engine.log("PLAYER_FORFEITED", { playerId: actorId, reason });
@@ -972,6 +1016,12 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         const engine = await loadEngineFromRow(row);
 
         try {
+          if (actionName === "venderPropiedad") {
+            actionName = "crearOfertaPropiedad";
+          } else if (actionName === "comprarCartaSalirCarcel") {
+            actionName = "crearOfertaCartaCarcel";
+          }
+
           ensurePlayerCanAct(engine, actorId, actionName, payload);
           engine.ejecutarAccion(actionName, payload);
         } catch (error) {

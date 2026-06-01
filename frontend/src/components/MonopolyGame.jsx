@@ -23,6 +23,7 @@ import {
   LogOut,
   Map as MapIcon,
   MessageCircle,
+  Music2,
   PauseCircle,
   PlayCircle,
   PlusCircle,
@@ -30,6 +31,8 @@ import {
   Scale,
   Send,
   ShieldAlert,
+  SkipBack,
+  SkipForward,
   Sparkles,
   Pizza,
   Rocket,
@@ -39,13 +42,15 @@ import {
   TrainFront,
   Trophy,
   Users,
+  Volume2,
+  VolumeX,
   Wallet,
   X
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 // Lobby rediseñado: pantalla principal inmersiva + flujos Unirse/Crear.
-import { audio } from "../audio";
+import { audio, radioTracks } from "../audio";
 import { Dice } from "./shared";
 
 const actionAudioMap = {
@@ -62,6 +67,13 @@ const actionAudioMap = {
   hipotecarPropiedad: "vender",
   levantarHipoteca: "buypropiedad",
   comprarCartaSalirCarcel: "vender",
+  crearOfertaPropiedad: "selectmenu",
+  crearOfertaCartaCarcel: "selectmenu",
+  crearOfertaCompraPropiedad: "selectmenu",
+  crearOfertaCompraCartaCarcel: "selectmenu",
+  aceptarOfertaTrato: "buypropiedad",
+  rechazarOfertaTrato: null,
+  cancelarOfertaTrato: null,
   usarCartaSalirCarcel: "selectmenu",
   pagarMultaCarcel: "selectmenu",
   pagarImpuesto: "selectmenu",
@@ -76,7 +88,7 @@ const actionLabel = {
   tirarDados: "Tirar dados",
   comprarPropiedad: "Comprar propiedad",
   rechazarCompra: "Mandar a subasta",
-  resolverCarta: "Resolver carta",
+  resolverCarta: "Ver carta",
   pagarRenta: "Cobrar renta",
   pagarImpuesto: "Pagar impuesto",
   comprarCasa: "Comprar casa",
@@ -87,6 +99,13 @@ const actionLabel = {
   levantarHipoteca: "Levantar hipoteca",
   venderPropiedad: "Transferir propiedad",
   comprarCartaSalirCarcel: "Vender carta de carcel",
+  crearOfertaPropiedad: "Enviar oferta",
+  crearOfertaCartaCarcel: "Ofrecer pase",
+  crearOfertaCompraPropiedad: "Ofertar compra",
+  crearOfertaCompraCartaCarcel: "Comprar pase",
+  aceptarOfertaTrato: "Aceptar oferta",
+  rechazarOfertaTrato: "Rechazar oferta",
+  cancelarOfertaTrato: "Cancelar oferta",
   usarCartaSalirCarcel: "Usar carta de carcel",
   pagarMultaCarcel: "Pagar multa",
   resolverDeudaPendiente: "Resolver deuda",
@@ -413,6 +432,20 @@ function cx(...classes) {
   return classes.filter(Boolean).join(" ");
 }
 
+function stableHash(value) {
+  const text = String(value || "");
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function pickVariant(seed, variants) {
+  if (!variants?.length) return "";
+  return variants[stableHash(seed) % variants.length];
+}
+
 function sameEntityId(left, right) {
   if (left === null || left === undefined || right === null || right === undefined) {
     return false;
@@ -421,8 +454,77 @@ function sameEntityId(left, right) {
   return String(left) === String(right);
 }
 
+function tradeOfferRecipientId(offer) {
+  return offer?.recipientId ?? offer?.buyerId;
+}
+
+function tradeOfferInitiatorId(offer) {
+  return offer?.initiatorId ?? offer?.sellerId;
+}
+
+const defaultPropertyTrade = Object.freeze({
+  intent: "sell",
+  propertyId: "",
+  buyerId: "",
+  sellerId: "",
+  price: 100,
+  liftMortgage: false
+});
+
+const defaultCardTrade = Object.freeze({
+  intent: "sell",
+  deck: "CASUALIDAD",
+  buyerId: "",
+  sellerId: "",
+  price: 100
+});
+
 function Money({ amount, className = "" }) {
   return <span className={className}>{moneyFormatter.format(amount || 0)}</span>;
+}
+
+function readStoredNumber(key, fallback) {
+  try {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredValue(key, value) {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    // noop
+  }
+}
+
+function auctionMinimumBid(auction) {
+  if (!auction) return 1;
+  if (auction.minimumBid) return auction.minimumBid;
+  if (auction.currentBid > 0) return Math.ceil(auction.currentBid * 1.25);
+  return Math.max(1, Math.ceil((auction.meta?.basePrice || 0) * 0.25));
+}
+
+function quickAuctionBids(auction, availableCash = 0) {
+  const minimum = auctionMinimumBid(auction);
+  const current = auction?.currentBid || 0;
+  return [...new Set([
+    minimum,
+    Math.max(minimum, current + 50),
+    Math.max(minimum, current + 100),
+    Math.max(minimum, Math.ceil(minimum * 1.25)),
+    availableCash
+  ])].filter((amount) => amount > 0 && amount <= availableCash).sort((left, right) => left - right).slice(0, 5);
+}
+
+function hasPendingDoubleReroll(state) {
+  return Boolean(
+    state?.turn?.phase === "AWAITING_TURN_END" &&
+    state?.turn?.extraTurnEarned &&
+    !state?.turn?.noExtraTurnBecauseJail
+  );
 }
 
 function InfoTip({ label, className = "" }) {
@@ -481,6 +583,11 @@ function boardCell(index) {
 
 const boardTokenColumnWeights = [1.5, ...Array(9).fill(0.9), 1.5];
 const boardTokenRowWeights = [1.85, ...Array(9).fill(0.72), 1.85];
+const CINEMATIC_DICE_PHASE_MS = 2400;
+const CINEMATIC_DICE_REST_MS = 650;
+const CINEMATIC_STEP_MS = 520;
+const CINEMATIC_SETTLE_HOLD_MS = 1700;
+const MONEY_BURST_LIFETIME_MS = 1550;
 
 function trackCenterPercent(weights, index) {
   const total = weights.reduce((sum, weight) => sum + weight, 0);
@@ -555,11 +662,12 @@ function currentPrompt({ state, playersById, currentUserId, pendingPurchaseSpace
   }
 
   if (pendingCard?.card) {
+    const actorName = playersById.get(state.currentPlayerId)?.name || "Jugador";
     return {
       tone: "info",
-      eyebrow: pendingCard.deck === "CASUALIDAD" ? "Casualidad" : "Arca comunal",
+      eyebrow: cardDeckLabel(pendingCard.deck),
       title: pendingCard.card.title || pendingCard.card.text || "Carta pendiente",
-      body: pendingCard.card.text || "La carta debe resolverse antes de continuar."
+      body: cardSceneCopy(pendingCard.card, pendingCard.deck, actorName)
     };
   }
 
@@ -591,13 +699,13 @@ function currentPrompt({ state, playersById, currentUserId, pendingPurchaseSpace
   };
 }
 
-function quickAction({ myActions, pendingCard, pendingDebt, pendingPurchaseSpace, auction, pendingTax }) {
+function quickAction({ state, myActions, pendingCard, pendingDebt, pendingPurchaseSpace, auction, pendingTax }) {
   if (pendingPurchaseSpace && myActions.includes("comprarPropiedad")) {
     return { action: "comprarPropiedad", label: "Comprar casilla" };
   }
 
   if (pendingCard && myActions.includes("resolverCarta")) {
-    return { action: "resolverCarta", label: "Resolver carta" };
+    return { action: "resolverCarta", label: "Ver carta" };
   }
 
   if (pendingDebt && myActions.includes("resolverDeudaPendiente")) {
@@ -617,7 +725,7 @@ function quickAction({ myActions, pendingCard, pendingDebt, pendingPurchaseSpace
   }
 
   if (myActions.includes("terminarTurno")) {
-    return { action: "terminarTurno", label: "Terminar turno" };
+    return { action: "terminarTurno", label: hasPendingDoubleReroll(state) ? "Volver a tirar" : "Terminar turno" };
   }
 
   return null;
@@ -646,6 +754,10 @@ function eventTone(type) {
   return "info";
 }
 
+function shouldShowEvent(event) {
+  return !["PLAYER_MOVED", "PLAYER_MOVED_TO", "SPACE_RESOLVED"].includes(event?.type);
+}
+
 function describeEvent(event, playersById, boardById) {
   const payload = event?.payload || {};
   const playerName = (id) => playersById.get(id)?.name || "Jugador";
@@ -657,9 +769,17 @@ function describeEvent(event, playersById, boardById) {
     case "PROPERTY_PURCHASED":
       return { title: `${playerName(payload.playerId)} compro ${propertyName(payload.propertyId)}`, body: `Pago ${moneyFormatter.format(payload.price || 0)} al banco.` };
     case "PLAYER_RECEIVED_MONEY":
-      return { title: `${playerName(payload.playerId)} recibe dinero`, body: `${moneyFormatter.format(payload.amount || 0)} por ${reasonLabel[payload.reason] || "evento del tablero"}.` };
+      return {
+        title: payload.reason === "PASO_POR_SALIDA" ? `${playerName(payload.playerId)} paso por salida` : `${playerName(payload.playerId)} recibe dinero`,
+        body: `${moneyFormatter.format(payload.amount || 0)} por ${reasonLabel[payload.reason] || "evento del tablero"}. Saldo: ${moneyFormatter.format(payload.cashBefore || 0)} -> ${moneyFormatter.format(payload.cashAfter || 0)}.`
+      };
     case "PLAYER_PAID":
-      return { title: `${playerName(payload.playerId)} pago ${moneyFormatter.format(payload.amount || 0)}`, body: `Motivo: ${reasonLabel[payload.reason] || payload.reason || "movimiento"}.` };
+      return {
+        title: `${playerName(payload.playerId)} pago ${moneyFormatter.format(payload.amount || 0)}`,
+        body: payload.creditorId
+          ? `${playerName(payload.creditorId)} recibio el pago por ${reasonLabel[payload.reason] || payload.reason || "movimiento"}. Saldo: ${moneyFormatter.format(payload.cashBefore || 0)} -> ${moneyFormatter.format(payload.cashAfter || 0)}.`
+          : `${reasonLabel[payload.reason] || payload.reason || "movimiento"}. Saldo: ${moneyFormatter.format(payload.cashBefore || 0)} -> ${moneyFormatter.format(payload.cashAfter || 0)}.`
+      };
     case "PLAYER_SENT_TO_JAIL":
       return { title: `${playerName(payload.playerId)} va a la carcel`, body: "Pierde libertad hasta resolver su salida." };
     case "PLAYER_LEFT_JAIL_WITH_DOUBLES":
@@ -688,6 +808,25 @@ function describeEvent(event, playersById, boardById) {
       return { title: `${playerName(payload.sellerId)} transfiere ${propertyName(payload.propertyId)}`, body: `${playerName(payload.buyerId)} paga ${moneyFormatter.format(payload.price || 0)}.` };
     case "JAIL_CARD_TRADED":
       return { title: `${playerName(payload.sellerId)} vende carta de carcel`, body: `${playerName(payload.buyerId)} paga ${moneyFormatter.format(payload.price || 0)}.` };
+    case "TRADE_OFFER_CREATED":
+      return {
+        title: payload.direction === "BUY"
+          ? `${playerName(payload.buyerId)} quiere comprar`
+          : `${playerName(payload.sellerId)} envia una oferta`,
+        body: payload.type === "PROPERTY"
+          ? payload.direction === "BUY"
+            ? `${propertyName(payload.propertyId)} por ${moneyFormatter.format(payload.price || 0)} a ${playerName(payload.sellerId)}.`
+            : `${propertyName(payload.propertyId)} por ${moneyFormatter.format(payload.price || 0)} para ${playerName(payload.buyerId)}.`
+          : payload.direction === "BUY"
+            ? `Pase de ${cardDeckLabel(payload.deck)} por ${moneyFormatter.format(payload.price || 0)} a ${playerName(payload.sellerId)}.`
+            : `Pase de ${cardDeckLabel(payload.deck)} por ${moneyFormatter.format(payload.price || 0)} para ${playerName(payload.buyerId)}.`
+      };
+    case "TRADE_OFFER_ACCEPTED":
+      return { title: `${playerName(payload.buyerId)} acepta una oferta`, body: "El trato se ejecuto y la mesa actualizo activos." };
+    case "TRADE_OFFER_REJECTED":
+      return { title: `${playerName(payload.buyerId)} rechaza una oferta`, body: "No hubo transferencia. Nadie firmo nada raro." };
+    case "TRADE_OFFER_CANCELLED":
+      return { title: `${playerName(payload.sellerId)} cancela una oferta`, body: "El trato salio del mercado." };
     case "JAIL_CARD_USED":
       return { title: `${playerName(payload.playerId)} usa carta de carcel`, body: "Se libera sin pagar multa." };
     case "JAIL_FINE_PAID":
@@ -709,6 +848,463 @@ function describeEvent(event, playersById, boardById) {
   }
 }
 
+function cardDeckLabel(deck) {
+  return deck === "CASUALIDAD" ? "Casualidad" : "Arca comunal";
+}
+
+function cardDeckClass(deck) {
+  return deck === "CASUALIDAD" ? "deck-chance" : "deck-chest";
+}
+
+function cardActionLabel(card) {
+  return card?.effect === "SALIR_LIBRE_CARCEL" ? "Guardar carta" : "Aceptar efecto";
+}
+
+function cardPreviewLabel(card) {
+  return card?.effect === "SALIR_LIBRE_CARCEL" ? "Carta guardable" : "Efecto inmediato";
+}
+
+function cardPreviewIcon(card, deck) {
+  if (card?.effect === "SALIR_LIBRE_CARCEL") return DoorOpen;
+  return deck === "CASUALIDAD" ? Sparkles : Landmark;
+}
+
+function cardPlayerName(playerName = "Jugador") {
+  const normalized = String(playerName || "Jugador").trim() || "Jugador";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function cardSceneCopy(card, deck, playerName = "Jugador") {
+  const title = card?.title || "Carta";
+  const effect = card?.effect || "GENERICA";
+  const name = cardPlayerName(playerName);
+  const seed = `${deck}:${effect}:${name}:${title}:scene`;
+  const jailFree = card?.effect === "SALIR_LIBRE_CARCEL";
+  const variants = jailFree
+    ? [
+        `${name} acaba de lootear un salvoconducto con olor a abogado caro.`,
+        `Inventario actualizado: ${name} ahora trae fuga legal en el bolsillo.`,
+        `${name} encontro el boton de "no era penal, arbitro". Guardalo con respeto.`
+      ]
+    : deck === "CASUALIDAD"
+      ? [
+          `${name} jalo la palanca del caos y el tablero dijo: va de nuevo.`,
+          `Casualidad acaba de mandarle a ${name} un plot twist con risa de villano.`,
+          `${name} abrio el sobre prohibido. Huele a meme financiero y peligro.`
+        ]
+      : [
+          `La comunidad se junto cinco minutos y ya le armo lore a ${name}.`,
+          `${name} recibio carta vecinal: medio apoyo, medio chisme, cero paz.`,
+          `Arca comunal saco el altavoz. ${name}, ven tantito, no te va a doler mucho.`
+        ];
+  return pickVariant(seed, variants);
+}
+
+function cardBodyCopy(card, deck, playerName = "Jugador") {
+  const title = card?.title || "Carta";
+  const effect = card?.effect || "GENERICA";
+  const seed = `${deck}:${effect}:${playerName}:${title}:body`;
+  const jailFree = card?.effect === "SALIR_LIBRE_CARCEL";
+  const variants = jailFree
+    ? [
+        `Si ${playerName} acaba cayendo preso, esta joyita evitara la caminata de la vergüenza.`,
+        `${playerName} puede guardarla y sonreir con discrecion cuando llegue la patrulla.`,
+        `Conviene guardarla: ${playerName} podria agradecer este comodin mas adelante.`,
+        `Es una carta para el inventario de ${playerName}; futuro problema, futura solucion.`,
+        `${playerName} no la juega hoy: la atesora para un escape con clase cuando toque.`
+      ]
+    : [
+        `${playerName} necesita aceptar el efecto para que el drama siga su curso natural.`,
+        `Cuando ${playerName} pulse el boton, el tablero hara lo suyo sin pedir permiso.`,
+        `Toca resolverla para que ${playerName} siga con el turno y con su destino dudoso.`,
+        `El mazo ya hizo su parte; ahora ${playerName} tiene que comerse el efecto.`,
+        `${playerName} esta a un click de descubrir si esto fue premio, castigo o comedia.`
+      ];
+  return pickVariant(seed, variants);
+}
+
+function cardDisplayTitle(card) {
+  const titles = {
+    chance_advance_go: "Turbo hasta Salida",
+    chance_advance_illinois: "Fast travel a Buenos Aires",
+    chance_advance_st_charles: "Mision express: Arequipa",
+    chance_nearest_utility: "Servicio cercano: modo boss",
+    chance_nearest_railroad_1: "Tren mas cercano x2",
+    chance_nearest_railroad_2: "Otro tren, doble drama",
+    chance_bank_dividend: "Dividendos inesperados",
+    chance_get_out_jail: "Llave ninja de carcel",
+    chance_go_back_three: "Rollback de tres casillas",
+    chance_go_to_jail: "Patrulla activada",
+    chance_general_repairs: "Parche de edificios",
+    chance_poor_tax: "Impuesto anti suerte",
+    chance_reading_railroad: "Ruta directa al Tren Maya",
+    chance_boardwalk: "Portal a Ciudad de Mexico",
+    chance_chairman: "Presidente del consejo",
+    chance_building_loan: "Prestamo cobrado",
+    chest_advance_go: "La comunidad te empuja a Salida",
+    chest_bank_error: "Bug bancario premium",
+    chest_doctors_fee: "Consulta medica premium",
+    chest_sale_of_stock: "Acciones vendidas en verde",
+    chest_get_out_jail: "Pase vecinal anti carcel",
+    chest_go_to_jail: "Vecinos llamaron patrulla",
+    chest_holiday_fund: "Fondo navideno liberado",
+    chest_income_tax_refund: "Reembolso fiscal mini",
+    chest_birthday: "Cumple con loot vecinal",
+    chest_life_insurance: "Seguro de vida cobrado",
+    chest_hospital_fees: "Factura de hospital",
+    chest_school_fees: "Colegiatura legendaria",
+    chest_consultancy_fee: "Consultoria cobrada",
+    chest_street_repairs: "Calles en mantenimiento",
+    chest_beauty_contest: "Concurso ganado por carisma",
+    chest_inheritance: "Herencia sorpresa"
+  };
+
+  return titles[card?.id] || card?.title || "Carta de tablero";
+}
+
+function cardFlavorCopy(card, deck, playerName = "Jugador") {
+  if (card?.text && card.text !== card.title) {
+    return card.text;
+  }
+
+  const name = cardPlayerName(playerName);
+  const amount = moneyFormatter.format(card?.amount || 0);
+  const effect = card?.effect || "";
+  const seed = `${deck}:${effect}:${card?.id || card?.title}:${name}:flavor`;
+  const byEffect = {
+    RECIBIR_DINERO: [
+      `El banco se distrajo y ${name} acaba de agarrar botin limpio: ${amount}.`,
+      `${name} recibe ${amount}. No preguntes de donde salio; agradece el bug.`,
+      `Loot financiero desbloqueado: ${amount} directo a la cartera de ${name}.`
+    ],
+    PAGAR_DINERO: [
+      `${name} paga ${amount}. El tablero cobro peaje emocional y fiscal.`,
+      `Factura sorpresa para ${name}: ${amount}. Duele, pero con estilo.`,
+      `${name} suelta ${amount}. El banco sonrie como jefe final.`
+    ],
+    RECIBIR_DE_CADA_JUGADOR: [
+      `Todos cooperan con ${name}. Cumpleanos, extorsion cute o milagro vecinal.`,
+      `${name} activa modo vaquita: cada rival pone su monedita y cara de resignacion.`,
+      `La mesa financia a ${name}. Democracia economica, pero chistosa.`
+    ],
+    PAGAR_A_CADA_JUGADOR: [
+      `${name} fue nombrado importante y ahora paga la fiesta. Clasico.`,
+      `Cargo honorifico desbloqueado: ${name} le debe a todos y encima con sonrisa.`,
+      `${name} reparte ${amount} por jugador. Liderazgo, pero en modo cartera rota.`
+    ],
+    MOVER_A: [
+      `${name} hace fast travel. Si la casilla trae renta, que Dios reparta suerte.`,
+      `Teletransporte de mesa: ${name} va directo al siguiente problema elegante.`,
+      `${name} cambia de escena sin tutorial. El mapa acaba de ponerse picante.`
+    ],
+    MOVER_A_FERROCARRIL_MAS_CERCANO: [
+      `${name} corre al tren mas cercano. El boleto puede venir con impuesto de drama.`,
+      `Sube al vagon, ${name}. Si hay dueno, la renta viene en version remix.`,
+      `Tren localizado. ${name} aborda con fe y la cartera sudando.`
+    ],
+    MOVER_A_SERVICIO_MAS_CERCANO: [
+      `${name} visita servicios publicos. Spoiler: la factura trae esteroides.`,
+      `Agua, luz o caos: ${name} va al servicio mas cercano y el medidor se rie.`,
+      `Servicio localizado. ${name} acaba de desbloquear recibo premium.`
+    ],
+    RETROCEDER: [
+      `${name} retrocede tres espacios. No es error, es rollback con humillacion.`,
+      `El tablero le dio Ctrl+Z a ${name}. Tres pasos atras y cara de "era bait".`,
+      `${name} hace moonwalk obligatorio. Tres casillas, cero dignidad.`
+    ],
+    IR_A_CARCEL: [
+      `${name} activo alerta roja. Directo a carcel, sin pasar por la tienda.`,
+      `La patrulla spawneo encima de ${name}. GG libertad, nos vemos luego.`,
+      `${name} recibe teleport policial. La celda ya tenia su nombre en marcador.`
+    ],
+    REPARACIONES: [
+      `${name} abre mantenimiento de emergencia. Cada casa y hotel pide su mordida.`,
+      `El imperio de ${name} necesita parche. El changelog viene con factura.`,
+      `Reparaciones generales: el tablero vio edificios y olio efectivo.`
+    ],
+    SALIR_LIBRE_CARCEL: [
+      `${name} guarda una fuga legal. No brilla mucho, pero salva partidas.`,
+      `Carta equipable: ${name} ahora tiene permiso para hacer vanish de la carcel.`,
+      `Esto no paga renta, pero compra paz mental carcelaria. Mucha clase.`
+    ]
+  };
+
+  return pickVariant(seed, byEffect[effect] || [cardBodyCopy(card, deck, name)]);
+}
+
+function cardRuleCopy(card, deck) {
+  const effect = card?.effect || "";
+  switch (effect) {
+    case "RECIBIR_DINERO":
+      return `Ganas ${moneyFormatter.format(card.amount || 0)}.`;
+    case "PAGAR_DINERO":
+      return `Pagas ${moneyFormatter.format(card.amount || 0)} al banco.`;
+    case "RECIBIR_DE_CADA_JUGADOR":
+      return `Cada rival te paga ${moneyFormatter.format(card.amount || 0)}.`;
+    case "PAGAR_A_CADA_JUGADOR":
+      return `Pagas ${moneyFormatter.format(card.amount || 0)} a cada rival.`;
+    case "RETROCEDER":
+      return `Retrocedes ${card.steps || 0} casillas.`;
+    case "MOVER_A":
+      return "Te mueves a la casilla indicada.";
+    case "MOVER_A_FERROCARRIL_MAS_CERCANO":
+      return "Avanzas al tren mas cercano; si tiene dueno, la renta se duplica.";
+    case "MOVER_A_SERVICIO_MAS_CERCANO":
+      return "Avanzas al servicio mas cercano y la renta usa multiplicador especial.";
+    case "IR_A_CARCEL":
+      return "Vas directo a la carcel.";
+    case "REPARACIONES":
+      return "Pagas reparaciones por cada casa y hotel.";
+    case "SALIR_LIBRE_CARCEL":
+      return `Se guarda como pase de ${cardDeckLabel(deck)}.`;
+    default:
+      return "";
+  }
+}
+
+function cardFooterCopy(card, deck, playerName = "Jugador") {
+  const title = card?.title || "Carta";
+  const effect = card?.effect || "GENERICA";
+  const seed = `${deck}:${effect}:${playerName}:${title}:footer`;
+  const jailFree = card?.effect === "SALIR_LIBRE_CARCEL";
+  const variants = jailFree
+    ? [
+        "Se queda en tu inventario para una fuga premium",
+        "Carta guardable para futuros problemas carcelarios",
+        "Se archiva con cariño en tu kit de supervivencia",
+        "Pasa directo a tu reserva de escapes con estilo",
+        "Se equipa como comodin legal de emergencia"
+      ]
+    : [
+        "Se ejecuta al instante y sin boton de deshacer",
+        "Impacto inmediato, cero burocracia",
+        "El efecto cae ahora mismo sobre la mesa",
+        "Se activa en este turno con todo y drama",
+        "Resolucion instantanea, que el destino reparta"
+      ];
+  return pickVariant(seed, variants);
+}
+
+function amountPresets(baseAmount, extras = []) {
+  const normalizedBase = Math.max(50, Math.round((Number(baseAmount) || 100) / 50) * 50);
+  const values = [
+    normalizedBase,
+    Math.max(50, normalizedBase - 100),
+    normalizedBase + 100,
+    normalizedBase + 250,
+    normalizedBase + 500,
+    ...extras
+  ];
+  return [...new Set(values.map((value) => Math.max(0, Math.round(Number(value) || 0))))]
+    .filter((value) => value > 0)
+    .sort((left, right) => left - right)
+    .slice(0, 6);
+}
+
+function propertyTradeBanter({ sellerName = "Tú", buyerName = "alguien", propertyName = "esa propiedad", price = 0 }) {
+  const seed = `${sellerName}:${buyerName}:${propertyName}:${price}:property-trade`;
+  return pickVariant(seed, [
+    `${sellerName} le esta poniendo moño a ${propertyName} para ver si ${buyerName} cae con la cartera abierta.`,
+    `${buyerName} puede salir de aqui con ${propertyName} y una sonrisa de villano inmobiliario.`,
+    `${sellerName} esta a nada de convertir ${propertyName} en trato cerrado y mirada sospechosa de ${buyerName}.`,
+    `${propertyName} ya esta en vitrina. Falta ver si ${buyerName} compra o solo vino a pasear.`,
+    `${sellerName} y ${buyerName} estan negociando como si esto fuera un mercado negro elegante de Monopoly.`,
+    `${propertyName} podria cambiar de manos hoy si ${buyerName} no se hace el dificil con el precio.`,
+    `${sellerName} ya puso a ${propertyName} bajo reflectores. Ahora que hable la billetera de ${buyerName}.`
+  ]);
+}
+
+function jailCardTradeBanter({ sellerName = "Tú", buyerName = "alguien", deckLabel = "Carta", price = 0 }) {
+  const seed = `${sellerName}:${buyerName}:${deckLabel}:${price}:jail-card`;
+  return pickVariant(seed, [
+    `${sellerName} esta vendiendo libertad embotellada y ${buyerName} podria necesitarla pronto.`,
+    `${buyerName} puede comprar tranquilidad futura antes de que lo visite la patrulla.`,
+    `${sellerName} saco al mercado una salida de emergencia con precio de amigo dudoso.`,
+    `${deckLabel} viene con promesa de escape elegante si ${buyerName} afloja la lana.`,
+    `${sellerName} ofrece un "por si acaso" carcelario que ${buyerName} podria agradecer bastante.`,
+    `${buyerName} esta a un clic de comprar paz mental para su yo del futuro.`,
+    `No es una carta, es un seguro anti drama. Falta ver si ${buyerName} lo entiende.`
+  ]);
+}
+
+function tradePropertyGroup(property) {
+  if (property?.colorGroup && colorGroupMeta[property.colorGroup]) {
+    return {
+      key: property.colorGroup,
+      label: colorGroupMeta[property.colorGroup].label,
+      accent: colorGroupMeta[property.colorGroup].color,
+      copy: "Pais / grupo de color"
+    };
+  }
+
+  if (property?.type === "FERROCARRIL") {
+    return { key: "transportes", label: "Transportes", accent: "#8a5a00", copy: "Rutas y trenes" };
+  }
+
+  if (property?.type === "SERVICIO_PUBLICO") {
+    return { key: "servicios", label: "Servicios", accent: "#0f766e", copy: "Agua, luz y facturas" };
+  }
+
+  return { key: "otros", label: "Otros activos", accent: "#7c5d38", copy: "Propiedades especiales" };
+}
+
+function groupTradeProperties(properties = []) {
+  const groups = new Map();
+  properties.forEach((property) => {
+    const meta = tradePropertyGroup(property);
+    if (!groups.has(meta.key)) {
+      groups.set(meta.key, { ...meta, properties: [] });
+    }
+    groups.get(meta.key).properties.push(property);
+  });
+
+  return [...groups.values()].map((group) => ({
+    ...group,
+    properties: [...group.properties].sort((left, right) => {
+      const leftPrice = left.price || left.mortgageValue || 0;
+      const rightPrice = right.price || right.mortgageValue || 0;
+      return rightPrice - leftPrice;
+    })
+  }));
+}
+
+function propertyTradeBlockReason(property, properties = []) {
+  if (!property?.colorGroup) return "";
+  const groupHasBuildings = properties.some((candidate) => (
+    candidate.colorGroup === property.colorGroup &&
+    ((candidate.houses || 0) > 0 || candidate.hasHotel)
+  ));
+
+  return groupHasBuildings ? "Primero vende las casas u hoteles de este color." : "";
+}
+
+function mortgageTransferCost(property, liftMortgage) {
+  if (!property?.isMortgaged) return 0;
+  const transferInterest = Math.ceil((property.mortgageValue || 0) * 0.1);
+  return transferInterest + (liftMortgage ? property.mortgageValue || 0 : 0);
+}
+
+function moneyBurstText(amount, prefix) {
+  return `${prefix}${moneyFormatter.format(Math.abs(amount || 0))}`;
+}
+
+function buildMoneyBursts(event, playersById, boardById) {
+  const payload = event?.payload || {};
+  const player = playersById.get(payload.playerId || payload.debtorId);
+  const playerSpace = Number.isFinite(player?.position) ? player.position : 0;
+  const creditor = playersById.get(payload.creditorId);
+  const creditorSpace = Number.isFinite(creditor?.position) ? creditor.position : playerSpace;
+  const bursts = [];
+
+  if (event?.type === "PLAYER_RECEIVED_MONEY" && payload.amount > 0) {
+    bursts.push({
+      id: `${event.id}-gain`,
+      spaceIndex: payload.reason === "PASO_POR_SALIDA" ? 0 : playerSpace,
+      label: moneyBurstText(payload.amount, "+"),
+      tone: "gain",
+      slot: 0
+    });
+  }
+
+  if (event?.type === "PLAYER_PAID" && payload.amount > 0) {
+    bursts.push({
+      id: `${event.id}-loss`,
+      spaceIndex: playerSpace,
+      label: moneyBurstText(payload.amount, "-"),
+      tone: "loss",
+      slot: 0
+    });
+
+    if (payload.creditorId) {
+      bursts.push({
+        id: `${event.id}-creditor-gain`,
+        spaceIndex: creditorSpace,
+        label: moneyBurstText(payload.amount, "+"),
+        tone: "gain",
+        slot: 0
+      });
+    }
+  }
+
+  if (event?.type === "PROPERTY_PURCHASED" && payload.price > 0) {
+    const space = boardById.get(payload.propertyId);
+    bursts.push({
+      id: `${event.id}-purchase`,
+      spaceIndex: Number.isFinite(space?.index) ? space.index : playerSpace,
+      label: moneyBurstText(payload.price, "-"),
+      tone: "loss",
+      slot: 0
+    });
+  }
+
+  if ((event?.type === "JAIL_FINE_PAID" || event?.type === "DEBT_PAID") && payload.amount > 0) {
+    bursts.push({
+      id: `${event.id}-paid`,
+      spaceIndex: playerSpace,
+      label: moneyBurstText(payload.amount, "-"),
+      tone: "loss",
+      slot: 0
+    });
+  }
+
+  return bursts;
+}
+
+function eventBurstDelay(event, movementTimeline) {
+  if (!movementTimeline) return 0;
+  const payload = event?.payload || {};
+  const stepStart = CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS;
+
+  if (event?.type === "PLAYER_RECEIVED_MONEY" && payload.reason === "PASO_POR_SALIDA") {
+    const passGoIndex = movementTimeline.path.findIndex((position) => position === 0);
+    if (passGoIndex >= 0) {
+      return stepStart + passGoIndex * CINEMATIC_STEP_MS + Math.floor(CINEMATIC_STEP_MS * 0.42);
+    }
+  }
+
+  if (["PLAYER_PAID", "PROPERTY_PURCHASED", "JAIL_FINE_PAID", "DEBT_PAID"].includes(event?.type)) {
+    return stepStart + movementTimeline.path.length * CINEMATIC_STEP_MS + 240;
+  }
+
+  return 0;
+}
+
+function eventToastDelay(event, movementTimeline) {
+  if (!movementTimeline) return 0;
+  const payload = event?.payload || {};
+  const stepStart = CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS;
+  const landingDelay = stepStart + movementTimeline.path.length * CINEMATIC_STEP_MS + 220;
+
+  if (event?.type === "PLAYER_RECEIVED_MONEY" && payload.reason === "PASO_POR_SALIDA") {
+    const passGoIndex = movementTimeline.path.findIndex((position) => position === 0);
+    if (passGoIndex >= 0) {
+      return stepStart + passGoIndex * CINEMATIC_STEP_MS + Math.floor(CINEMATIC_STEP_MS * 0.42);
+    }
+  }
+
+  if ([
+    "CARD_DRAWN",
+    "SPACE_RESOLVED",
+    "PLAYER_PAID",
+    "DEBT_CREATED",
+    "PLAYER_SENT_TO_JAIL",
+    "AUCTION_STARTED",
+    "PLAYER_RECEIVED_MONEY"
+  ].includes(event?.type)) {
+    return landingDelay;
+  }
+
+  return 0;
+}
+
+function eventSoundDelay(event, movementTimeline) {
+  if (!movementTimeline) return 0;
+  if (event?.type === "CARD_DRAWN") {
+    return CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + movementTimeline.path.length * CINEMATIC_STEP_MS + 320;
+  }
+  return eventBurstDelay(event, movementTimeline);
+}
+
 function formatCountdown(deadlineAt) {
   if (!deadlineAt) {
     return "--";
@@ -724,6 +1320,43 @@ function formatCountdown(deadlineAt) {
 function buildModalState({ state, currentUserId, playersById, boardById }) {
   const currentPlayerName = playersById.get(state.currentPlayerId)?.name || "Jugador";
   const myTurn = sameEntityId(state.currentPlayerId, currentUserId);
+  const tradeOffers = state.turn.tradeOffers || [];
+  const incomingOffer = tradeOffers.find((offer) => sameEntityId(tradeOfferRecipientId(offer), currentUserId));
+  const outgoingOffer = tradeOffers.find((offer) => sameEntityId(tradeOfferInitiatorId(offer), currentUserId));
+
+  if (incomingOffer || outgoingOffer) {
+    const offer = incomingOffer || outgoingOffer;
+    const property = offer.type === "PROPERTY" ? boardById.get(offer.propertyId) : null;
+    const sellerName = playersById.get(offer.sellerId)?.name || "Jugador";
+    const buyerName = playersById.get(offer.buyerId)?.name || "Jugador";
+    const incoming = Boolean(incomingOffer);
+    const buyRequest = offer.direction === "BUY";
+    const requesterName = playersById.get(offer.initiatorId)?.name || (buyRequest ? buyerName : sellerName);
+
+    return {
+      type: "tradeOffer",
+      tone: incoming ? "success" : "info",
+      blocking: incoming,
+      title: offer.type === "PROPERTY"
+        ? buyRequest
+          ? `${buyerName} quiere ${property?.name || "una propiedad"}`
+          : `${sellerName} ofrece ${property?.name || "una propiedad"}`
+        : buyRequest
+          ? `${buyerName} quiere un pase de carcel`
+          : `${sellerName} ofrece un pase de carcel`,
+      body: incoming
+        ? buyRequest
+          ? `${buyerName} quiere comprartelo por ${moneyFormatter.format(offer.price || 0)}. Si aceptas, el activo sale de tu inventario.`
+          : `${sellerName} quiere vendertelo por ${moneyFormatter.format(offer.price || 0)}. Revisa y decide si aceptas el trato.`
+        : `Oferta enviada por ${requesterName}. Falta que ${playersById.get(tradeOfferRecipientId(offer))?.name || "el otro jugador"} la acepte.`,
+      offer,
+      property,
+      sellerName,
+      buyerName,
+      incoming,
+      buyRequest
+    };
+  }
 
   if (state.turn.pendingPurchase) {
     const property = boardById.get(state.turn.pendingPurchase.propertyId);
@@ -753,14 +1386,16 @@ function buildModalState({ state, currentUserId, playersById, boardById }) {
   }
 
   if (state.turn.pendingCard?.card) {
+    const actorName = playersById.get(state.currentPlayerId)?.name || "Jugador";
     return {
       type: "card",
       tone: "info",
       blocking: false,
       title: state.turn.pendingCard.card.title || "Carta de tablero",
-      body: state.turn.pendingCard.card.text || "Debes resolver esta carta para continuar.",
+      body: cardSceneCopy(state.turn.pendingCard.card, state.turn.pendingCard.deck, actorName),
       card: state.turn.pendingCard.card,
-      deck: state.turn.pendingCard.deck
+      deck: state.turn.pendingCard.deck,
+      playerName: actorName
     };
   }
 
@@ -905,6 +1540,10 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
   const group = colorGroupMeta[space.colorGroup];
   const displayName = boardDisplayName(space);
   const ownerAccent = owner?.colorIndex !== undefined ? playerAccent(owner.colorIndex) : null;
+  const ownerTokenStyle = owner ? tokenStyles[owner.id] || resolveTokenStyle(owner, {}) : null;
+  const isCardSpace = space.type === "CASUALIDAD" || space.type === "ARCA_COMUNAL";
+  const cardDeckName = space.type === "CASUALIDAD" ? "Casualidad" : "Arca comunal";
+  const cardDeckCode = space.type === "CASUALIDAD" ? "?" : "!";
   const style = {
     gridRowStart: cell.row + 1,
     gridColumnStart: cell.col + 1
@@ -930,6 +1569,9 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
         `side-${cell.side}`,
         owner && "owned",
         cell.corner && "corner",
+        isCardSpace && "card-space",
+        space.type === "CASUALIDAD" && "deck-chance",
+        space.type === "ARCA_COMUNAL" && "deck-chest",
         selected && "selected",
         current && "current",
         cameraTarget && "cam-target"
@@ -948,10 +1590,22 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
         </div>
 
         <div className="monopoly-space-copy">
-          <p className="monopoly-space-name">{displayName}</p>
-          <p className="monopoly-space-meta">
-            {boardMetaLabel(space, owner)}
-          </p>
+          {isCardSpace ? (
+            <div className="monopoly-card-space-art" aria-hidden="true">
+              <span className="card-mini-corner top">{cardDeckCode}</span>
+              <span className="card-mini-corner bottom">{cardDeckCode}</span>
+              <span className="card-mini-icon"><Receipt size={14} /></span>
+              <strong>{displayName}</strong>
+              <em>{cardDeckName}</em>
+            </div>
+          ) : (
+            <>
+              <p className="monopoly-space-name">{displayName}</p>
+              <p className="monopoly-space-meta">
+                {boardMetaLabel(space, owner)}
+              </p>
+            </>
+          )}
         </div>
 
         {(space.price || space.houses || space.hasHotel || space.isMortgaged) && (
@@ -966,7 +1620,11 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
               </span>
             )}
             {space.isMortgaged ? <span className="monopoly-mortgage-stamp">Hip.</span> : null}
-            {owner && <span className="space-owner-badge">{initialLetters(owner.name)}</span>}
+            {owner && ownerTokenStyle ? (
+              <span className="space-owner-badge" title={`Propiedad de ${owner.name}`}>
+                <TokenChip tokenStyle={ownerTokenStyle} className="space-owner-token" />
+              </span>
+            ) : null}
           </div>
         )}
 
@@ -998,6 +1656,72 @@ const propertyActionOrder = [
   ["venderCasa", "Vender casa"],
   ["venderHotel", "Vender hotel"]
 ];
+
+const debtActionMeta = {
+  hipotecarPropiedad: {
+    label: "Hipotecar",
+    eyebrow: "Liquidez inmediata",
+    icon: Hammer
+  },
+  levantarHipoteca: {
+    label: "Levantar",
+    eyebrow: "Recuperar renta",
+    icon: Landmark
+  },
+  comprarCasa: {
+    label: "Comprar casa",
+    eyebrow: "Invertir",
+    icon: Building2
+  },
+  comprarHotel: {
+    label: "Comprar hotel",
+    eyebrow: "Mejora mayor",
+    icon: Crown
+  },
+  venderCasa: {
+    label: "Vender casa",
+    eyebrow: "Recuperas efectivo",
+    icon: Wallet
+  },
+  venderHotel: {
+    label: "Vender hotel",
+    eyebrow: "Liquidas edificios",
+    icon: Wallet
+  }
+};
+
+function debtActionCopy(actionName, property) {
+  switch (actionName) {
+    case "hipotecarPropiedad":
+      return `Recibes ${moneyFormatter.format(property.mortgageValue || 0)} ahora mismo.`;
+    case "levantarHipoteca":
+      return `Pagas ${moneyFormatter.format((property.mortgageValue || 0) + Math.ceil((property.mortgageValue || 0) * 0.1))} para reactivar la renta.`;
+    case "comprarCasa":
+      return `Inviertes ${moneyFormatter.format(property.houseCost || 0)} en esta calle.`;
+    case "comprarHotel":
+      return `Inviertes ${moneyFormatter.format(property.hotelCost || property.houseCost || 0)} para subir a hotel.`;
+    case "venderCasa":
+      return `Recibes ${moneyFormatter.format(Math.floor((property.houseCost || 0) / 2))} por casa vendida.`;
+    case "venderHotel":
+      return `Recibes ${moneyFormatter.format(Math.floor((property.hotelCost || property.houseCost || 0) / 2))} por el hotel.`;
+    default:
+      return "Accion disponible.";
+  }
+}
+
+function estimatePropertyLiquidity(property) {
+  let total = 0;
+  if (property.management?.hipotecarPropiedad?.allowed) {
+    total += property.mortgageValue || 0;
+  }
+  if (property.management?.venderCasa?.allowed && property.houses > 0) {
+    total += Math.floor((property.houseCost || 0) / 2) * property.houses;
+  }
+  if (property.management?.venderHotel?.allowed && property.hasHotel) {
+    total += Math.floor((property.hotelCost || property.houseCost || 0) / 2);
+  }
+  return total;
+}
 
 function SelectedSpaceCard({ space, owner, visitors, ownerProperty, onManage, managementOptions, isOwnedByMe }) {
   const group = colorGroupMeta[space?.colorGroup];
@@ -1040,6 +1764,20 @@ function SelectedSpaceCard({ space, owner, visitors, ownerProperty, onManage, ma
           <span>Hotel</span>
           <span className="deed-value">{buildings.hasHotel ? "Si" : "No"}</span>
         </div>
+        {buildings.houseCost > 0 && (
+          <>
+            <div className="deed-stat">
+              <span>Costo casa</span>
+              <Money amount={buildings.houseCost} className="deed-value" />
+            </div>
+            <div className="deed-stat">
+              <span>Costo hotel</span>
+              <span className="deed-value">
+                {moneyFormatter.format(buildings.hotelCost || buildings.houseCost)} + casas requeridas
+              </span>
+            </div>
+          </>
+        )}
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
@@ -1077,6 +1815,14 @@ function SelectedSpaceCard({ space, owner, visitors, ownerProperty, onManage, ma
           <div className="grid gap-3 sm:grid-cols-2">
             {propertyActionOrder.map(([actionName, label]) => {
               const option = managementOptions[actionName];
+              const actionCost = {
+                hipotecarPropiedad: `Obtienes ${moneyFormatter.format(space.mortgageValue || 0)}.`,
+                levantarHipoteca: `Pagas ${moneyFormatter.format((space.mortgageValue || 0) + Math.ceil((space.mortgageValue || 0) * 0.1))}.`,
+                comprarCasa: `Pagas ${moneyFormatter.format(buildings.houseCost || 0)} por casa.`,
+                comprarHotel: `Pagas ${moneyFormatter.format(buildings.hotelCost || buildings.houseCost || 0)} al construir hotel.`,
+                venderCasa: `Obtienes ${moneyFormatter.format(Math.floor((buildings.houseCost || 0) / 2))}.`,
+                venderHotel: `Obtienes ${moneyFormatter.format(Math.floor((buildings.hotelCost || buildings.houseCost || 0) / 2))}.`
+              }[actionName];
               return (
                 <div key={actionName} className="rounded-[18px] border border-[#ddcfb7] bg-[#fff8ec] p-3">
                   <ActionButton
@@ -1089,7 +1835,7 @@ function SelectedSpaceCard({ space, owner, visitors, ownerProperty, onManage, ma
                     {label}
                   </ActionButton>
                   <p className="mt-2 min-h-[32px] text-xs font-semibold leading-5 text-[#7c5d38]">
-                    {option?.allowed ? "Disponible ahora." : option?.reason || "No disponible en este momento."}
+                    {option?.allowed ? actionCost : option?.reason || "No disponible en este momento."}
                   </p>
                 </div>
               );
@@ -1324,6 +2070,34 @@ function TokenOverlay({ players, currentPlayerId, tokenStyles = {}, moverId = nu
   );
 }
 
+function MoneyBurstOverlay({ bursts = [] }) {
+  if (!bursts.length) return null;
+
+  return (
+    <div className="monopoly-money-burst-overlay">
+      {bursts.map((burst) => {
+        const cell = boardCell(burst.spaceIndex || 0);
+        const x = trackCenterPercent(boardTokenColumnWeights, cell.col);
+        const y = trackCenterPercent(boardTokenRowWeights, cell.row);
+        const slot = burst.slot || 0;
+        return (
+          <span
+            key={burst.id}
+            className={cx("money-burst", `tone-${burst.tone || "gain"}`, slot && "alt")}
+            style={{
+              left: `${x}%`,
+              top: `${y}%`,
+              "--burst-x": `${slot * 22 - 10}px`
+            }}
+          >
+            {burst.label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function modalNeedsAction(modalState, myActions) {
   if (!modalState) return false;
 
@@ -1338,6 +2112,8 @@ function modalNeedsAction(modalState, myActions) {
       return myActions.includes("resolverDeudaPendiente") || myActions.includes("resolverQuiebra");
     case "auction":
       return myActions.includes("hacerOferta") || myActions.includes("retirarseDeSubasta");
+    case "tradeOffer":
+      return myActions.includes("aceptarOfertaTrato") || myActions.includes("rechazarOfertaTrato") || myActions.includes("cancelarOfertaTrato");
     case "jail":
       return myActions.includes("pagarMultaCarcel") || myActions.includes("usarCartaSalirCarcel") || myActions.includes("tirarDados");
     default:
@@ -1398,6 +2174,118 @@ function EventToasts({ toasts, onDismiss, playersById, boardById }) {
   );
 }
 
+function AuctionControls({
+  auction,
+  playersById,
+  boardById,
+  bidAmount,
+  setBidAmount,
+  canBidAuction,
+  canPassAuction,
+  onAction,
+  compact = false
+}) {
+  if (!auction) return null;
+
+  const property = boardById?.get(auction.assetId);
+  const activeBidder = playersById.get(auction.activeBidderId);
+  const highBidder = playersById.get(auction.currentBidderId);
+  const minimum = auctionMinimumBid(auction);
+  const activeCash = activeBidder?.cash || 0;
+  const bidIsValid = bidAmount >= minimum && bidAmount <= activeCash;
+  const quickBids = quickAuctionBids(auction, activeCash);
+  const visibleParticipants = (auction.participantIds || []).map((playerId) => {
+    const player = playersById.get(playerId);
+    return {
+      id: playerId,
+      name: player?.name || "Jugador",
+      cash: player?.cash || 0,
+      passed: (auction.passedPlayerIds || []).includes(playerId)
+    };
+  });
+
+  return (
+    <div className={cx("auction-play-panel", compact && "compact")}>
+      <div className="auction-play-head">
+        <div>
+          <p className="monopoly-panel-eyebrow">Subasta en vivo</p>
+          <h4>{property?.name || "Propiedad"}</h4>
+        </div>
+        <span className="auction-pulse"><Gavel size={16} /> 25%</span>
+      </div>
+
+      <div className="auction-stats-grid">
+        <div>
+          <span>Precio base</span>
+          <strong>{moneyFormatter.format(auction.meta?.basePrice || property?.price || 0)}</strong>
+        </div>
+        <div>
+          <span>Puja actual</span>
+          <strong>{moneyFormatter.format(auction.currentBid || 0)}</strong>
+        </div>
+        <div>
+          <span>Mayor postor</span>
+          <strong>{highBidder?.name || "Sin ofertas"}</strong>
+        </div>
+        <div>
+          <span>Minima siguiente</span>
+          <strong>{moneyFormatter.format(minimum)}</strong>
+        </div>
+      </div>
+
+      <div className="auction-player-bank">
+        {visibleParticipants.map((player) => (
+          <span key={player.id} className={cx(player.id === auction.activeBidderId && "active", player.passed && "passed")}>
+            {player.name}
+            <em>{moneyFormatter.format(player.cash)}</em>
+          </span>
+        ))}
+      </div>
+
+      {(canBidAuction || canPassAuction) && (
+        <div className="auction-bid-console">
+          {canBidAuction && (
+            <>
+              <div className="auction-quick-bids">
+                {quickBids.map((amount) => (
+                  <button key={amount} type="button" onClick={() => setBidAmount(amount)}>
+                    {moneyFormatter.format(amount)}
+                  </button>
+                ))}
+              </div>
+              <input
+                className="monopoly-input auction-bid-input"
+                type="number"
+                min={minimum}
+                max={activeCash}
+                value={bidAmount}
+                onChange={(event) => setBidAmount(Number(event.target.value))}
+              />
+              <ActionButton
+                disabled={!bidIsValid}
+                onClick={() => onAction("hacerOferta", { monto: bidAmount })}
+              >
+                <Gavel size={18} />
+                Ofertar
+              </ActionButton>
+            </>
+          )}
+          {canPassAuction && (
+            <ActionButton tone="danger" onClick={() => onAction("retirarseDeSubasta")}>
+              Retirarse
+            </ActionButton>
+          )}
+          {canBidAuction && !bidIsValid && (
+            <p className="auction-bid-warning">
+              La puja debe ser minimo {moneyFormatter.format(minimum)} y no superar tu dinero disponible.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TurnAssist({ currentPlayer, isMyTurn, phase, modalState, myActions, onAction }) {
   const canAct = isMyTurn && myActions.length > 0;
 
@@ -1454,30 +2342,85 @@ function HourglassMessage() {
   );
 }
 
-function ActionModal({ modalState, myActions, currentUserId, state, playersById, boardById, onAction, onClose }) {
+function ActionModal({ modalState, myActions, currentUserId, state, playersById, boardById, onAction, onClose, onManageDebt }) {
   const [modalBidAmount, setModalBidAmount] = useState(1);
 
   useEffect(() => {
     if (modalState?.type === "auction") {
-      setModalBidAmount((modalState.auction.currentBid || 0) + 1);
+      setModalBidAmount(auctionMinimumBid(modalState.auction));
     }
   }, [modalState?.type, modalState?.auction?.id, modalState?.auction?.currentBid]);
 
   if (!modalState) return null;
 
   const closeAllowed = !modalState.blocking;
+  const isCardModal = modalState.type === "card";
   const property = modalState.property;
   const isMyAuctionTurn = modalState.type === "auction" && sameEntityId(modalState.auction.activeBidderId, currentUserId);
   const canBidAuction = isMyAuctionTurn || myActions.includes("hacerOferta");
   const canPassAuction = isMyAuctionTurn || myActions.includes("retirarseDeSubasta");
+  const debtPlayer = modalState.type === "debt" ? playersById.get(modalState.debt.debtorId) : null;
+  const debtShortfall = modalState.type === "debt" ? Math.max(0, (modalState.debt.amount || 0) - (debtPlayer?.cash || 0)) : 0;
+  const canPayDebt = modalState.type === "debt" && myActions.includes("resolverDeudaPendiente") && debtShortfall === 0;
+  const debtRescueLiquidity = modalState.type === "debt"
+    ? (debtPlayer?.properties || []).reduce((sum, debtProperty) => sum + estimatePropertyLiquidity(debtProperty), 0)
+    : 0;
+  const shouldManageBeforeBankruptcy = modalState.type === "debt" && debtShortfall > 0 && debtRescueLiquidity >= debtShortfall;
+
+  if (isCardModal) {
+    const DeckIcon = cardPreviewIcon(modalState.card, modalState.deck);
+    const ruleCopy = cardRuleCopy(modalState.card, modalState.deck);
+
+    return (
+      <div className="monopoly-modal-backdrop card-table-backdrop">
+        <div className="card-table-stage">
+          {closeAllowed && (
+            <button type="button" className="card-table-close" onClick={onClose} aria-label="Cerrar carta">
+              <X size={16} />
+            </button>
+          )}
+          <div className="game-card-reveal game-card-reveal-standalone">
+            <div className={cx("game-card-face real-game-card", cardDeckClass(modalState.deck), modalState.card.effect === "SALIR_LIBRE_CARCEL" && "jail-free")}>
+              <span className="game-card-corner top">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
+              <span className="game-card-corner bottom">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
+              <div className="game-card-topline">
+                <span className="game-card-deck">{cardDeckLabel(modalState.deck)}</span>
+                <span className="game-card-stamp">{cardPreviewLabel(modalState.card)}</span>
+              </div>
+              <div className="game-card-medallion">
+                <DeckIcon size={44} />
+              </div>
+              <div className="game-card-body">
+                <strong className="game-card-title">{cardDisplayTitle(modalState.card)}</strong>
+                <p>{cardFlavorCopy(modalState.card, modalState.deck, modalState.playerName)}</p>
+                {ruleCopy && <span className="game-card-rule">{ruleCopy}</span>}
+              </div>
+              <div className="game-card-footer">
+                <span>{cardFooterCopy(modalState.card, modalState.deck, modalState.playerName)}</span>
+              </div>
+            </div>
+            {myActions.includes("resolverCarta") && (
+              <div className="game-card-action-row">
+                <ActionButton onClick={() => onAction("resolverCarta")}>{cardActionLabel(modalState.card)}</ActionButton>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="monopoly-modal-backdrop">
       <div className={cx("monopoly-modal", `tone-${modalState.tone}`)}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Accion de tablero</p>
-            <h3 className="mt-2 text-3xl font-black uppercase">{modalState.title}</h3>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">
+              Accion de tablero
+            </p>
+            <h3 className="mt-2 text-3xl font-black uppercase">
+              {modalState.title}
+            </h3>
             <p className="mt-3 text-sm font-semibold leading-6 opacity-90">{modalState.body}</p>
           </div>
           {closeAllowed && (
@@ -1518,36 +2461,129 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
         )}
 
         {modalState.type === "debt" && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <div className="modal-stat-card">
               <span>Deuda</span>
               <Money amount={modalState.debt.amount} className="modal-stat-value" />
             </div>
             <div className="modal-stat-card">
-              <span>Deudor</span>
-              <span className="modal-stat-value">{playersById.get(modalState.debt.debtorId)?.name || "Jugador"}</span>
+              <span>Efectivo actual</span>
+              <Money amount={debtPlayer?.cash || 0} className="modal-stat-value" />
             </div>
+            <div className="modal-stat-card">
+              <span>Falta reunir</span>
+              <Money amount={debtShortfall} className="modal-stat-value" />
+            </div>
+            {debtShortfall > 0 && (
+              <div className="debt-management-callout sm:col-span-3">
+                <Hammer size={18} />
+                <p>
+                  Administra propiedades antes de declararte en quiebra: vende casas u hoteles, hipoteca activos y vuelve a pagar cuando el saldo alcance la deuda.
+                </p>
+              </div>
+            )}
           </div>
         )}
 
         {modalState.type === "auction" && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="modal-stat-card">
-              <span>Propiedad</span>
-              <span className="modal-stat-value">{boardById.get(modalState.auction.assetId)?.name || "Activo"}</span>
+          <div className="mt-5">
+            <AuctionControls
+              auction={modalState.auction}
+              playersById={playersById}
+              boardById={boardById}
+              bidAmount={modalBidAmount}
+              setBidAmount={setModalBidAmount}
+              canBidAuction={canBidAuction}
+              canPassAuction={canPassAuction}
+              onAction={onAction}
+            />
+          </div>
+        )}
+
+        {modalState.type === "tradeOffer" && (
+          <div className="trade-offer-card">
+            <div className="trade-offer-main">
+              <div className="trade-offer-icon">
+                {modalState.offer.type === "PROPERTY" ? <Scale size={28} /> : <ShieldAlert size={28} />}
+              </div>
+              <div>
+                <p className="monopoly-panel-eyebrow">{modalState.incoming ? "Invitacion de trato" : "Oferta enviada"}</p>
+                <h4>
+                  {modalState.offer.type === "PROPERTY"
+                    ? modalState.property?.name || "Propiedad"
+                    : `Pase de ${cardDeckLabel(modalState.offer.deck)}`}
+                </h4>
+                <p>
+                  {modalState.incoming
+                    ? modalState.buyRequest
+                      ? `${modalState.buyerName} te propone comprartelo por ${moneyFormatter.format(modalState.offer.price || 0)}.`
+                      : `${modalState.sellerName} te propone vendertelo por ${moneyFormatter.format(modalState.offer.price || 0)}.`
+                    : modalState.buyRequest
+                      ? `${modalState.sellerName} debe aceptar para venderte este activo.`
+                      : `${modalState.buyerName} debe aceptar para comprar este activo.`}
+                </p>
+              </div>
             </div>
-            <div className="modal-stat-card">
-              <span>Puja actual</span>
-              <Money amount={modalState.auction.currentBid || 0} className="modal-stat-value" />
-            </div>
-            <div className="modal-stat-card">
-              <span>Turno de puja</span>
-              <span className="modal-stat-value">{playersById.get(modalState.auction.activeBidderId)?.name || "Jugador"}</span>
+
+            <div className="trade-offer-stats">
+              <article className="modal-stat-card">
+                <span>Vendedor</span>
+                <strong className="modal-stat-value">{modalState.sellerName}</strong>
+              </article>
+              <article className="modal-stat-card">
+                <span>Comprador</span>
+                <strong className="modal-stat-value">{modalState.buyerName}</strong>
+              </article>
+              <article className="modal-stat-card">
+                <span>Precio</span>
+                <Money amount={modalState.offer.price || 0} className="modal-stat-value" />
+              </article>
+              {modalState.property?.isMortgaged && (
+                <article className="modal-stat-card">
+                  <span>Hipoteca</span>
+                  <strong className="modal-stat-value">{modalState.offer.liftMortgageNow ? "Se levanta al aceptar" : "Se transfiere con interes"}</strong>
+                </article>
+              )}
             </div>
           </div>
         )}
 
-        <div className="mt-6 flex flex-wrap gap-3">
+        {modalState.type === "card" && (
+          <div className="game-card-reveal">
+            {(() => {
+              const DeckIcon = cardPreviewIcon(modalState.card, modalState.deck);
+              const ruleCopy = cardRuleCopy(modalState.card, modalState.deck);
+              return (
+                <div className={cx("game-card-face", cardDeckClass(modalState.deck), modalState.card.effect === "SALIR_LIBRE_CARCEL" && "jail-free")}>
+                  <span className="game-card-corner top">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
+                  <span className="game-card-corner bottom">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
+                  <div className="game-card-topline">
+                    <span className="game-card-deck">{cardDeckLabel(modalState.deck)}</span>
+                    <span className="game-card-stamp">{cardPreviewLabel(modalState.card)}</span>
+                  </div>
+                  <div className="game-card-medallion">
+                    <DeckIcon size={38} />
+                  </div>
+                  <div className="game-card-body">
+                    <strong className="game-card-title">{cardDisplayTitle(modalState.card)}</strong>
+                    <p>{cardFlavorCopy(modalState.card, modalState.deck, modalState.playerName)}</p>
+                    {ruleCopy && <span className="game-card-rule">{ruleCopy}</span>}
+                  </div>
+                  <div className="game-card-footer">
+                    <span>{cardFooterCopy(modalState.card, modalState.deck, modalState.playerName)}</span>
+                  </div>
+                </div>
+            );
+            })()}
+            {myActions.includes("resolverCarta") && (
+              <div className="game-card-action-row">
+                <ActionButton onClick={() => onAction("resolverCarta")}>{cardActionLabel(modalState.card)}</ActionButton>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className={cx("mt-6 flex flex-wrap gap-3", isCardModal && "hidden")}>
           {modalState.type === "purchase" && myActions.includes("comprarPropiedad") && (
             <>
               <ActionButton onClick={() => onAction("comprarPropiedad")}>Comprar</ActionButton>
@@ -1562,14 +2598,30 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
             </>
           )}
 
-          {modalState.type === "card" && myActions.includes("resolverCarta") && (
-            <ActionButton onClick={() => onAction("resolverCarta")}>Resolver carta</ActionButton>
-          )}
-
           {modalState.type === "debt" && myActions.includes("resolverDeudaPendiente") && (
             <>
-              <ActionButton onClick={() => onAction("resolverDeudaPendiente")}>Pagar deuda</ActionButton>
-              {myActions.includes("resolverQuiebra") && <ActionButton tone="danger" onClick={() => onAction("resolverQuiebra")}>Quiebra</ActionButton>}
+              <ActionButton onClick={() => canPayDebt ? onAction("resolverDeudaPendiente") : onManageDebt?.()}>
+                {canPayDebt ? "Pagar deuda" : "Abrir rescate"}
+              </ActionButton>
+              {myActions.includes("resolverQuiebra") && (
+                <ActionButton tone="danger" onClick={() => shouldManageBeforeBankruptcy ? onManageDebt?.() : onAction("resolverQuiebra")}>
+                  {shouldManageBeforeBankruptcy ? "Liquidar antes" : "Quiebra"}
+                </ActionButton>
+              )}
+            </>
+          )}
+
+          {modalState.type === "tradeOffer" && (
+            <>
+              {modalState.incoming && myActions.includes("aceptarOfertaTrato") && (
+                <ActionButton onClick={() => onAction("aceptarOfertaTrato", { offerId: modalState.offer.id })}>Aceptar trato</ActionButton>
+              )}
+              {modalState.incoming && myActions.includes("rechazarOfertaTrato") && (
+                <ActionButton tone="danger" onClick={() => onAction("rechazarOfertaTrato", { offerId: modalState.offer.id })}>Rechazar</ActionButton>
+              )}
+              {!modalState.incoming && myActions.includes("cancelarOfertaTrato") && (
+                <ActionButton tone="danger" onClick={() => onAction("cancelarOfertaTrato", { offerId: modalState.offer.id })}>Cancelar oferta</ActionButton>
+              )}
             </>
           )}
 
@@ -1579,31 +2631,6 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
               {myActions.includes("usarCartaSalirCarcel") && <ActionButton tone="secondary" onClick={() => onAction("usarCartaSalirCarcel")}>Usar carta</ActionButton>}
               {myActions.includes("tirarDados") && <ActionButton tone="secondary" onClick={() => onAction("tirarDados")}>Intentar dobles</ActionButton>}
             </>
-          )}
-
-          {modalState.type === "auction" && (canBidAuction || canPassAuction) && (
-            <div className="auction-modal-actions">
-              {canBidAuction && (
-                <>
-                  <input
-                    className="monopoly-input auction-bid-input"
-                    type="number"
-                    min={(modalState.auction.currentBid || 0) + 1}
-                    value={modalBidAmount}
-                    onChange={(event) => setModalBidAmount(Number(event.target.value))}
-                  />
-                  <ActionButton onClick={() => onAction("hacerOferta", { monto: modalBidAmount })}>
-                    <Gavel size={18} />
-                    Ofertar
-                  </ActionButton>
-                </>
-              )}
-              {canPassAuction && (
-                <ActionButton tone="danger" onClick={() => onAction("retirarseDeSubasta")}>
-                  Pasar
-                </ActionButton>
-              )}
-            </div>
           )}
 
           {closeAllowed && (
@@ -1796,6 +2823,113 @@ function GameLayout({ children }) {
   return <section className="monopoly-game-layout">{children}</section>;
 }
 
+function MonopolyRadio() {
+  const tracks = radioTracks || [];
+  const audioRef = useRef(null);
+  const [trackIndex, setTrackIndex] = useState(() => {
+    const stored = readStoredNumber("monopoly-radio-track", 0);
+    return tracks.length ? Math.min(Math.max(0, stored), tracks.length - 1) : 0;
+  });
+  const [playing, setPlaying] = useState(false);
+  const [volume, setVolume] = useState(() => Math.min(1, Math.max(0, readStoredNumber("monopoly-radio-volume", 0.34))));
+  const [muted, setMuted] = useState(audio.isMuted());
+  const [expanded, setExpanded] = useState(false);
+  const currentTrack = tracks[trackIndex] || null;
+
+  useEffect(() => audio.subscribe(setMuted), []);
+
+  useEffect(() => {
+    if (!tracks.length) return;
+    writeStoredValue("monopoly-radio-track", trackIndex);
+  }, [trackIndex, tracks.length]);
+
+  useEffect(() => {
+    writeStoredValue("monopoly-radio-volume", volume);
+    if (audioRef.current) {
+      audioRef.current.volume = volume;
+    }
+  }, [volume]);
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    audioRef.current.muted = muted;
+  }, [muted]);
+
+  useEffect(() => {
+    const node = audioRef.current;
+    if (!node) return;
+    node.volume = volume;
+    node.muted = muted;
+    if (playing) {
+      const playPromise = node.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(() => setPlaying(false));
+      }
+    } else {
+      node.pause();
+    }
+  }, [playing, trackIndex, volume, muted]);
+
+  if (!tracks.length || !currentTrack) return null;
+
+  function moveTrack(direction) {
+    setTrackIndex((current) => (current + direction + tracks.length) % tracks.length);
+  }
+
+  return (
+    <section className={cx("monopoly-radio", playing && "is-playing", expanded && "expanded")} aria-label="Radio Monopoly">
+      <audio
+        ref={audioRef}
+        src={currentTrack.url}
+        preload="metadata"
+        onEnded={() => moveTrack(1)}
+      />
+      <div className="monopoly-radio-main">
+        <button
+          type="button"
+          className="monopoly-radio-play"
+          onClick={() => setPlaying((current) => !current)}
+          title={playing ? "Pausar radio" : "Reproducir radio"}
+        >
+          {playing ? <PauseCircle size={20} /> : <PlayCircle size={20} />}
+        </button>
+        <button
+          type="button"
+          className="monopoly-radio-title"
+          onClick={() => setExpanded((current) => !current)}
+          title={currentTrack.title}
+        >
+          <Music2 size={15} />
+          <span>
+            <em>Radio Monopoly</em>
+            <strong>{currentTrack.title}</strong>
+          </span>
+        </button>
+      </div>
+      <div className="monopoly-radio-controls">
+        <button type="button" onClick={() => moveTrack(-1)} title="Cancion anterior">
+          <SkipBack size={15} />
+        </button>
+        <button type="button" onClick={() => moveTrack(1)} title="Siguiente cancion">
+          <SkipForward size={15} />
+        </button>
+        <span className="monopoly-radio-volume" title={muted ? "Audio silenciado" : "Volumen de radio"}>
+          {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={volume}
+            onChange={(event) => setVolume(Number(event.target.value))}
+            aria-label="Volumen de Radio Monopoly"
+          />
+        </span>
+      </div>
+    </section>
+  );
+}
+
 function TopHud({
   tableName,
   state,
@@ -1861,6 +2995,8 @@ function TopHud({
         </div>
       </div>
 
+      <MonopolyRadio />
+
       <div className="monopoly-hud-actions">
         <button type="button" className="monopoly-icon-button" onClick={onToken} title="Personalizar ficha">
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
@@ -1900,6 +3036,7 @@ function BoardArea({
   displayBoardPlayers,
   state,
   tokenStylesById,
+  moneyBursts,
   cameraFocus,
   cinematic,
   prompt,
@@ -1918,9 +3055,11 @@ function BoardArea({
   canBidAuction,
   canPassAuction,
   onAction,
+  onManageDebt,
   onSelect
 }) {
   const locked = rollingDice || Boolean(cinematic);
+  const boardById = useMemo(() => new Map((board || []).map((space) => [space.id, space])), [board]);
 
   return (
     <section className="monopoly-board-area" aria-label="Tablero de Monopoly">
@@ -1956,6 +3095,8 @@ function BoardArea({
               moverId={cinematic?.playerId}
               moverPhase={cinematic?.phase}
             />
+
+            <MoneyBurstOverlay bursts={moneyBursts} />
 
             <div className={cx("monopoly-center", cinematic?.phase === "dice" && "de-emphasized", cinematic?.phase === "move" && "board-live", cinematic?.phase === "settle" && "board-live")}>
               <div className="monopoly-board-core">
@@ -2023,11 +3164,14 @@ function BoardArea({
                   pendingCard={pendingCard}
                   auction={auction}
                   playersById={playersById}
+                  boardById={boardById}
+                  state={state}
                   bidAmount={bidAmount}
                   setBidAmount={setBidAmount}
                   canBidAuction={canBidAuction}
                   canPassAuction={canPassAuction}
                   onAction={onAction}
+                  onManageDebt={onManageDebt}
                 />
               </div>
             </div>
@@ -2087,11 +3231,14 @@ function BoardCenterActions({
   pendingCard,
   auction,
   playersById,
+  boardById,
+  state,
   bidAmount,
   setBidAmount,
   canBidAuction,
   canPassAuction,
-  onAction
+  onAction,
+  onManageDebt
 }) {
   const canAct = isMyTurn && myActions.length > 0;
 
@@ -2143,7 +3290,7 @@ function BoardCenterActions({
       <div className="monopoly-center-action-zone">
         <ActionButton className="monopoly-board-main-action" onClick={() => onAction("resolverCarta")}>
           <Receipt size={20} />
-          Tomar carta
+          Ver carta
         </ActionButton>
       </div>
     );
@@ -2181,29 +3328,18 @@ function BoardCenterActions({
 
   if (auction) {
     return (
-      <div className="monopoly-center-action-zone is-decision">
-        <div className="monopoly-board-decision-copy">
-          <span>Subasta</span>
-          <strong>{playersById.get(auction.activeBidderId)?.name || "Jugador"}</strong>
-          <em>{moneyFormatter.format(auction.currentBid || 0)}</em>
-        </div>
-        {(canBidAuction || canPassAuction) && (
-          <div className="monopoly-board-auction-row">
-            {canBidAuction && (
-              <>
-                <input
-                  className="monopoly-input"
-                  type="number"
-                  min={(auction.currentBid || 0) + 1}
-                  value={bidAmount}
-                  onChange={(event) => setBidAmount(Number(event.target.value))}
-                />
-                <ActionButton onClick={() => onAction("hacerOferta", { monto: bidAmount })}>Ofertar</ActionButton>
-              </>
-            )}
-            {canPassAuction && <ActionButton tone="danger" onClick={() => onAction("retirarseDeSubasta")}>Pasar</ActionButton>}
-          </div>
-        )}
+      <div className="monopoly-center-action-zone is-auction-live">
+        <AuctionControls
+          auction={auction}
+          playersById={playersById}
+          boardById={boardById}
+          bidAmount={bidAmount}
+          setBidAmount={setBidAmount}
+          canBidAuction={canBidAuction}
+          canPassAuction={canPassAuction}
+          onAction={onAction}
+          compact
+        />
       </div>
     );
   }
@@ -2229,10 +3365,12 @@ function BoardCenterActions({
   }
 
   if (pendingDebt && isMyTurn && myActions.includes("resolverDeudaPendiente")) {
+    const debtPlayer = state?.players?.find((player) => sameEntityId(player.id, pendingDebt.debtorId));
+    const canPayDebt = (debtPlayer?.cash || 0) >= (pendingDebt.amount || 0);
     return (
       <div className="monopoly-center-action-zone">
-        <ActionButton className="monopoly-board-main-action" onClick={() => onAction("resolverDeudaPendiente")}>
-          Pagar deuda
+        <ActionButton className="monopoly-board-main-action" onClick={() => canPayDebt ? onAction("resolverDeudaPendiente") : onManageDebt?.()}>
+          {canPayDebt ? "Pagar deuda" : "Abrir rescate"}
         </ActionButton>
       </div>
     );
@@ -2243,7 +3381,7 @@ function BoardCenterActions({
       <div className="monopoly-center-action-zone">
         <ActionButton className="monopoly-board-main-action" onClick={() => onAction("terminarTurno")}>
           <TimerReset size={22} />
-          Terminar turno
+          {hasPendingDoubleReroll(state) ? "Volver a tirar" : "Terminar turno"}
         </ActionButton>
       </div>
     );
@@ -2335,12 +3473,12 @@ function TurnActionPanel({
 
         {pendingCard && isMyTurn && myActions.includes("resolverCarta") && (
           <div className="monopoly-context-box is-card">
-            <p className="monopoly-panel-eyebrow">{pendingCard.deck === "CASUALIDAD" ? "Casualidad" : "Arca comunal"}</p>
+            <p className="monopoly-panel-eyebrow">{cardDeckLabel(pendingCard.deck)}</p>
             <h4>{pendingCard.card?.title || "Carta activa"}</h4>
-            <p>{pendingCard.card?.text || "Resuelve el efecto de la carta."}</p>
+            <p>{cardSceneCopy(pendingCard.card, pendingCard.deck, state?.players?.find((player) => sameEntityId(player.id, state.currentPlayerId))?.name || "Jugador")}</p>
             <ActionButton onClick={() => onAction("resolverCarta")}>
               <Receipt size={18} />
-              Tomar carta
+              Ver carta
             </ActionButton>
           </div>
         )}
@@ -2377,7 +3515,7 @@ function TurnActionPanel({
                     <input
                       className="monopoly-input"
                       type="number"
-                      min={(auction.currentBid || 0) + 1}
+                      min={auctionMinimumBid(auction)}
                       value={bidAmount}
                       onChange={(event) => setBidAmount(Number(event.target.value))}
                     />
@@ -2408,16 +3546,27 @@ function TurnActionPanel({
         )}
 
         {pendingDebt && isMyTurn && myActions.includes("resolverDeudaPendiente") && (
-          <ActionButton onClick={() => onAction("resolverDeudaPendiente")}>
+          <ActionButton
+            onClick={() => {
+              const debtPlayer = state?.players?.find((player) => sameEntityId(player.id, pendingDebt.debtorId));
+              if ((debtPlayer?.cash || 0) >= (pendingDebt.amount || 0)) {
+                onAction("resolverDeudaPendiente");
+              } else {
+                onOpenTrade();
+              }
+            }}
+          >
             <Hammer size={18} />
-            Pagar deuda - {moneyFormatter.format(pendingDebt.amount)}
+            {(state?.players?.find((player) => sameEntityId(player.id, pendingDebt.debtorId))?.cash || 0) >= (pendingDebt.amount || 0)
+              ? `Pagar deuda - ${moneyFormatter.format(pendingDebt.amount)}`
+              : "Abrir rescate"}
           </ActionButton>
         )}
 
         {isMyTurn && myActions.includes("terminarTurno") && (
           <ActionButton className="monopoly-main-turn-button" onClick={() => onAction("terminarTurno")}>
             <TimerReset size={22} />
-            Terminar turno
+            {hasPendingDoubleReroll(state) ? "Volver a tirar" : "Terminar turno"}
           </ActionButton>
         )}
 
@@ -2466,7 +3615,9 @@ function rollingContextLabel(phase, isMyTurn, canAct) {
 function PlayerStatusBar({ players, currentUserId, currentPlayerId, tokenStylesById, customTokens }) {
   return (
     <div className="monopoly-player-strip">
-      {players.map((player, index) => (
+      {players.map((player, index) => {
+        const jailCardCount = Object.values(player.getOutOfJailCards || {}).reduce((total, count) => total + Number(count || 0), 0);
+        return (
         <article
           key={player.id}
           className={cx(
@@ -2479,14 +3630,19 @@ function PlayerStatusBar({ players, currentUserId, currentPlayerId, tokenStylesB
           <div className="min-w-0">
             <strong>{player.name}{sameEntityId(player.id, currentUserId) ? " - tu" : ""}</strong>
             <span><Money amount={player.cash} /> · {player.properties.length} props</span>
+            {jailCardCount > 0 && (
+              <span className="jail-card-badge"><ShieldAlert size={13} /> {jailCardCount} carta carcel</span>
+            )}
           </div>
         </article>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
 function PropertySummary({ player, onSelect, onOpenTrade }) {
+  const mortgagedCount = (player?.properties || []).filter((property) => property.isMortgaged).length;
   const groups = useMemo(() => {
     const next = new Map();
     (player?.properties || []).forEach((property) => {
@@ -2503,6 +3659,12 @@ function PropertySummary({ player, onSelect, onOpenTrade }) {
         <div>
           <p className="monopoly-panel-eyebrow">Tus activos</p>
           <h3>{player?.properties?.length || 0} propiedades</h3>
+          {mortgagedCount > 0 && (
+            <span className="monopoly-asset-alert">
+              <AlertTriangle size={13} />
+              {mortgagedCount} hipotecada{mortgagedCount === 1 ? "" : "s"}
+            </span>
+          )}
         </div>
         <ActionButton tone="secondary" onClick={onOpenTrade}>
           <Scale size={16} />
@@ -2525,9 +3687,15 @@ function PropertySummary({ player, onSelect, onOpenTrade }) {
                 </div>
                 <div className="monopoly-property-mini-list">
                   {properties.map((property) => (
-                    <button key={property.id} type="button" onClick={() => onSelect(property.id)} title={property.name}>
+                    <button
+                      key={property.id}
+                      type="button"
+                      className={property.isMortgaged ? "is-mortgaged" : ""}
+                      onClick={() => onSelect(property.id)}
+                      title={property.isMortgaged ? `${property.name} hipotecada` : property.name}
+                    >
                       <span>{property.name}</span>
-                      {property.isMortgaged && <em>Hip.</em>}
+                      {property.isMortgaged && <em className="mortgage-badge">Hipotecada</em>}
                       {property.hasHotel && <em>Hotel</em>}
                       {property.houses > 0 && <em>{property.houses} casas</em>}
                     </button>
@@ -2713,6 +3881,511 @@ function RankingModal({ open, onClose, ranking }) {
   );
 }
 
+function TradeModalV2({
+  open,
+  onClose,
+  myPlayer,
+  players,
+  currentUserId,
+  propertyTrade,
+  setPropertyTrade,
+  cardTrade,
+  setCardTrade,
+  onAction,
+  customTokens
+}) {
+  const [marketAsset, setMarketAsset] = useState("properties");
+  const propertyIntent = propertyTrade.intent || "sell";
+  const cardIntent = cardTrade.intent || "sell";
+  const activeIntent = marketAsset === "properties" ? propertyIntent : cardIntent;
+  const tradeTargets = useMemo(
+    () => players.filter((player) => !sameEntityId(player.id, currentUserId) && !player.bankrupt),
+    [players, currentUserId]
+  );
+  const tokenById = useMemo(() => {
+    const map = new Map();
+    tradeTargets.forEach((player, index) => {
+      map.set(player.id, customTokens?.[player.id] || resolveTokenStyle({ ...player, colorIndex: index }, customTokens || {}));
+    });
+    return map;
+  }, [tradeTargets, customTokens]);
+  const buyableProperties = useMemo(() => tradeTargets.flatMap((owner) => (
+    (owner.properties || []).map((property) => ({
+      ...property,
+      sellerId: owner.id,
+      sellerName: owner.name,
+      sellerProperties: owner.properties || []
+    }))
+  )), [tradeTargets]);
+  const activePropertyPool = propertyIntent === "sell" ? (myPlayer?.properties || []) : buyableProperties;
+  const tradePropertyGroups = useMemo(() => groupTradeProperties(activePropertyPool), [activePropertyPool]);
+  const selectedProperty = activePropertyPool.find((property) => property.id === propertyTrade.propertyId) || null;
+  const selectedSeller = propertyIntent === "buy"
+    ? tradeTargets.find((player) => sameEntityId(player.id, selectedProperty?.sellerId || propertyTrade.sellerId)) || null
+    : myPlayer;
+  const selectedBuyer = propertyIntent === "sell"
+    ? tradeTargets.find((player) => sameEntityId(player.id, propertyTrade.buyerId)) || null
+    : myPlayer;
+  const sellerProperties = propertyIntent === "buy" ? (selectedProperty?.sellerProperties || selectedSeller?.properties || []) : (myPlayer?.properties || []);
+  const propertyTradeBlock = propertyTradeBlockReason(selectedProperty, sellerProperties);
+  const propertyTradePrice = Math.max(0, Number(propertyTrade.price) || 0);
+  const transferCost = mortgageTransferCost(selectedProperty, propertyTrade.liftMortgage);
+  const buyerCash = Number(selectedBuyer?.cash || 0);
+  const buyerCanPayProperty = Boolean(selectedBuyer) && buyerCash >= propertyTradePrice;
+  const buyerCanLiftMortgage = !selectedProperty?.isMortgaged || !propertyTrade.liftMortgage || buyerCash >= propertyTradePrice + transferCost;
+  const propertyTradeWarning = propertyTradeBlock ||
+    (selectedProperty && !selectedBuyer ? "Elige con quien quieres cerrar este trato." : "") ||
+    (selectedBuyer && !buyerCanPayProperty ? `${selectedBuyer.name} no tiene efectivo suficiente para ese precio.` : "") ||
+    (selectedBuyer && !buyerCanLiftMortgage ? `${selectedBuyer.name} necesita cubrir precio, interes y levantamiento de hipoteca.` : "");
+  const canSubmitPropertyTrade = Boolean(selectedProperty && selectedSeller && selectedBuyer && !propertyTradeBlock && buyerCanPayProperty && buyerCanLiftMortgage);
+  const propertyBaseAmount = selectedProperty
+    ? Math.max(
+        selectedProperty.mortgageValue || 0,
+        Math.round(((selectedProperty.price || selectedProperty.mortgageValue || 100) * 0.7) / 50) * 50
+      )
+    : 100;
+  const propertyPresets = amountPresets(propertyBaseAmount, [selectedProperty?.price, selectedProperty?.mortgageValue]);
+  const totalJailCards = Object.values(myPlayer?.getOutOfJailCards || {}).reduce((total, count) => total + Number(count || 0), 0);
+  const buyableCards = useMemo(() => tradeTargets.flatMap((seller) => (
+    ["CASUALIDAD", "ARCA_COMUNAL"]
+      .filter((deck) => Number(seller.getOutOfJailCards?.[deck] || 0) > 0)
+      .map((deck) => ({
+        id: `${seller.id}:${deck}`,
+        sellerId: seller.id,
+        sellerName: seller.name,
+        sellerCash: seller.cash,
+        deck,
+        count: Number(seller.getOutOfJailCards?.[deck] || 0)
+      }))
+  )), [tradeTargets]);
+  const selectedDeckCount = Number(myPlayer?.getOutOfJailCards?.[cardTrade.deck] || 0);
+  const selectedCardBuyer = tradeTargets.find((player) => sameEntityId(player.id, cardTrade.buyerId)) || null;
+  const selectedCardSeller = cardIntent === "buy"
+    ? buyableCards.find((option) => sameEntityId(option.sellerId, cardTrade.sellerId) && option.deck === cardTrade.deck) || null
+    : null;
+  const cardTradePrice = Math.max(0, Number(cardTrade.price) || 0);
+  const cardBuyer = cardIntent === "sell" ? selectedCardBuyer : myPlayer;
+  const cardSellerName = cardIntent === "sell" ? (myPlayer?.name || "Tu") : selectedCardSeller?.sellerName;
+  const cardBuyerName = cardIntent === "sell" ? selectedCardBuyer?.name : (myPlayer?.name || "tu jugador");
+  const cardCanSubmit = cardIntent === "sell"
+    ? Boolean(selectedCardBuyer && selectedDeckCount > 0)
+    : Boolean(selectedCardSeller && Number(myPlayer?.cash || 0) >= cardTradePrice);
+  const cardWarning = cardIntent === "sell" && selectedDeckCount <= 0
+    ? "No tienes pase de ese mazo. Ese comodin sigue en manos del destino."
+    : cardIntent === "buy" && selectedCardSeller && Number(myPlayer?.cash || 0) < cardTradePrice
+      ? "Tu cartera no alcanza para esta invitacion de compra."
+      : "";
+  const cardBaseAmount = Math.max(100, cardIntent === "sell" && selectedDeckCount ? 250 : 200);
+  const cardPresets = amountPresets(cardBaseAmount, [250, 400, 600]);
+
+  if (!open) return null;
+
+  const resetTrades = () => {
+    setPropertyTrade({ ...defaultPropertyTrade });
+    setCardTrade({ ...defaultCardTrade });
+  };
+  const chooseAsset = (asset) => setMarketAsset(asset);
+  const chooseIntent = (intent) => {
+    if (marketAsset === "properties") {
+      setPropertyTrade({ ...defaultPropertyTrade, intent });
+    } else {
+      setCardTrade({ ...defaultCardTrade, intent });
+    }
+  };
+  const submitPropertyTrade = () => {
+    if (!canSubmitPropertyTrade) return;
+    if (propertyIntent === "sell") {
+      onAction("crearOfertaPropiedad", {
+        compradorId: propertyTrade.buyerId,
+        propiedadId: selectedProperty.id,
+        precio: propertyTradePrice,
+        levantarHipotecaAhora: propertyTrade.liftMortgage
+      });
+    } else {
+      onAction("crearOfertaCompraPropiedad", {
+        vendedorId: selectedProperty.sellerId,
+        propiedadId: selectedProperty.id,
+        precio: propertyTradePrice,
+        levantarHipotecaAhora: propertyTrade.liftMortgage
+      });
+    }
+    resetTrades();
+    onClose();
+  };
+  const submitCardTrade = () => {
+    if (!cardCanSubmit) return;
+    if (cardIntent === "sell") {
+      onAction("crearOfertaCartaCarcel", {
+        compradorId: cardTrade.buyerId,
+        deck: cardTrade.deck,
+        precio: cardTradePrice
+      });
+    } else {
+      onAction("crearOfertaCompraCartaCarcel", {
+        vendedorId: selectedCardSeller.sellerId,
+        deck: selectedCardSeller.deck,
+        precio: cardTradePrice
+      });
+    }
+    resetTrades();
+    onClose();
+  };
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="monopoly-modal tone-info monopoly-trade-modal monopoly-trade-modal-v2">
+        <div className="monopoly-trade-head">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Mercado de mesa</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Centro de ofertas</h3>
+            <p className="mt-2 text-sm font-semibold opacity-85">
+              Primero eliges botin, luego si compras o vendes. Todo queda como invitacion hasta que la otra persona acepte.
+            </p>
+          </div>
+          <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
+        </div>
+
+        <div className="monopoly-trade-route">
+          <aside className="monopoly-trade-route-menu">
+            <div className="monopoly-trade-choice-grid">
+              <button type="button" className={cx("monopoly-trade-choice-card", marketAsset === "properties" && "active")} onClick={() => chooseAsset("properties")}>
+                <Building2 size={22} />
+                <strong>Propiedades</strong>
+                <span>Calles, trenes y servicios agrupados por pais/color.</span>
+              </button>
+              <button type="button" className={cx("monopoly-trade-choice-card", marketAsset === "cards" && "active")} onClick={() => chooseAsset("cards")}>
+                <ShieldAlert size={22} />
+                <strong>Cartas</strong>
+                <span>Solo pases de salir de la carcel; las cartas normales se resuelven al caer.</span>
+              </button>
+            </div>
+
+            <div className="monopoly-trade-intent-grid">
+              {["buy", "sell"].map((intent) => (
+                <button
+                  key={intent}
+                  type="button"
+                  className={cx("monopoly-trade-intent-card", activeIntent === intent && "active")}
+                  onClick={() => chooseIntent(intent)}
+                >
+                  {intent === "buy" ? <Wallet size={19} /> : <Send size={19} />}
+                  <strong>{intent === "buy" ? "Comprar" : "Vender"}</strong>
+                  <span>{intent === "buy" ? "Invitas al duenio a soltarte el activo." : "Invitas a alguien a comprarte el activo."}</span>
+                </button>
+              ))}
+            </div>
+          </aside>
+
+          <section className="monopoly-trade-workbench">
+            {marketAsset === "properties" ? (
+              <>
+                <div className="monopoly-trade-panel-head">
+                  <div>
+                    <p className="monopoly-panel-eyebrow">{propertyIntent === "buy" ? "Comprar propiedad" : "Vender propiedad"}</p>
+                    <h4>{propertyIntent === "buy" ? "Elige que quieres comprar" : "Elige que quieres poner en vitrina"}</h4>
+                  </div>
+                  <span>{activePropertyPool.length} activos</span>
+                </div>
+
+                <div className="monopoly-trade-pickers">
+                  <div className="monopoly-trade-help-card">
+                    <Scale size={18} />
+                    <p>
+                      Las propiedades aparecen agrupadas por pais/color para encontrarlas rapido. Si el grupo tiene casas u hoteles, primero hay que vender edificios.
+                    </p>
+                  </div>
+                  <div className="monopoly-trade-step">
+                    <p className="monopoly-trade-step-label">1. Selecciona propiedad</p>
+                    {activePropertyPool.length === 0 ? (
+                      <div className="monopoly-empty-state">{propertyIntent === "buy" ? "Nadie tiene propiedades disponibles para venderte." : "No tienes propiedades para negociar ahora mismo."}</div>
+                    ) : (
+                      <div className="monopoly-trade-group-list">
+                        {tradePropertyGroups.map((group) => (
+                          <section key={group.key} className="monopoly-trade-property-group">
+                            <div className="monopoly-trade-property-group-head">
+                              <span style={{ backgroundColor: group.accent }} />
+                              <div>
+                                <strong>{group.label}</strong>
+                                <em>{group.copy} · {group.properties.length} activos</em>
+                              </div>
+                            </div>
+                            <div className="monopoly-trade-property-grid">
+                              {group.properties.map((property) => {
+                                const owner = propertyIntent === "buy" ? tradeTargets.find((player) => sameEntityId(player.id, property.sellerId)) : myPlayer;
+                                const blockedReason = propertyTradeBlockReason(property, propertyIntent === "buy" ? property.sellerProperties : myPlayer?.properties || []);
+                                return (
+                                  <button
+                                    key={`${propertyIntent}-${property.id}`}
+                                    type="button"
+                                    className={cx("monopoly-trade-property-card", propertyTrade.propertyId === property.id && "active", blockedReason && "is-locked")}
+                                    onClick={() => {
+                                      const suggestedPrice = Math.max(
+                                        property.mortgageValue || 0,
+                                        Math.round(((property.price || property.mortgageValue || 100) * 0.7) / 50) * 50
+                                      );
+                                      setPropertyTrade((current) => ({
+                                        ...current,
+                                        propertyId: property.id,
+                                        sellerId: property.sellerId || "",
+                                        price: current.propertyId === property.id && current.price > 0 ? current.price : suggestedPrice
+                                      }));
+                                    }}
+                                  >
+                                    <div className="monopoly-trade-property-top">
+                                      <div>
+                                        <span>{spaceTypeLabel(property)}</span>
+                                        <strong>{property.name}</strong>
+                                        {propertyIntent === "buy" && <small>Dueno: {owner?.name || property.sellerName}</small>}
+                                      </div>
+                                      <i style={{ backgroundColor: group.accent }} />
+                                    </div>
+                                    <div className="monopoly-trade-property-tags">
+                                      <em>{property.price ? moneyFormatter.format(property.price) : "--"}</em>
+                                      {property.isMortgaged && <em className="warn">Hipotecada</em>}
+                                      {property.hasHotel && <em>Hotel</em>}
+                                      {property.houses > 0 && <em>{property.houses} casas</em>}
+                                      {blockedReason && <em className="warn">Bloqueada por edificios</em>}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {propertyIntent === "sell" && (
+                    <div className="monopoly-trade-step">
+                      <p className="monopoly-trade-step-label">2. Elige comprador</p>
+                      <div className="monopoly-trade-target-grid">
+                        {tradeTargets.map((player) => (
+                          <button
+                            key={player.id}
+                            type="button"
+                            className={cx("monopoly-trade-target-card", sameEntityId(propertyTrade.buyerId, player.id) && "active")}
+                            onClick={() => setPropertyTrade((current) => ({ ...current, buyerId: player.id }))}
+                          >
+                            <TokenChip tokenStyle={tokenById.get(player.id)} className="h-11 w-11 text-sm" />
+                            <div>
+                              <strong>{player.name}</strong>
+                              <span><Money amount={player.cash} /> en caja</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="monopoly-trade-step">
+                    <p className="monopoly-trade-step-label">{propertyIntent === "sell" ? "3" : "2"}. Ajusta el precio</p>
+                    <div className="monopoly-trade-price-presets">
+                      {propertyPresets.map((amount) => (
+                        <button
+                          key={`property-price-${amount}`}
+                          type="button"
+                          className={propertyTrade.price === amount ? "active" : ""}
+                          onClick={() => setPropertyTrade((current) => ({ ...current, price: amount }))}
+                        >
+                          {moneyFormatter.format(amount)}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      className="monopoly-input monopoly-trade-price-input"
+                      type="number"
+                      min={0}
+                      value={propertyTrade.price}
+                      onChange={(event) => setPropertyTrade((current) => ({ ...current, price: Number(event.target.value) }))}
+                    />
+                    {selectedProperty?.isMortgaged && (
+                      <label className="monopoly-trade-toggle">
+                        <input
+                          type="checkbox"
+                          checked={propertyTrade.liftMortgage}
+                          onChange={(event) => setPropertyTrade((current) => ({ ...current, liftMortgage: event.target.checked }))}
+                        />
+                        <span>Levantar hipoteca al transferir</span>
+                      </label>
+                    )}
+                  </div>
+                </div>
+
+                <div className="monopoly-trade-summary">
+                  <p className="monopoly-panel-eyebrow">Resumen del trato</p>
+                  <h5>{selectedProperty ? selectedProperty.name : "Elige una propiedad para empezar"}</h5>
+                  <p>
+                    {selectedProperty && selectedSeller && selectedBuyer
+                      ? propertyTradeBanter({
+                          sellerName: selectedSeller.name || "Tu",
+                          buyerName: selectedBuyer.name || "tu jugador",
+                          propertyName: selectedProperty.name,
+                          price: propertyTradePrice
+                        })
+                      : propertyIntent === "buy"
+                        ? "Selecciona la propiedad rival y manda una invitacion de compra con flow diplomatico."
+                        : "Selecciona propiedad y comprador para que el trato deje de flotar en el limbo."}
+                  </p>
+                  <div className="monopoly-trade-money-flow">
+                    <span>Comprador <strong>{selectedBuyer?.name || "..."}</strong> pagara <strong>{moneyFormatter.format(propertyTradePrice)}</strong></span>
+                    <span>Vendedor <strong>{selectedSeller?.name || "..."}</strong> recibira <strong>{moneyFormatter.format(propertyTradePrice)}</strong></span>
+                    {selectedProperty?.isMortgaged && (
+                      <span>Coste extra para comprador <strong>{moneyFormatter.format(transferCost)}</strong> {propertyTrade.liftMortgage ? "incluyendo levantar hipoteca" : "por interes de transferencia"}</span>
+                    )}
+                  </div>
+                  {propertyTradeWarning && (
+                    <div className="monopoly-trade-warning">
+                      <AlertTriangle size={16} />
+                      <span>{propertyTradeWarning}</span>
+                    </div>
+                  )}
+                  <ActionButton tone="secondary" className="w-full justify-center" onClick={submitPropertyTrade} disabled={!canSubmitPropertyTrade}>
+                    <Scale size={18} />
+                    {propertyIntent === "buy" ? "Enviar oferta de compra" : "Enviar oferta de venta"}
+                  </ActionButton>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="monopoly-trade-panel-head">
+                  <div>
+                    <p className="monopoly-panel-eyebrow">{cardIntent === "buy" ? "Comprar carta" : "Vender carta"}</p>
+                    <h4>Pases de salir de la carcel</h4>
+                  </div>
+                  <span>{cardIntent === "buy" ? `${buyableCards.length} en mesa` : `${totalJailCards} tuyas`}</span>
+                </div>
+
+                <div className="monopoly-trade-pickers">
+                  <div className="monopoly-trade-help-card">
+                    <ShieldAlert size={18} />
+                    <p>
+                      En Monopoly solo se comercian las cartas <strong>Salir libre de la carcel</strong>. Casualidad y Arca comunal normales son eventos: salen, se resuelven y hacen su travesura.
+                    </p>
+                  </div>
+
+                  <div className="monopoly-trade-step">
+                    <p className="monopoly-trade-step-label">1. Elige pase</p>
+                    {cardIntent === "sell" ? (
+                      <div className="monopoly-trade-deck-grid">
+                        {["CASUALIDAD", "ARCA_COMUNAL"].map((deck) => (
+                          <button
+                            key={deck}
+                            type="button"
+                            className={cx("monopoly-trade-deck-card", cardTrade.deck === deck && "active")}
+                            onClick={() => setCardTrade((current) => ({ ...current, deck }))}
+                          >
+                            <strong>{cardDeckLabel(deck)}</strong>
+                            <span>{Number(myPlayer?.getOutOfJailCards?.[deck] || 0)} pases disponibles</span>
+                            <em>{deck === "CASUALIDAD" ? "Caos amarillo, fuga con suerte." : "Vecinos organizados, escape comunitario."}</em>
+                          </button>
+                        ))}
+                      </div>
+                    ) : buyableCards.length === 0 ? (
+                      <div className="monopoly-empty-state">Nadie tiene pases de carcel para comprarlos ahora.</div>
+                    ) : (
+                      <div className="monopoly-trade-deck-grid">
+                        {buyableCards.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className={cx("monopoly-trade-deck-card", sameEntityId(cardTrade.sellerId, option.sellerId) && cardTrade.deck === option.deck && "active")}
+                            onClick={() => setCardTrade((current) => ({ ...current, sellerId: option.sellerId, deck: option.deck }))}
+                          >
+                            <strong>{cardDeckLabel(option.deck)}</strong>
+                            <span>{option.sellerName} tiene {option.count}</span>
+                            <em>Invitacion de compra: si acepta, el pase cambia de bolsillo.</em>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {cardIntent === "sell" && (
+                    <div className="monopoly-trade-step">
+                      <p className="monopoly-trade-step-label">2. Elige comprador</p>
+                      <div className="monopoly-trade-target-grid">
+                        {tradeTargets.map((player) => (
+                          <button
+                            key={`card-${player.id}`}
+                            type="button"
+                            className={cx("monopoly-trade-target-card", sameEntityId(cardTrade.buyerId, player.id) && "active")}
+                            onClick={() => setCardTrade((current) => ({ ...current, buyerId: player.id }))}
+                          >
+                            <TokenChip tokenStyle={tokenById.get(player.id)} className="h-11 w-11 text-sm" />
+                            <div>
+                              <strong>{player.name}</strong>
+                              <span><Money amount={player.cash} /> en caja</span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="monopoly-trade-step">
+                    <p className="monopoly-trade-step-label">{cardIntent === "sell" ? "3" : "2"}. Precio del pase</p>
+                    <div className="monopoly-trade-price-presets">
+                      {cardPresets.map((amount) => (
+                        <button
+                          key={`card-price-${amount}`}
+                          type="button"
+                          className={cardTrade.price === amount ? "active" : ""}
+                          onClick={() => setCardTrade((current) => ({ ...current, price: amount }))}
+                        >
+                          {moneyFormatter.format(amount)}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      className="monopoly-input monopoly-trade-price-input"
+                      type="number"
+                      min={0}
+                      value={cardTrade.price}
+                      onChange={(event) => setCardTrade((current) => ({ ...current, price: Number(event.target.value) }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="monopoly-trade-summary">
+                  <p className="monopoly-panel-eyebrow">Resumen del trato</p>
+                  <h5>{cardDeckLabel(cardTrade.deck)}</h5>
+                  <p>
+                    {cardSellerName && cardBuyerName
+                      ? jailCardTradeBanter({
+                          sellerName: cardSellerName,
+                          buyerName: cardBuyerName,
+                          deckLabel: cardDeckLabel(cardTrade.deck),
+                          price: cardTradePrice
+                        })
+                      : cardIntent === "buy"
+                        ? "Elige quien tiene el pase y manda una invitacion de compra sin patear la puerta."
+                        : "Primero elige a quien le quieres vender este pase anti-prision."}
+                  </p>
+                  <div className="monopoly-trade-money-flow">
+                    <span>Comprador <strong>{cardBuyer?.name || cardBuyerName || "..."}</strong> pagara <strong>{moneyFormatter.format(cardTradePrice)}</strong></span>
+                    <span>Vendedor <strong>{cardSellerName || "..."}</strong> recibira <strong>{moneyFormatter.format(cardTradePrice)}</strong></span>
+                  </div>
+                  {cardWarning && (
+                    <div className="monopoly-trade-warning">
+                      <AlertTriangle size={16} />
+                      <span>{cardWarning}</span>
+                    </div>
+                  )}
+                  <ActionButton tone="secondary" className="w-full justify-center" onClick={submitCardTrade} disabled={!cardCanSubmit}>
+                    <ShieldAlert size={18} />
+                    {cardIntent === "buy" ? "Enviar oferta de compra" : "Enviar oferta de venta"}
+                  </ActionButton>
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TradeModal({
   open,
   onClose,
@@ -2723,114 +4396,358 @@ function TradeModal({
   setPropertyTrade,
   cardTrade,
   setCardTrade,
-  onAction
+  onAction,
+  customTokens
 }) {
+  const tradeTargets = useMemo(
+    () => players.filter((player) => !sameEntityId(player.id, currentUserId) && !player.bankrupt),
+    [players, currentUserId]
+  );
+  const tradePropertyGroups = useMemo(() => {
+    const groups = new Map();
+    (myPlayer?.properties || []).forEach((property) => {
+      const meta = tradePropertyGroup(property);
+      if (!groups.has(meta.key)) {
+        groups.set(meta.key, { ...meta, properties: [] });
+      }
+      groups.get(meta.key).properties.push(property);
+    });
+
+    return [...groups.values()].map((group) => ({
+      ...group,
+      properties: [...group.properties].sort((left, right) => {
+        const leftPrice = left.price || left.mortgageValue || 0;
+        const rightPrice = right.price || right.mortgageValue || 0;
+        return rightPrice - leftPrice;
+      })
+    }));
+  }, [myPlayer?.properties]);
+  const selectedProperty = (myPlayer?.properties || []).find((property) => property.id === propertyTrade.propertyId) || null;
+  const selectedBuyer = tradeTargets.find((player) => String(player.id) === String(propertyTrade.buyerId)) || null;
+  const propertyTradeBlock = propertyTradeBlockReason(selectedProperty, myPlayer?.properties || []);
+  const propertyTradePrice = Math.max(0, Number(propertyTrade.price) || 0);
+  const transferCost = mortgageTransferCost(selectedProperty, propertyTrade.liftMortgage);
+  const selectedBuyerCash = Number(selectedBuyer?.cash || 0);
+  const buyerCanPayProperty = Boolean(selectedBuyer) && selectedBuyerCash >= propertyTradePrice;
+  const buyerCanAbsorbMortgage = !selectedProperty?.isMortgaged || !propertyTrade.liftMortgage || selectedBuyerCash >= propertyTradePrice + transferCost;
+  const canSubmitPropertyTrade = Boolean(selectedProperty && selectedBuyer && !propertyTradeBlock && buyerCanPayProperty && buyerCanAbsorbMortgage);
+  const propertyTradeWarning = propertyTradeBlock ||
+    (selectedBuyer && !buyerCanPayProperty ? `${selectedBuyer.name} no tiene efectivo suficiente para ese precio.` : "") ||
+    (selectedBuyer && !buyerCanAbsorbMortgage ? `${selectedBuyer.name} necesita cubrir precio, interes y levantamiento de hipoteca.` : "");
+  const propertyBaseAmount = selectedProperty
+    ? Math.max(
+        selectedProperty.mortgageValue || 0,
+        Math.round(((selectedProperty.price || selectedProperty.mortgageValue || 100) * 0.7) / 50) * 50
+      )
+    : 100;
+  const propertyPresets = amountPresets(propertyBaseAmount, [selectedProperty?.price, selectedProperty?.mortgageValue]);
+  const propertyTradeTokenById = useMemo(() => {
+    const map = new Map();
+    tradeTargets.forEach((player, index) => {
+      map.set(player.id, customTokens?.[player.id] || resolveTokenStyle({ ...player, colorIndex: index }, customTokens || {}));
+    });
+    return map;
+  }, [tradeTargets, customTokens]);
+  const totalJailCards = Object.values(myPlayer?.getOutOfJailCards || {}).reduce((total, count) => total + Number(count || 0), 0);
+  const selectedCardBuyer = tradeTargets.find((player) => String(player.id) === String(cardTrade.buyerId)) || null;
+  const selectedDeckCount = Number(myPlayer?.getOutOfJailCards?.[cardTrade.deck] || 0);
+  const cardBaseAmount = Math.max(100, selectedDeckCount ? 250 : 100);
+  const cardPresets = amountPresets(cardBaseAmount, [250, 400, 600]);
+
   if (!open) return null;
 
   return (
     <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="monopoly-modal tone-info">
-        <div className="flex items-start justify-between gap-3">
+      <div className="monopoly-modal tone-info monopoly-trade-modal">
+        <div className="monopoly-trade-head">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Negocios</p>
-            <h3 className="mt-1 text-2xl font-black uppercase">Acciones secundarias</h3>
-            <p className="mt-2 text-sm font-semibold opacity-85">Transferencias y venta de cartas viven aqui para no ensuciar el turno.</p>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Mercado de mesa</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Negocios y tratos raramente honestos</h3>
+            <p className="mt-2 text-sm font-semibold opacity-85">
+              Aqui cierras ventas, pasas activos y negocias comodines sin que el turno se sienta como hoja de calculo.
+            </p>
           </div>
           <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
         </div>
 
-        <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <section className="modal-stat-card">
-            <span>Transferir propiedad</span>
-            <div className="mt-3 grid gap-3">
-              <select
-                className="monopoly-input"
-                value={propertyTrade.propertyId}
-                onChange={(event) => setPropertyTrade((current) => ({ ...current, propertyId: event.target.value }))}
-              >
-                <option value="">Selecciona propiedad</option>
-                {(myPlayer?.properties || []).map((property) => (
-                  <option key={property.id} value={property.id}>{property.name}</option>
-                ))}
-              </select>
-              <select
-                className="monopoly-input"
-                value={propertyTrade.buyerId}
-                onChange={(event) => setPropertyTrade((current) => ({ ...current, buyerId: event.target.value }))}
-              >
-                <option value="">Comprador</option>
-                {players.filter((player) => !sameEntityId(player.id, currentUserId) && !player.bankrupt).map((player) => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
-              </select>
-              <input
-                className="monopoly-input"
-                type="number"
-                min={0}
-                value={propertyTrade.price}
-                onChange={(event) => setPropertyTrade((current) => ({ ...current, price: Number(event.target.value) }))}
-              />
-              <label className="flex items-center gap-3 rounded-[16px] border border-[#d8c8ae] bg-white/70 px-3 py-3 text-sm font-semibold text-[#6b4b2c]">
+        <div className="monopoly-trade-layout">
+          <section className="monopoly-trade-panel">
+            <div className="monopoly-trade-panel-head">
+              <div>
+                <p className="monopoly-panel-eyebrow">Propiedad en vitrina</p>
+                <h4>Transferir propiedad</h4>
+              </div>
+              <span>{myPlayer?.properties?.length || 0} disponibles</span>
+            </div>
+
+            <div className="monopoly-trade-pickers">
+              <div className="monopoly-trade-step">
+                <p className="monopoly-trade-step-label">1. Elige propiedad</p>
+                {(myPlayer?.properties || []).length === 0 ? (
+                  <div className="monopoly-empty-state">No tienes propiedades para negociar ahora mismo.</div>
+                ) : (
+                  <div className="monopoly-trade-group-list">
+                    {tradePropertyGroups.map((group) => (
+                      <section key={group.key} className="monopoly-trade-property-group">
+                        <div className="monopoly-trade-property-group-head">
+                          <span style={{ backgroundColor: group.accent }} />
+                          <div>
+                            <strong>{group.label}</strong>
+                            <em>{group.copy} · {group.properties.length} activos</em>
+                          </div>
+                        </div>
+                        <div className="monopoly-trade-property-grid">
+                          {group.properties.map((property) => {
+                            const blockedReason = propertyTradeBlockReason(property, myPlayer?.properties || []);
+                            return (
+                              <button
+                                key={property.id}
+                                type="button"
+                                className={cx("monopoly-trade-property-card", propertyTrade.propertyId === property.id && "active", blockedReason && "is-locked")}
+                                onClick={() => {
+                                  const suggestedPrice = Math.max(
+                                    property.mortgageValue || 0,
+                                    Math.round(((property.price || property.mortgageValue || 100) * 0.7) / 50) * 50
+                                  );
+                                  setPropertyTrade((current) => ({
+                                    ...current,
+                                    propertyId: property.id,
+                                    price: current.propertyId === property.id && current.price > 0 ? current.price : suggestedPrice
+                                  }));
+                                }}
+                              >
+                                <div className="monopoly-trade-property-top">
+                                  <div>
+                                    <span>{spaceTypeLabel(property)}</span>
+                                    <strong>{property.name}</strong>
+                                  </div>
+                                  <i style={{ backgroundColor: group.accent }} />
+                                </div>
+                                <div className="monopoly-trade-property-tags">
+                                  <em>{property.price ? moneyFormatter.format(property.price) : "--"}</em>
+                                  {property.isMortgaged && <em>Hipotecada</em>}
+                                  {property.hasHotel && <em>Hotel</em>}
+                                  {property.houses > 0 && <em>{property.houses} casas</em>}
+                                  {blockedReason && <em className="warn">Bloqueada por edificios</em>}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="monopoly-trade-step">
+                <p className="monopoly-trade-step-label">2. Elige comprador</p>
+                <div className="monopoly-trade-target-grid">
+                  {tradeTargets.map((player) => (
+                    <button
+                      key={player.id}
+                      type="button"
+                      className={cx("monopoly-trade-target-card", String(propertyTrade.buyerId) === String(player.id) && "active")}
+                      onClick={() => setPropertyTrade((current) => ({ ...current, buyerId: String(player.id) }))}
+                    >
+                      <TokenChip tokenStyle={propertyTradeTokenById.get(player.id)} className="h-11 w-11 text-sm" />
+                      <div>
+                        <strong>{player.name}</strong>
+                        <span><Money amount={player.cash} /> en caja</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="monopoly-trade-step">
+                <p className="monopoly-trade-step-label">3. Ajusta el precio</p>
+                <div className="monopoly-trade-price-presets">
+                  {propertyPresets.map((amount) => (
+                    <button
+                      key={`property-price-${amount}`}
+                      type="button"
+                      className={propertyTrade.price === amount ? "active" : ""}
+                      onClick={() => setPropertyTrade((current) => ({ ...current, price: amount }))}
+                    >
+                      {moneyFormatter.format(amount)}
+                    </button>
+                  ))}
+                </div>
                 <input
-                  type="checkbox"
-                  checked={propertyTrade.liftMortgage}
-                  onChange={(event) => setPropertyTrade((current) => ({ ...current, liftMortgage: event.target.checked }))}
+                  className="monopoly-input monopoly-trade-price-input"
+                  type="number"
+                  min={0}
+                  value={propertyTrade.price}
+                  onChange={(event) => setPropertyTrade((current) => ({ ...current, price: Number(event.target.value) }))}
                 />
-                Levantar hipoteca al transferir
-              </label>
+                <label className="monopoly-trade-toggle">
+                  <input
+                    type="checkbox"
+                    checked={propertyTrade.liftMortgage}
+                    onChange={(event) => setPropertyTrade((current) => ({ ...current, liftMortgage: event.target.checked }))}
+                  />
+                  <span>Levantar hipoteca al transferir</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="monopoly-trade-summary">
+              <p className="monopoly-panel-eyebrow">Resumen del trato</p>
+              <h5>{selectedProperty ? selectedProperty.name : "Elige una propiedad para empezar"}</h5>
+              <p>
+                {selectedProperty && selectedBuyer
+                  ? propertyTradeBanter({
+                      sellerName: myPlayer?.name || "Tu",
+                      buyerName: selectedBuyer.name,
+                      propertyName: selectedProperty.name,
+                      price: propertyTrade.price
+                    })
+                  : "Selecciona propiedad y comprador para que el trato deje de flotar en el limbo."}
+              </p>
+              <div className="monopoly-trade-money-flow">
+                <span>Se pagará <strong>{moneyFormatter.format(propertyTrade.price || 0)}</strong> por parte de {selectedBuyer?.name || "..."}</span>
+                <span>Se recibirá <strong>{moneyFormatter.format(propertyTrade.price || 0)}</strong> en caja de {myPlayer?.name || "tu jugador"}</span>
+                {selectedProperty?.isMortgaged && (
+                  <span>Coste extra para comprador <strong>{moneyFormatter.format(transferCost)}</strong> {propertyTrade.liftMortgage ? "incluyendo levantar hipoteca" : "por interes de transferencia"}</span>
+                )}
+              </div>
+              {propertyTradeWarning && (
+                <div className="monopoly-trade-warning">
+                  <AlertTriangle size={16} />
+                  <span>{propertyTradeWarning}</span>
+                </div>
+              )}
               <ActionButton
                 tone="secondary"
-                onClick={() => onAction("venderPropiedad", {
-                  compradorId: Number(propertyTrade.buyerId),
-                  propiedadId: propertyTrade.propertyId,
-                  precio: Number(propertyTrade.price),
-                  levantarHipotecaAhora: propertyTrade.liftMortgage
-                })}
-                disabled={!propertyTrade.propertyId || !propertyTrade.buyerId}
+                className="w-full justify-center"
+                onClick={() => {
+                  onAction("crearOfertaPropiedad", {
+                    compradorId: Number(propertyTrade.buyerId),
+                    propiedadId: propertyTrade.propertyId,
+                    precio: Number(propertyTrade.price),
+                    levantarHipotecaAhora: propertyTrade.liftMortgage
+                  });
+                  onClose();
+                }}
+                disabled={!canSubmitPropertyTrade}
               >
-                Transferir propiedad
+                <Scale size={18} />
+                Enviar oferta de propiedad
               </ActionButton>
             </div>
           </section>
 
-          <section className="modal-stat-card">
-            <span>Vender carta de carcel</span>
-            <div className="mt-3 grid gap-3">
-              <select
-                className="monopoly-input"
-                value={cardTrade.deck}
-                onChange={(event) => setCardTrade((current) => ({ ...current, deck: event.target.value }))}
-              >
-                <option value="CASUALIDAD">Casualidad</option>
-                <option value="ARCA_COMUNAL">Arca comunal</option>
-              </select>
-              <select
-                className="monopoly-input"
-                value={cardTrade.buyerId}
-                onChange={(event) => setCardTrade((current) => ({ ...current, buyerId: event.target.value }))}
-              >
-                <option value="">Comprador</option>
-                {players.filter((player) => !sameEntityId(player.id, currentUserId) && !player.bankrupt).map((player) => (
-                  <option key={player.id} value={player.id}>{player.name}</option>
-                ))}
-              </select>
-              <input
-                className="monopoly-input"
-                type="number"
-                min={0}
-                value={cardTrade.price}
-                onChange={(event) => setCardTrade((current) => ({ ...current, price: Number(event.target.value) }))}
-              />
+          <section className="monopoly-trade-panel">
+            <div className="monopoly-trade-panel-head">
+              <div>
+                <p className="monopoly-panel-eyebrow">Pases especiales</p>
+                <h4>Vender salida de carcel</h4>
+              </div>
+              <span>{totalJailCards} pases</span>
+            </div>
+
+            <div className="monopoly-trade-pickers">
+              <div className="monopoly-trade-help-card">
+                <ShieldAlert size={18} />
+                <p>
+                  Aqui solo vendes cartas de <strong>Salir libre de la carcel</strong>. Las cartas normales de Casualidad y Arca comunal se resuelven al instante y no se pueden comerciar.
+                </p>
+              </div>
+              <div className="monopoly-trade-step">
+                <p className="monopoly-trade-step-label">1. Elige de que mazo viene tu pase</p>
+                <div className="monopoly-trade-deck-grid">
+                  {["CASUALIDAD", "ARCA_COMUNAL"].map((deck) => (
+                    <button
+                      key={deck}
+                      type="button"
+                      className={cx("monopoly-trade-deck-card", cardTrade.deck === deck && "active")}
+                      onClick={() => setCardTrade((current) => ({ ...current, deck }))}
+                    >
+                      <strong>{cardDeckLabel(deck)}</strong>
+                      <span>{Number(myPlayer?.getOutOfJailCards?.[deck] || 0)} pases disponibles</span>
+                      <em>{deck === "CASUALIDAD" ? "Caos amarillo, fuga con suerte." : "Vecinos organizados, escape comunitario."}</em>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="monopoly-trade-step">
+                <p className="monopoly-trade-step-label">2. Elige comprador</p>
+                <div className="monopoly-trade-target-grid">
+                  {tradeTargets.map((player) => (
+                    <button
+                      key={`card-${player.id}`}
+                      type="button"
+                      className={cx("monopoly-trade-target-card", String(cardTrade.buyerId) === String(player.id) && "active")}
+                      onClick={() => setCardTrade((current) => ({ ...current, buyerId: String(player.id) }))}
+                    >
+                      <TokenChip tokenStyle={propertyTradeTokenById.get(player.id)} className="h-11 w-11 text-sm" />
+                      <div>
+                        <strong>{player.name}</strong>
+                        <span><Money amount={player.cash} /> en caja</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="monopoly-trade-step">
+                <p className="monopoly-trade-step-label">3. Precio del pase</p>
+                <div className="monopoly-trade-price-presets">
+                  {cardPresets.map((amount) => (
+                    <button
+                      key={`card-price-${amount}`}
+                      type="button"
+                      className={cardTrade.price === amount ? "active" : ""}
+                      onClick={() => setCardTrade((current) => ({ ...current, price: amount }))}
+                    >
+                      {moneyFormatter.format(amount)}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  className="monopoly-input monopoly-trade-price-input"
+                  type="number"
+                  min={0}
+                  value={cardTrade.price}
+                  onChange={(event) => setCardTrade((current) => ({ ...current, price: Number(event.target.value) }))}
+                />
+              </div>
+            </div>
+
+            <div className="monopoly-trade-summary">
+              <p className="monopoly-panel-eyebrow">Resumen del trato</p>
+              <h5>{cardDeckLabel(cardTrade.deck)}</h5>
+              <p>
+                {selectedCardBuyer
+                  ? jailCardTradeBanter({
+                      sellerName: myPlayer?.name || "Tu",
+                      buyerName: selectedCardBuyer.name,
+                      deckLabel: cardDeckLabel(cardTrade.deck),
+                      price: cardTrade.price
+                    })
+                  : "Primero elige a quien le quieres vender este pase anti-prision."}
+              </p>
+              <div className="monopoly-trade-money-flow">
+                <span>Se pagará <strong>{moneyFormatter.format(cardTrade.price || 0)}</strong> por parte de {selectedCardBuyer?.name || "..."}</span>
+                <span>Se recibirá <strong>{moneyFormatter.format(cardTrade.price || 0)}</strong> en caja de {myPlayer?.name || "tu jugador"}</span>
+              </div>
               <ActionButton
                 tone="secondary"
-                onClick={() => onAction("comprarCartaSalirCarcel", {
-                  compradorId: Number(cardTrade.buyerId),
-                  deck: cardTrade.deck,
-                  precio: Number(cardTrade.price)
-                })}
-                disabled={!cardTrade.buyerId}
+                className="w-full justify-center"
+                onClick={() => {
+                  onAction("crearOfertaCartaCarcel", {
+                    compradorId: Number(cardTrade.buyerId),
+                    deck: cardTrade.deck,
+                    precio: Number(cardTrade.price)
+                  });
+                  onClose();
+                }}
+                disabled={!cardTrade.buyerId || selectedDeckCount <= 0}
               >
-                Vender carta
+                <ShieldAlert size={18} />
+                Enviar oferta de pase
               </ActionButton>
             </div>
           </section>
@@ -3035,6 +4952,213 @@ function LobbyStage({ children, dim = false, overlayClassName = "" }) {
         </div>
       </div>
       <div className={cx("monopoly-lobby-overlay", overlayClassName)}>{children}</div>
+    </div>
+  );
+}
+
+function DebtManagementModal({
+  open,
+  onClose,
+  debt,
+  player,
+  onAction,
+  onResolveDebt,
+  onOpenTrade,
+  onFocusProperty
+}) {
+  const groupedProperties = useMemo(() => {
+    const next = new Map();
+    (player?.properties || []).forEach((property) => {
+      const key = property.colorGroup || property.type || "otros";
+      if (!next.has(key)) next.set(key, []);
+      next.get(key).push(property);
+    });
+
+    return [...next.entries()].map(([groupKey, properties]) => ({
+      key: groupKey,
+      meta: colorGroupMeta[groupKey] || null,
+      properties: [...properties].sort((left, right) => {
+        const rightActions = propertyActionOrder.filter(([actionName]) => right.management?.[actionName]?.allowed).length;
+        const leftActions = propertyActionOrder.filter(([actionName]) => left.management?.[actionName]?.allowed).length;
+        if (rightActions !== leftActions) return rightActions - leftActions;
+        return estimatePropertyLiquidity(right) - estimatePropertyLiquidity(left);
+      })
+    }));
+  }, [player?.properties]);
+
+  if (!open || !debt || !player) return null;
+
+  const cash = player.cash || 0;
+  const shortfall = Math.max(0, (debt.amount || 0) - cash);
+  const canResolveDebt = shortfall === 0;
+  const totalLiquidity = (player.properties || []).reduce((sum, property) => sum + estimatePropertyLiquidity(property), 0);
+  const canStillRescue = shortfall > 0 && totalLiquidity >= shortfall;
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="monopoly-modal tone-warn monopoly-debt-manager-modal">
+        <div className="monopoly-debt-manager-head">
+          <div>
+            <p className="monopoly-panel-eyebrow">Rescate financiero</p>
+            <h3>Salva tu partida</h3>
+            <p className="monopoly-debt-manager-copy">
+              Liquida edificios, hipoteca activos y cuando tu efectivo alcance la deuda, remata con un solo toque.
+            </p>
+          </div>
+          <button type="button" className="toast-close" onClick={onClose} aria-label="Cerrar rescate financiero">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="monopoly-debt-manager-layout">
+          <aside className="monopoly-debt-hero">
+            <div className="monopoly-debt-hero-card">
+              <span className="monopoly-debt-hero-kicker">Objetivo</span>
+              <strong>{canResolveDebt ? "Ya puedes pagar" : "Necesitas reunir efectivo"}</strong>
+              <p>
+                {canResolveDebt
+                  ? "Tu caja ya aguanta el golpe. Cobra aire y paga la deuda."
+                  : "Todavia no cubres la deuda. Usa las maniobras disponibles debajo."}
+              </p>
+            </div>
+
+            <div className="monopoly-debt-hero-stats">
+              <article className="modal-stat-card">
+                <span>Deuda actual</span>
+                <Money amount={debt.amount || 0} className="modal-stat-value" />
+              </article>
+              <article className="modal-stat-card">
+                <span>Efectivo</span>
+                <Money amount={cash} className="modal-stat-value" />
+              </article>
+              <article className="modal-stat-card">
+                <span>Falta reunir</span>
+                <Money amount={shortfall} className="modal-stat-value" />
+              </article>
+              <article className="modal-stat-card">
+                <span>Liquidez posible</span>
+                <Money amount={totalLiquidity} className="modal-stat-value" />
+              </article>
+            </div>
+
+            <div className="monopoly-debt-hero-footer">
+              <ActionButton className="w-full justify-center" onClick={onResolveDebt} disabled={!canResolveDebt}>
+                <Wallet size={18} />
+                {canResolveDebt ? `Pagar deuda - ${moneyFormatter.format(debt.amount || 0)}` : "Aun no alcanzas a pagar"}
+              </ActionButton>
+              <ActionButton tone="secondary" className="w-full justify-center" onClick={onOpenTrade}>
+                <Scale size={18} />
+                Negociar propiedad
+              </ActionButton>
+              <ActionButton tone="danger" className="w-full justify-center" onClick={() => onAction("resolverQuiebra")} disabled={canStillRescue}>
+                <AlertTriangle size={18} />
+                {canStillRescue ? "Aun puedes rescatarte" : "Declarar quiebra"}
+              </ActionButton>
+              {canStillRescue && (
+                <p className="monopoly-debt-rescue-note">Todavia hay liquidez suficiente en tus activos. Vende o hipoteca antes del game over.</p>
+              )}
+            </div>
+          </aside>
+
+          <section className="monopoly-debt-arsenal">
+            <div className="monopoly-debt-arsenal-head">
+              <div>
+                <p className="monopoly-panel-eyebrow">Tus propiedades</p>
+                <h4>Elige un activo para mover</h4>
+              </div>
+              <span>{player.properties?.length || 0} activos</span>
+            </div>
+
+            {!player.properties?.length ? (
+              <div className="monopoly-empty-state">No tienes propiedades que liquidar. Si no puedes pagar, la partida termina en quiebra.</div>
+            ) : (
+              <div className="monopoly-debt-group-list">
+                {groupedProperties.map((group) => (
+                  <section key={group.key} className="monopoly-debt-group">
+                    <div className="monopoly-debt-group-title">
+                      <div className="monopoly-debt-group-label">
+                        <span style={{ backgroundColor: group.meta?.color || "#d8c8ae" }} />
+                        <strong>{group.meta?.label || group.key}</strong>
+                      </div>
+                      <em>{group.properties.length}</em>
+                    </div>
+
+                    <div className="monopoly-debt-property-grid">
+                      {group.properties.map((property) => {
+                        const availableActions = propertyActionOrder.filter(([actionName]) => property.management?.[actionName]?.allowed);
+                        const liquidity = estimatePropertyLiquidity(property);
+                        return (
+                          <article key={property.id} className="monopoly-debt-property-card">
+                            <div className="monopoly-debt-property-head">
+                              <div>
+                                <p>{spaceTypeLabel(property)}</p>
+                                <h5>{property.name}</h5>
+                              </div>
+                              <button type="button" className="monopoly-debt-focus-button" onClick={() => onFocusProperty(property.id)}>
+                                Ver casilla
+                              </button>
+                            </div>
+
+                            <div className="monopoly-debt-property-badges">
+                              {property.isMortgaged && <span className="monopoly-chip bg-[#4b5563] text-white">Hipotecada</span>}
+                              {property.hasHotel && <span className="monopoly-chip bg-[#b02016] text-white">Hotel</span>}
+                              {property.houses > 0 && <span className="monopoly-chip bg-[#14532d] text-white">{property.houses} casas</span>}
+                              {liquidity > 0 && <span className="monopoly-chip bg-[#fff4dc] text-[#8a5a00]">Caja {moneyFormatter.format(liquidity)}</span>}
+                            </div>
+
+                            <div className="monopoly-debt-property-stats">
+                              <div>
+                                <span>Precio</span>
+                                <strong>{property.price ? moneyFormatter.format(property.price) : "--"}</strong>
+                              </div>
+                              <div>
+                                <span>Hipoteca</span>
+                                <strong>{property.mortgageValue ? moneyFormatter.format(property.mortgageValue) : "--"}</strong>
+                              </div>
+                              <div>
+                                <span>Construccion</span>
+                                <strong>{property.hasHotel ? "Hotel" : property.houses > 0 ? `${property.houses} casas` : "Base"}</strong>
+                              </div>
+                            </div>
+
+                            {availableActions.length > 0 ? (
+                              <div className="monopoly-debt-action-grid">
+                                {availableActions.map(([actionName]) => {
+                                  const meta = debtActionMeta[actionName];
+                                  const Icon = meta?.icon || Hammer;
+                                  return (
+                                    <button
+                                      key={actionName}
+                                      type="button"
+                                      className="monopoly-debt-action-button"
+                                      onClick={() => onAction(actionName, { propertyId: property.id })}
+                                    >
+                                      <span className="monopoly-debt-action-icon"><Icon size={16} /></span>
+                                      <span>
+                                        <strong>{meta?.label || actionLabel[actionName]}</strong>
+                                        <em>{debtActionCopy(actionName, property)}</em>
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="monopoly-debt-action-locked">
+                                <Info size={16} />
+                                <span>Esta propiedad no tiene maniobras legales disponibles ahora mismo.</span>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3477,9 +5601,11 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const [turnTimeSeconds, setTurnTimeSeconds] = useState(60);
   const [bidAmount, setBidAmount] = useState(100);
   const [selectedSpaceId, setSelectedSpaceId] = useState("go");
-  const [propertyTrade, setPropertyTrade] = useState({ propertyId: "", buyerId: "", price: 100, liftMortgage: false });
-  const [cardTrade, setCardTrade] = useState({ deck: "CASUALIDAD", buyerId: "", price: 100 });
+  const [propertyTrade, setPropertyTrade] = useState(() => ({ ...defaultPropertyTrade }));
+  const [cardTrade, setCardTrade] = useState(() => ({ ...defaultCardTrade }));
   const [toasts, setToasts] = useState([]);
+  const [visibleRecentEvents, setVisibleRecentEvents] = useState([]);
+  const [moneyBursts, setMoneyBursts] = useState([]);
   const [diceFaces, setDiceFaces] = useState([1, 6]);
   const [rollingDice, setRollingDice] = useState(false);
   const [modalDismissKey, setModalDismissKey] = useState("");
@@ -3491,6 +5617,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const [rulesOpen, setRulesOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
+  const [debtManagerOpen, setDebtManagerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   // Lobby rediseñado: control de modales y configuración de sala.
@@ -3508,6 +5635,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const diceIntervalRef = useRef(null);
   const diceTimeoutRef = useRef(null);
   const cinematicTimeoutsRef = useRef([]);
+  const moneyBurstTimeoutsRef = useRef([]);
   // Bloqueo anti doble-clic / reentrada de acciones (robustez de interaccion).
   const actionLockRef = useRef(false);
   const actionLockTimeoutRef = useRef(null);
@@ -3657,7 +5785,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
 
   useEffect(() => {
     if (auction) {
-      setBidAmount((auction.currentBid || 0) + 1);
+      setBidAmount(auctionMinimumBid(auction));
     }
   }, [auction?.id, auction?.currentBid]);
 
@@ -3824,13 +5952,13 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     ? currentPrompt({ state, playersById, currentUserId, pendingPurchaseSpace, pendingTax, pendingDebt, pendingCard, auction })
     : null;
   const mainQuickAction = state
-    ? quickAction({ myActions, pendingCard, pendingDebt, pendingPurchaseSpace, auction, pendingTax })
+    ? quickAction({ state, myActions, pendingCard, pendingDebt, pendingPurchaseSpace, auction, pendingTax })
     : null;
   const boardById = useMemo(() => new Map(board.map((space) => [space.id, space])), [board]);
   const rawModalState = state ? buildModalState({ state, currentUserId, playersById, boardById }) : null;
   const modalShouldBlock = modalNeedsAction(rawModalState, myActions);
   const modalKey = rawModalState
-    ? `${rawModalState.type}:${rawModalState.property?.id || rawModalState.card?.id || rawModalState.auction?.id || rawModalState.debt?.debtorId || state.turn.currentPlayerId}:${state.turn.turnNumber}`
+    ? `${rawModalState.type}:${rawModalState.offer?.id || rawModalState.property?.id || rawModalState.card?.id || rawModalState.auction?.id || rawModalState.debt?.debtorId || state.turn.currentPlayerId}:${state.turn.turnNumber}`
     : "";
   const activeModal = (cinematic || rollingDice)
     ? null
@@ -3840,11 +5968,38 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       ? { ...rawModalState, blocking: false }
       : null;
 
+  function scheduleMoneyBursts(bursts, delay = 0) {
+    if (!bursts.length) return;
+
+    const addTimeoutId = window.setTimeout(() => {
+      setMoneyBursts((current) => [...current, ...bursts].slice(-8));
+      const removeTimeoutId = window.setTimeout(() => {
+        const burstIds = new Set(bursts.map((burst) => burst.id));
+        setMoneyBursts((current) => current.filter((item) => !burstIds.has(item.id)));
+      }, MONEY_BURST_LIFETIME_MS);
+      moneyBurstTimeoutsRef.current.push(removeTimeoutId);
+    }, Math.max(0, delay));
+
+    moneyBurstTimeoutsRef.current.push(addTimeoutId);
+  }
+
+  useEffect(() => {
+    if (!pendingDebt) {
+      setDebtManagerOpen(false);
+    }
+  }, [pendingDebt]);
+
+  function openDebtManager() {
+    setBottomTab("assets");
+    setDebtManagerOpen(true);
+  }
+
   useEffect(() => {
     return () => {
       if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
       if (diceTimeoutRef.current) window.clearTimeout(diceTimeoutRef.current);
       cinematicTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+      moneyBurstTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     };
   }, []);
 
@@ -3867,21 +6022,86 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     const currentIds = new Set(state.recentEvents.map((event) => event.id));
     if (seenEventIdsRef.current.size === 0) {
       seenEventIdsRef.current = currentIds;
+      setVisibleRecentEvents((state.recentEvents || []).filter(shouldShowEvent));
       return;
     }
 
     const newEvents = state.recentEvents.filter((event) => !seenEventIdsRef.current.has(event.id));
     if (newEvents.length > 0) {
-      setToasts((current) => [...current, ...newEvents].slice(-4));
-      newEvents.forEach((event, index) => {
-        window.setTimeout(() => {
-          setToasts((current) => current.filter((toast) => toast.id !== event.id));
-        }, 4200 + index * 350);
+      const previous = previousSnapshotRef.current;
+      const previousRoll = previous?.turn?.lastRoll;
+      const currentRoll = state.turn?.lastRoll;
+      const previousRollSignature = previousRoll
+        ? `${previous.turn.turnNumber}:${previousRoll.dice.join("-")}:${previous.currentPlayerId}`
+        : "";
+      const currentRollSignature = currentRoll
+        ? `${state.turn.turnNumber}:${currentRoll.dice.join("-")}:${state.currentPlayerId}`
+        : "";
+      const movementTimeline = previous && currentRollSignature && currentRollSignature !== previousRollSignature
+        ? (() => {
+            const moverId = previous.currentPlayerId;
+            const previousPlayer = previous.players?.find((player) => player.id === moverId);
+            const from = previousPlayer?.position;
+            const boardSize = state.board?.length || 40;
+            const path = Number.isInteger(from) && currentRoll?.total
+              ? buildMovementPath(from, currentRoll.total, boardSize)
+              : [];
+            return path.length ? { moverId, path } : null;
+          })()
+        : null;
+
+      newEvents.filter(shouldShowEvent).forEach((event, index) => {
+        const delay = eventToastDelay(event, movementTimeline);
+        const addTimeoutId = window.setTimeout(() => {
+          setVisibleRecentEvents((current) => [...current, event].slice(-60));
+          setToasts((current) => [...current, event].slice(-4));
+          const removeTimeoutId = window.setTimeout(() => {
+            setToasts((current) => current.filter((toast) => toast.id !== event.id));
+          }, 4200 + index * 350);
+          moneyBurstTimeoutsRef.current.push(removeTimeoutId);
+        }, Math.max(0, delay));
+        moneyBurstTimeoutsRef.current.push(addTimeoutId);
       });
+
+      const burstGroups = new Map();
+      newEvents.forEach((event) => {
+        const delay = eventBurstDelay(event, movementTimeline);
+        const bursts = buildMoneyBursts(event, playersById, boardById);
+        if (!bursts.length) return;
+        burstGroups.set(delay, [...(burstGroups.get(delay) || []), ...bursts]);
+      });
+
+      for (const [delay, bursts] of burstGroups.entries()) {
+        scheduleMoneyBursts(bursts, delay);
+      }
+
+      const soundGroups = new Map();
+      newEvents.forEach((event) => {
+        const soundName =
+          event.type === "CARD_DRAWN"
+            ? "card"
+            : ["PLAYER_RECEIVED_MONEY", "PLAYER_PAID", "JAIL_FINE_PAID", "DEBT_PAID"].includes(event.type)
+              ? "payevent"
+              : "";
+        if (!soundName) return;
+        const delay = eventSoundDelay(event, movementTimeline);
+        const current = soundGroups.get(delay) || new Set();
+        current.add(soundName);
+        soundGroups.set(delay, current);
+      });
+
+      for (const [delay, names] of soundGroups.entries()) {
+        const timeoutId = window.setTimeout(() => {
+          names.forEach((name) => audio.play(name));
+        }, Math.max(0, delay));
+        moneyBurstTimeoutsRef.current.push(timeoutId);
+      }
+
     }
 
     seenEventIdsRef.current = currentIds;
-  }, [state?.recentEvents]);
+    setVisibleRecentEvents((current) => current.filter((event) => currentIds.has(event.id)));
+  }, [state?.recentEvents, playersById, boardById]);
 
   useEffect(() => {
     if (!state?.turn?.lastRoll) return;
@@ -3930,11 +6150,6 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     //  dice phase  : 2400ms  (cara final visible al final, +800ms para reposo antes de mover)
     //  step delay  : 460ms   (paso entre casillas durante el recorrido)
     //  settle hold : 1500ms  (zoom en la casilla destino antes de soltar el control)
-    const DICE_PHASE_MS = 3000;
-    const DICE_REST_MS = 900;
-    const STEP_MS = 520;
-    const SETTLE_HOLD_MS = 1700;
-
     diceTimeoutRef.current = window.setTimeout(() => {
       if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
       setDiceFaces(state.turn.lastRoll.dice);
@@ -3951,7 +6166,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
                 next.set(moverId, position);
                 return next;
               });
-            }, index * STEP_MS);
+            }, index * CINEMATIC_STEP_MS);
             cinematicTimeoutsRef.current.push(timeoutId);
           });
 
@@ -3962,12 +6177,12 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
               return next;
             });
             setCinematic({ phase: "settle", playerId: moverId });
-          }, path.length * STEP_MS + 120);
+          }, path.length * CINEMATIC_STEP_MS + 120);
           cinematicTimeoutsRef.current.push(settleTimeoutId);
 
           const finishTimeoutId = window.setTimeout(() => {
             setCinematic(null);
-          }, path.length * STEP_MS + SETTLE_HOLD_MS);
+          }, path.length * CINEMATIC_STEP_MS + CINEMATIC_SETTLE_HOLD_MS);
           cinematicTimeoutsRef.current.push(finishTimeoutId);
         } else {
           const finishTimeoutId = window.setTimeout(() => {
@@ -3975,9 +6190,9 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
           }, 1100);
           cinematicTimeoutsRef.current.push(finishTimeoutId);
         }
-      }, DICE_REST_MS);
+      }, CINEMATIC_DICE_REST_MS);
       cinematicTimeoutsRef.current.push(stepStartTimeoutId);
-    }, DICE_PHASE_MS);
+    }, CINEMATIC_DICE_PHASE_MS);
   }, [state?.turn?.lastRoll, state?.turn?.turnNumber, state?.currentPlayerId]);
 
   useEffect(() => {
@@ -4363,6 +6578,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
           displayBoardPlayers={displayBoardPlayers}
           state={state}
           tokenStylesById={tokenStylesById}
+          moneyBursts={moneyBursts}
           cameraFocus={cameraFocus}
           cinematic={cinematic}
           prompt={prompt}
@@ -4381,6 +6597,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
           canBidAuction={canBidAuction}
           canPassAuction={canPassAuction}
           onAction={act}
+          onManageDebt={() => openDebtManager()}
           onSelect={setSelectedSpaceId}
         />
       </main>
@@ -4403,7 +6620,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
           setBottomTab("space");
         }}
         onManage={(action, propertyId) => act(action, { propertyId })}
-        events={state.recentEvents || []}
+        events={visibleRecentEvents}
         playersById={playersById}
         boardById={boardById}
         onOpenTrade={() => setTradeOpen(true)}
@@ -4412,17 +6629,35 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       />
 
       <PropertyModal
-        modalState={activeModal}
+        modalState={debtManagerOpen ? null : activeModal}
         myActions={myActions}
         currentUserId={currentUserId}
         state={state}
         playersById={playersById}
         boardById={boardById}
         onAction={act}
+        onManageDebt={() => openDebtManager()}
         onClose={() => setModalDismissKey(modalKey)}
       />
 
-      <TradeModal
+      <DebtManagementModal
+        open={debtManagerOpen}
+        onClose={() => setDebtManagerOpen(false)}
+        debt={pendingDebt}
+        player={myPlayer}
+        onAction={act}
+        onResolveDebt={() => act("resolverDeudaPendiente")}
+        onOpenTrade={() => {
+          setDebtManagerOpen(false);
+          setTradeOpen(true);
+        }}
+        onFocusProperty={(propertyId) => {
+          setSelectedSpaceId(propertyId);
+          setBottomTab("space");
+        }}
+      />
+
+      <TradeModalV2
         open={tradeOpen}
         onClose={() => setTradeOpen(false)}
         myPlayer={myPlayer}
@@ -4433,6 +6668,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         cardTrade={cardTrade}
         setCardTrade={setCardTrade}
         onAction={act}
+        customTokens={customTokens}
       />
 
       <RulesModal open={rulesOpen} onClose={() => setRulesOpen(false)} />

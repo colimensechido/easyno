@@ -701,6 +701,24 @@
     border-color: #7f6847;
   }
 
+  .monopoly-space.card-space {
+    background:
+      radial-gradient(circle at 50% 34%, rgba(255,255,255,0.92) 0 18%, transparent 19%),
+      linear-gradient(145deg, #fffdf7 0%, #f4e6c8 100%);
+  }
+
+  .monopoly-space.card-space.deck-chance {
+    background:
+      radial-gradient(circle at 50% 34%, rgba(255,255,255,0.94) 0 18%, transparent 19%),
+      linear-gradient(145deg, #fff7db 0%, #f3cf65 100%);
+  }
+
+  .monopoly-space.card-space.deck-chest {
+    background:
+      radial-gradient(circle at 50% 34%, rgba(255,255,255,0.94) 0 18%, transparent 19%),
+      linear-gradient(145deg, #eefaf7 0%, #77c8b8 100%);
+  }
+
   .monopoly-space.corner {
     padding: 0.52rem;
   }
@@ -760,6 +778,102 @@
     flex: 1;
   }
 
+  .monopoly-space.card-space .monopoly-space-copy {
+    display: grid;
+    place-items: center;
+  }
+
+  .monopoly-card-space-art {
+    position: relative;
+    display: grid;
+    width: min(100%, 4.7rem);
+    min-height: clamp(3.3rem, 7.6vmin, 5.8rem);
+    place-items: center;
+    align-content: center;
+    gap: 0.1rem;
+    border: 2px solid #23160c;
+    border-radius: 8px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.98), rgba(249,239,214,0.98)),
+      repeating-linear-gradient(135deg, rgba(176,32,22,0.07) 0 2px, transparent 2px 8px);
+    box-shadow: 0 3px 0 rgba(35,22,12,0.2), 0 8px 16px rgba(35,22,12,0.16);
+    transform: rotate(-3deg);
+  }
+
+  .deck-chest .monopoly-card-space-art {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.98), rgba(225,248,241,0.98)),
+      repeating-linear-gradient(135deg, rgba(15,118,110,0.08) 0 2px, transparent 2px 8px);
+    transform: rotate(3deg);
+  }
+
+  .monopoly-card-space-art::before {
+    content: "";
+    position: absolute;
+    inset: 0.36rem;
+    border: 1px solid rgba(35,22,12,0.24);
+    border-radius: 5px;
+    pointer-events: none;
+  }
+
+  .card-mini-corner {
+    position: absolute;
+    color: #b02016;
+    font-size: clamp(9px, 1.25vmin, 13px);
+    font-weight: 950;
+    line-height: 1;
+  }
+
+  .deck-chest .card-mini-corner {
+    color: #0f766e;
+  }
+
+  .card-mini-corner.top {
+    top: 0.25rem;
+    left: 0.28rem;
+  }
+
+  .card-mini-corner.bottom {
+    right: 0.28rem;
+    bottom: 0.25rem;
+    transform: rotate(180deg);
+  }
+
+  .card-mini-icon {
+    display: inline-grid;
+    width: clamp(1.25rem, 2.4vmin, 1.85rem);
+    height: clamp(1.25rem, 2.4vmin, 1.85rem);
+    place-items: center;
+    border-radius: 999px;
+    background: #b02016;
+    color: #fff8ec;
+    box-shadow: 0 4px 10px rgba(176,32,22,0.26);
+  }
+
+  .deck-chest .card-mini-icon {
+    background: #0f766e;
+    box-shadow: 0 4px 10px rgba(15,118,110,0.24);
+  }
+
+  .monopoly-card-space-art strong {
+    color: #23160c;
+    font-size: clamp(7px, 0.95vmin, 10px);
+    font-weight: 950;
+    line-height: 1;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
+  .monopoly-card-space-art em {
+    color: #7c5d38;
+    font-size: clamp(6px, 0.72vmin, 8px);
+    font-style: normal;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+  }
+
   .side-bottom .monopoly-space-inner {
     padding-top: 0.75rem;
   }
@@ -793,6 +907,18 @@
   .side-right .monopoly-space-copy {
     align-self: start;
     min-width: 0;
+  }
+
+  .side-left.card-space .monopoly-space-copy,
+  .side-right.card-space .monopoly-space-copy {
+    align-self: center;
+    justify-self: center;
+  }
+
+  .side-left .monopoly-card-space-art,
+  .side-right .monopoly-card-space-art {
+    width: min(100%, 4.2rem);
+    min-height: clamp(2.7rem, 5.4vmin, 4.4rem);
   }
 
   .side-left .space-footer,
@@ -1053,16 +1179,21 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 16px;
-    height: 16px;
-    padding: 0 4px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0;
     border-radius: 999px;
     background: rgba(35, 22, 12, 0.84);
     color: white;
-    font-size: 8px;
-    font-weight: 900;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.22);
+  }
+
+  .space-owner-token {
+    width: 14px;
+    height: 14px;
+    font-size: 6px;
+    border-width: 2px;
+    box-shadow: none;
   }
 
   .monopoly-token-overlay {
@@ -1070,6 +1201,44 @@
     inset: 0;
     pointer-events: none;
     z-index: 8;
+  }
+
+  .monopoly-money-burst-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 14;
+  }
+
+  .money-burst {
+    position: absolute;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 3.3rem;
+    padding: 0.25rem 0.5rem;
+    border: 2px solid rgba(255,255,255,0.82);
+    border-radius: 999px;
+    color: white;
+    font-size: clamp(0.72rem, 1.2vmin, 0.98rem);
+    font-weight: 950;
+    line-height: 1;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.22);
+    box-shadow: 0 10px 22px rgba(0,0,0,0.28);
+    transform: translate(calc(-50% + var(--burst-x, 0px)), -50%);
+    animation: money-burst-pop 1.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .money-burst.tone-gain {
+    background: linear-gradient(135deg, #16a34a, #0f766e);
+  }
+
+  .money-burst.tone-loss {
+    background: linear-gradient(135deg, #dc2626, #991b1b);
+  }
+
+  .money-burst.alt {
+    animation-delay: 80ms;
   }
 
   .token-piece {
@@ -1572,6 +1741,1591 @@
     color: #23160c;
   }
 
+  .trade-offer-card {
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.15rem;
+    border: 1px solid rgba(35,22,12,0.12);
+    border-radius: 24px;
+    padding: 1rem;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.72), rgba(236,253,245,0.68)),
+      rgba(255,255,255,0.52);
+  }
+
+  .trade-offer-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.85rem;
+    align-items: center;
+  }
+
+  .trade-offer-icon {
+    display: inline-grid;
+    width: 4rem;
+    height: 4rem;
+    place-items: center;
+    border-radius: 22px;
+    background: #0f766e;
+    color: white;
+    box-shadow: 0 16px 30px rgba(15,118,110,0.2);
+  }
+
+  .trade-offer-main h4 {
+    color: #23160c;
+    font-size: clamp(1.35rem, 3vw, 2rem);
+    font-weight: 950;
+    line-height: 1.05;
+    text-transform: uppercase;
+  }
+
+  .trade-offer-main p:not(.monopoly-panel-eyebrow) {
+    margin-top: 0.35rem;
+    color: #6b4b2c;
+    font-size: 0.94rem;
+    font-weight: 800;
+    line-height: 1.45;
+  }
+
+  .trade-offer-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.65rem;
+  }
+
+  .auction-play-panel {
+    display: grid;
+    gap: 0.85rem;
+    width: 100%;
+    border: 2px solid rgba(176, 32, 22, 0.18);
+    border-radius: 20px;
+    padding: 1rem;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.76), rgba(255,241,239,0.82)),
+      repeating-linear-gradient(90deg, rgba(176,32,22,0.035) 0 1px, transparent 1px 8px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+
+  .auction-play-panel.compact {
+    max-height: 100%;
+    gap: 0.55rem;
+    padding: 0.62rem;
+    overflow: hidden;
+  }
+
+  .auction-play-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .auction-play-head h4 {
+    color: #23160c;
+    font-size: 1.05rem;
+    font-weight: 950;
+    line-height: 1.05;
+    text-transform: uppercase;
+  }
+
+  .auction-pulse {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 999px;
+    padding: 0.38rem 0.55rem;
+    background: #b02016;
+    color: white;
+    font-size: 0.72rem;
+    font-weight: 950;
+    animation: soft-pulse 1.8s ease-in-out infinite;
+  }
+
+  .auction-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.45rem;
+  }
+
+  .auction-stats-grid div,
+  .auction-player-bank span {
+    border: 1px solid rgba(35,22,12,0.13);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.62);
+    padding: 0.55rem;
+  }
+
+  .auction-stats-grid span,
+  .auction-player-bank em {
+    display: block;
+    color: #7c5d38;
+    font-size: 0.62rem;
+    font-style: normal;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .auction-stats-grid strong {
+    display: block;
+    overflow: hidden;
+    margin-top: 0.25rem;
+    color: #23160c;
+    font-size: 0.84rem;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .auction-player-bank {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+    gap: 0.4rem;
+  }
+
+  .auction-player-bank span {
+    color: #23160c;
+    font-size: 0.75rem;
+    font-weight: 950;
+  }
+
+  .auction-player-bank span.active {
+    border-color: #b02016;
+    background: #fff1ef;
+    box-shadow: 0 0 0 3px rgba(176,32,22,0.1);
+  }
+
+  .auction-player-bank span.passed {
+    opacity: 0.58;
+    text-decoration: line-through;
+  }
+
+  .auction-bid-console {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(90px, 0.35fr) auto auto;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .auction-quick-bids {
+    display: flex;
+    min-width: 0;
+    gap: 0.35rem;
+    overflow-x: auto;
+    padding-bottom: 0.1rem;
+  }
+
+  .auction-quick-bids button {
+    flex: none;
+    border: 1px solid rgba(176,32,22,0.22);
+    border-radius: 999px;
+    background: rgba(255,255,255,0.72);
+    color: #7f1d1d;
+    padding: 0.45rem 0.62rem;
+    font-size: 0.72rem;
+    font-weight: 950;
+    transition: transform 160ms ease, border-color 160ms ease;
+  }
+
+  .auction-quick-bids button:hover {
+    transform: translateY(-1px);
+    border-color: #b02016;
+  }
+
+  .auction-bid-warning {
+    grid-column: 1 / -1;
+    color: #7f1d1d;
+    font-size: 0.75rem;
+    font-weight: 850;
+  }
+
+  .debt-management-callout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    border: 1px solid rgba(176,32,22,0.2);
+    border-radius: 16px;
+    background: rgba(255,255,255,0.62);
+    padding: 0.85rem;
+    color: #7f1d1d;
+    font-size: 0.86rem;
+    font-weight: 800;
+    line-height: 1.5;
+  }
+
+  .game-card-reveal {
+    display: grid;
+    width: 100%;
+    justify-items: center;
+    gap: 1.1rem;
+    margin-top: 1.35rem;
+  }
+
+  .game-card-face {
+    position: relative;
+    display: grid;
+    width: min(480px, 100%);
+    min-height: 360px;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    gap: 0.95rem;
+    border: 4px solid #b78a3d;
+    border-radius: 30px;
+    padding: 1.25rem 1.3rem 1.05rem;
+    background:
+      linear-gradient(135deg, rgba(255,255,255,0.42), transparent 24%, rgba(255,255,255,0.2) 42%, transparent 60%),
+      radial-gradient(circle at 50% 12%, rgba(255,255,255,0.96), transparent 30%),
+      linear-gradient(180deg, rgba(255,252,245,0.99), rgba(244,229,198,0.98));
+    color: #23160c;
+    text-align: center;
+    box-shadow:
+      0 22px 48px rgba(35,22,12,0.24),
+      inset 0 0 0 1px rgba(255,255,255,0.72);
+    animation: card-reveal 420ms cubic-bezier(0.22, 1, 0.36, 1);
+    overflow: hidden;
+  }
+
+  .game-card-face::before {
+    content: "";
+    position: absolute;
+    inset: 0.65rem;
+    border: 2px solid rgba(35,22,12,0.16);
+    border-radius: 22px;
+    pointer-events: none;
+  }
+
+  .game-card-face::after {
+    content: "";
+    position: absolute;
+    inset: -35% auto auto -20%;
+    width: 55%;
+    height: 170%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.38), transparent);
+    transform: rotate(18deg);
+    animation: card-shine 2.8s ease-in-out 420ms both;
+    pointer-events: none;
+  }
+
+  .game-card-face.deck-chance {
+    border-color: #b45309;
+    background:
+      radial-gradient(circle at 50% 12%, rgba(255,255,255,0.96), transparent 30%),
+      linear-gradient(180deg, rgba(255,249,230,0.99), rgba(247,213,118,0.98));
+  }
+
+  .game-card-face.deck-chest {
+    border-color: #0f766e;
+    background:
+      radial-gradient(circle at 50% 12%, rgba(255,255,255,0.96), transparent 30%),
+      linear-gradient(180deg, rgba(246,255,252,0.99), rgba(183,231,219,0.98));
+  }
+
+  .game-card-face.jail-free {
+    border-color: #7f1d1d;
+  }
+
+  .game-card-corner {
+    position: absolute;
+    font-size: 1.05rem;
+    line-height: 1;
+    font-weight: 950;
+    opacity: 0.55;
+  }
+
+  .game-card-corner.top {
+    top: 0.8rem;
+    left: 0.85rem;
+  }
+
+  .game-card-corner.bottom {
+    right: 0.85rem;
+    bottom: 0.8rem;
+    transform: rotate(180deg);
+  }
+
+  .game-card-topline {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .game-card-deck {
+    color: #8a5a00;
+    font-size: 0.78rem;
+    font-weight: 950;
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    text-align: left;
+  }
+
+  .game-card-stamp {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 1.95rem;
+    padding: 0.25rem 0.72rem;
+    border: 2px solid currentColor;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(35,22,12,0.72);
+  }
+
+  .game-card-medallion {
+    display: inline-grid;
+    width: 5.65rem;
+    height: 5.65rem;
+    margin: 0 auto;
+    place-items: center;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.74);
+    border: 2px solid rgba(35,22,12,0.14);
+    box-shadow: 0 10px 18px rgba(35,22,12,0.14);
+  }
+
+  .game-card-face.deck-chance .game-card-medallion,
+  .game-card-face.deck-chance .game-card-corner {
+    color: #b45309;
+  }
+
+  .game-card-face.deck-chest .game-card-medallion,
+  .game-card-face.deck-chest .game-card-corner {
+    color: #0f766e;
+  }
+
+  .game-card-body {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 0.78rem;
+    min-height: 0;
+    padding-inline: clamp(0.55rem, 2vw, 1.55rem);
+  }
+
+  .game-card-body strong {
+    display: block;
+    width: 100%;
+    color: #23160c;
+    font-size: clamp(1.55rem, 4.4vw, 2.25rem);
+    font-weight: 950;
+    line-height: 0.98;
+    text-align: center;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  .game-card-body p {
+    max-width: 28rem;
+    color: #6b4b2c;
+    font-size: clamp(0.98rem, 2vw, 1.08rem);
+    font-weight: 800;
+    line-height: 1.45;
+    text-align: center;
+    text-wrap: pretty;
+  }
+
+  .game-card-rule {
+    display: inline-flex;
+    justify-self: center;
+    max-width: 26rem;
+    border-radius: 16px;
+    padding: 0.55rem 0.8rem;
+    background: rgba(255,255,255,0.56);
+    color: #5f4428;
+    font-size: 0.8rem;
+    font-weight: 850;
+    line-height: 1.35;
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  .game-card-footer {
+    display: flex;
+    justify-content: center;
+  }
+
+  .game-card-footer span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.34rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(35,22,12,0.08);
+    color: rgba(35,22,12,0.78);
+    font-size: 0.68rem;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .game-card-action-row {
+    display: flex;
+    justify-content: center;
+    width: min(480px, 100%);
+  }
+
+  .game-card-action-row .game-btn,
+  .game-card-action-row button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .card-table-backdrop {
+    background:
+      radial-gradient(circle at 50% 42%, rgba(255, 205, 94, 0.28), transparent 34%),
+      rgba(5, 8, 6, 0.76);
+  }
+
+  .card-table-stage {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: min(520px, calc(100vw - 24px));
+    padding: 0.5rem;
+    perspective: 1200px;
+  }
+
+  .card-table-close {
+    position: absolute;
+    z-index: 4;
+    top: 0.2rem;
+    right: 0.2rem;
+    display: grid;
+    width: 2.45rem;
+    height: 2.45rem;
+    place-items: center;
+    border: 1px solid rgba(255,255,255,0.72);
+    border-radius: 999px;
+    background: rgba(255, 252, 244, 0.88);
+    color: #5f4428;
+    box-shadow: 0 14px 28px rgba(0,0,0,0.22);
+  }
+
+  .game-card-reveal-standalone {
+    gap: 0.85rem;
+    margin-top: 0;
+  }
+
+  .real-game-card {
+    width: min(430px, calc(100vw - 44px));
+    min-height: auto;
+    aspect-ratio: 5 / 7;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    border: 8px double #8a5a00;
+    border-radius: 32px;
+    padding: clamp(1.05rem, 3vw, 1.45rem);
+    background:
+      radial-gradient(circle at 50% 8%, rgba(255,255,255,0.92), transparent 26%),
+      radial-gradient(circle at 18% 22%, rgba(255,255,255,0.28), transparent 18%),
+      linear-gradient(145deg, #fff7cc 0%, #f8d46d 42%, #d99d27 100%);
+    box-shadow:
+      0 34px 78px rgba(0,0,0,0.42),
+      0 0 0 1px rgba(255,255,255,0.72),
+      inset 0 0 0 4px rgba(255,255,255,0.36),
+      inset 0 -28px 42px rgba(122,71,0,0.12);
+    transform: rotateX(2deg) rotateZ(-1deg);
+  }
+
+  .real-game-card.deck-chest {
+    border-color: #9f7200;
+    background:
+      radial-gradient(circle at 50% 8%, rgba(255,255,255,0.9), transparent 26%),
+      linear-gradient(145deg, #fff4c7 0%, #f4cb5c 44%, #c98a1d 100%);
+  }
+
+  .real-game-card.jail-free {
+    border-color: #7f1d1d;
+  }
+
+  .real-game-card::before {
+    inset: 0.75rem;
+    border: 2px solid rgba(91, 54, 0, 0.28);
+    border-radius: 22px;
+  }
+
+  .real-game-card .game-card-topline {
+    justify-content: center;
+    flex-wrap: wrap;
+    text-align: center;
+  }
+
+  .real-game-card .game-card-deck {
+    width: 100%;
+    color: #6b3f00;
+    text-align: center;
+  }
+
+  .real-game-card .game-card-stamp {
+    background: rgba(255,255,255,0.36);
+  }
+
+  .real-game-card .game-card-medallion {
+    width: 6.1rem;
+    height: 6.1rem;
+    background: rgba(255,255,255,0.72);
+  }
+
+  .real-game-card .game-card-body strong {
+    font-size: clamp(1.9rem, 7vw, 3rem);
+  }
+
+  .real-game-card .game-card-body p {
+    color: #5f3b14;
+    font-size: clamp(1rem, 2.7vw, 1.18rem);
+  }
+
+  .real-game-card .game-card-rule {
+    background: rgba(255,255,255,0.48);
+  }
+
+  .game-card-reveal-standalone .game-card-action-row {
+    width: min(430px, calc(100vw - 44px));
+  }
+
+  .card-modal {
+    position: relative;
+    max-width: 820px;
+    overflow: hidden;
+    border-color: rgba(255, 214, 130, 0.85);
+    background:
+      radial-gradient(circle at 50% -10%, rgba(255, 236, 181, 0.95), transparent 36%),
+      radial-gradient(circle at 10% 16%, rgba(15, 118, 110, 0.16), transparent 28%),
+      linear-gradient(180deg, #fffaf0 0%, #fff0c8 100%);
+  }
+
+  .card-modal::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      repeating-linear-gradient(90deg, rgba(35,22,12,0.035) 0 1px, transparent 1px 14px),
+      repeating-linear-gradient(0deg, rgba(35,22,12,0.025) 0 1px, transparent 1px 14px);
+    pointer-events: none;
+  }
+
+  .card-modal > * {
+    position: relative;
+    z-index: 1;
+  }
+
+  .card-modal-head {
+    position: relative;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .card-modal-head > div {
+    max-width: 40rem;
+  }
+
+  .card-modal-head .toast-close {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+
+  .card-modal-head h3 {
+    font-size: clamp(2rem, 3vw, 2.9rem);
+    line-height: 1.05;
+    text-wrap: balance;
+  }
+
+  .card-modal-intro {
+    display: grid;
+    justify-items: center;
+    gap: 0.45rem;
+  }
+
+  .card-modal-kicker {
+    display: inline-flex;
+    border-radius: 999px;
+    padding: 0.38rem 0.78rem;
+    background: rgba(35,22,12,0.08);
+    color: #8a5a00;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .card-modal-title {
+    margin: 0;
+    color: #23160c;
+    font-size: clamp(2.15rem, 5vw, 3.65rem);
+    font-weight: 950;
+    line-height: 0.92;
+    text-align: center;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  .card-modal-copy {
+    max-width: 34rem;
+    color: #6b4b2c;
+    font-size: 0.98rem;
+    font-weight: 820;
+    line-height: 1.45;
+    text-align: center;
+    text-wrap: pretty;
+  }
+
+  .monopoly-debt-manager-modal {
+    max-width: min(1180px, calc(100vw - 24px));
+    max-height: min(880px, calc(100vh - 24px));
+    overflow: hidden;
+  }
+
+  .monopoly-debt-manager-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .monopoly-debt-manager-head h3 {
+    color: #23160c;
+    font-size: clamp(1.8rem, 2.8vw, 2.8rem);
+    font-weight: 950;
+    line-height: 1.02;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  .monopoly-debt-manager-copy {
+    max-width: 48rem;
+    margin-top: 0.7rem;
+    color: #7c5d38;
+    font-size: 0.98rem;
+    font-weight: 750;
+    line-height: 1.45;
+  }
+
+  .monopoly-debt-manager-layout {
+    display: grid;
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+    gap: 1rem;
+    margin-top: 1rem;
+    min-height: 0;
+    max-height: calc(min(880px, calc(100vh - 24px)) - 172px);
+  }
+
+  .monopoly-debt-hero {
+    display: grid;
+    gap: 0.85rem;
+    align-content: start;
+  }
+
+  .monopoly-debt-hero-card {
+    display: grid;
+    gap: 0.5rem;
+    border: 1px solid rgba(138, 90, 0, 0.18);
+    border-radius: 24px;
+    padding: 1rem;
+    background:
+      radial-gradient(circle at top, rgba(255,255,255,0.88), rgba(255,243,220,0.82)),
+      rgba(255,255,255,0.72);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  }
+
+  .monopoly-debt-hero-kicker {
+    color: #8a5a00;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-hero-card strong {
+    color: #23160c;
+    font-size: 1.45rem;
+    font-weight: 950;
+    line-height: 1.05;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-hero-card p {
+    color: #6b4b2c;
+    font-size: 0.94rem;
+    font-weight: 760;
+    line-height: 1.45;
+  }
+
+  .monopoly-debt-hero-stats {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .monopoly-debt-hero-footer {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .monopoly-debt-arsenal {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    border: 1px solid rgba(35, 22, 12, 0.1);
+    border-radius: 24px;
+    background: rgba(255,255,255,0.5);
+    overflow: hidden;
+  }
+
+  .monopoly-debt-arsenal-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1rem 0.9rem;
+    border-bottom: 1px solid rgba(166, 137, 95, 0.22);
+    background: linear-gradient(180deg, rgba(255,255,255,0.45), rgba(255,249,237,0.76));
+  }
+
+  .monopoly-debt-arsenal-head h4 {
+    color: #23160c;
+    font-size: 1.12rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-arsenal-head span {
+    flex: none;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    background: #fff5df;
+    color: #8a5a00;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-group-list {
+    display: grid;
+    align-content: start;
+    gap: 1rem;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .monopoly-debt-group {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .monopoly-debt-group-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .monopoly-debt-group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+  }
+
+  .monopoly-debt-group-label span {
+    width: 2.25rem;
+    height: 0.8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.16);
+    flex: none;
+  }
+
+  .monopoly-debt-group-title strong,
+  .monopoly-debt-group-title em {
+    color: #23160c;
+    font-size: 0.78rem;
+    font-weight: 950;
+    font-style: normal;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-group-title em {
+    color: #7c5d38;
+  }
+
+  .monopoly-debt-property-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.8rem;
+  }
+
+  .monopoly-debt-property-card {
+    display: grid;
+    gap: 0.8rem;
+    border: 1px solid rgba(35, 22, 12, 0.1);
+    border-radius: 22px;
+    padding: 0.9rem;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.88), rgba(255,247,233,0.84)),
+      rgba(255,255,255,0.72);
+    box-shadow: 0 14px 26px rgba(35, 22, 12, 0.08);
+  }
+
+  .monopoly-debt-property-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .monopoly-debt-property-head p {
+    color: #8a5a00;
+    font-size: 0.68rem;
+    font-weight: 950;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-property-head h5 {
+    margin-top: 0.2rem;
+    color: #23160c;
+    font-size: 1rem;
+    font-weight: 950;
+    line-height: 1.1;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  .monopoly-debt-focus-button {
+    flex: none;
+    min-height: 2rem;
+    border: 1px solid rgba(166, 137, 95, 0.32);
+    border-radius: 999px;
+    padding: 0 0.75rem;
+    background: rgba(255,255,255,0.74);
+    color: #6b4b2c;
+    font-size: 0.7rem;
+    font-weight: 950;
+    text-transform: uppercase;
+    transition: transform 160ms ease, border-color 180ms ease, background 180ms ease;
+  }
+
+  .monopoly-debt-focus-button:hover {
+    transform: translateY(-1px);
+    border-color: #b5915e;
+    background: #ffffff;
+  }
+
+  .monopoly-debt-property-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .monopoly-debt-property-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .monopoly-debt-property-stats div {
+    border: 1px solid rgba(216, 200, 174, 0.9);
+    border-radius: 16px;
+    padding: 0.55rem 0.65rem;
+    background: rgba(255,255,255,0.62);
+  }
+
+  .monopoly-debt-property-stats span {
+    display: block;
+    color: #7c5d38;
+    font-size: 0.62rem;
+    font-weight: 950;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-property-stats strong {
+    display: block;
+    margin-top: 0.25rem;
+    color: #23160c;
+    font-size: 0.84rem;
+    font-weight: 950;
+    line-height: 1.2;
+  }
+
+  .monopoly-debt-action-grid {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .monopoly-debt-action-button {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.7rem;
+    align-items: flex-start;
+    width: 100%;
+    border: 2px solid rgba(233, 197, 129, 0.54);
+    border-radius: 18px;
+    padding: 0.7rem 0.75rem;
+    background: linear-gradient(180deg, #fffdf6, #fff4dc);
+    color: #23160c;
+    text-align: left;
+    transition: transform 160ms ease, box-shadow 180ms ease, border-color 180ms ease;
+  }
+
+  .monopoly-debt-action-button:hover {
+    transform: translateY(-1px);
+    border-color: #d4992c;
+    box-shadow: 0 14px 24px rgba(212, 153, 44, 0.16);
+  }
+
+  .monopoly-debt-action-icon {
+    display: inline-flex;
+    width: 2.2rem;
+    height: 2.2rem;
+    align-items: center;
+    justify-content: center;
+    border-radius: 14px;
+    background: #b02016;
+    color: white;
+    box-shadow: 0 10px 18px rgba(176, 32, 22, 0.22);
+  }
+
+  .monopoly-debt-action-button strong,
+  .monopoly-debt-action-button em {
+    display: block;
+  }
+
+  .monopoly-debt-action-button strong {
+    color: #23160c;
+    font-size: 0.82rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-debt-action-button em {
+    margin-top: 0.2rem;
+    color: #6b4b2c;
+    font-size: 0.78rem;
+    font-style: normal;
+    font-weight: 760;
+    line-height: 1.35;
+  }
+
+  .monopoly-debt-action-locked {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 16px;
+    padding: 0.75rem;
+    background: rgba(35,22,12,0.06);
+    color: #7c5d38;
+    font-size: 0.8rem;
+    font-weight: 800;
+  }
+
+  .monopoly-trade-modal {
+    max-width: min(1180px, calc(100vw - 24px));
+    max-height: min(860px, calc(100vh - 24px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .monopoly-trade-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .monopoly-trade-layout {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+    min-height: 0;
+    height: calc(min(860px, calc(100vh - 24px)) - 160px);
+    max-height: calc(min(860px, calc(100vh - 24px)) - 160px);
+  }
+
+  .monopoly-trade-modal-v2 {
+    max-width: min(1120px, calc(100vw - 24px));
+  }
+
+  .monopoly-trade-route {
+    display: grid;
+    grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.65fr);
+    gap: 1rem;
+    min-height: 0;
+    height: calc(min(860px, calc(100vh - 24px)) - 160px);
+    max-height: calc(min(860px, calc(100vh - 24px)) - 160px);
+    margin-top: 1rem;
+  }
+
+  .monopoly-trade-route-menu {
+    display: grid;
+    align-content: start;
+    gap: 0.85rem;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+
+  .monopoly-trade-choice-grid,
+  .monopoly-trade-intent-grid {
+    display: grid;
+    gap: 0.7rem;
+  }
+
+  .monopoly-trade-choice-card,
+  .monopoly-trade-intent-card {
+    position: relative;
+    display: grid;
+    gap: 0.42rem;
+    overflow: hidden;
+    border: 1px solid rgba(216, 200, 174, 0.92);
+    border-radius: 22px;
+    padding: 1rem;
+    background:
+      radial-gradient(circle at 100% 0%, rgba(255,255,255,0.75), transparent 32%),
+      linear-gradient(145deg, rgba(255,250,239,0.95), rgba(236,253,245,0.82));
+    color: #23160c;
+    text-align: left;
+    transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .monopoly-trade-choice-card:hover,
+  .monopoly-trade-intent-card:hover {
+    transform: translateY(-2px);
+    border-color: #b5915e;
+    box-shadow: 0 16px 30px rgba(35,22,12,0.1);
+  }
+
+  .monopoly-trade-choice-card.active,
+  .monopoly-trade-intent-card.active {
+    border-color: #0f766e;
+    background:
+      radial-gradient(circle at 100% 0%, rgba(255,255,255,0.86), transparent 32%),
+      linear-gradient(145deg, #e8fbf4, #fff6df);
+    box-shadow: 0 18px 34px rgba(15,118,110,0.16);
+  }
+
+  .monopoly-trade-choice-card strong,
+  .monopoly-trade-intent-card strong {
+    color: #23160c;
+    font-size: 0.98rem;
+    font-weight: 950;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-choice-card span,
+  .monopoly-trade-intent-card span {
+    color: #6b4b2c;
+    font-size: 0.78rem;
+    font-weight: 800;
+    line-height: 1.35;
+  }
+
+  .monopoly-trade-intent-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monopoly-trade-intent-card {
+    min-height: 8.4rem;
+  }
+
+  .monopoly-trade-workbench {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 0;
+    border: 1px solid rgba(35, 22, 12, 0.1);
+    border-radius: 26px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.84), rgba(245,253,249,0.88)),
+      rgba(255,255,255,0.66);
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.52);
+  }
+
+  .monopoly-trade-property-top small {
+    display: block;
+    margin-top: 0.18rem;
+    color: #0f766e;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-height: 0;
+    max-height: 100%;
+    border: 1px solid rgba(35, 22, 12, 0.1);
+    border-radius: 24px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.78), rgba(245,253,249,0.82)),
+      rgba(255,255,255,0.62);
+    overflow: hidden;
+  }
+
+  .monopoly-trade-panel-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem;
+    border-bottom: 1px solid rgba(166, 137, 95, 0.2);
+    background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(255,249,237,0.76));
+  }
+
+  .monopoly-trade-panel-head h4 {
+    color: #23160c;
+    font-size: 1.12rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-panel-head span {
+    flex: none;
+    border-radius: 999px;
+    padding: 0.35rem 0.7rem;
+    background: #fff5df;
+    color: #8a5a00;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-pickers {
+    display: grid;
+    align-content: start;
+    gap: 1rem;
+    min-height: 0;
+    overscroll-behavior: contain;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+
+  .monopoly-trade-pickers::-webkit-scrollbar {
+    width: 10px;
+  }
+
+  .monopoly-trade-pickers::-webkit-scrollbar-thumb {
+    border: 2px solid rgba(255,255,255,0.62);
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.45);
+  }
+
+  .monopoly-trade-step {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .monopoly-trade-step-label {
+    color: #8a5a00;
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-property-grid,
+  .monopoly-trade-target-grid,
+  .monopoly-trade-deck-grid {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .monopoly-trade-property-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .monopoly-trade-group-list {
+    display: grid;
+    gap: 0.9rem;
+  }
+
+  .monopoly-trade-property-group {
+    display: grid;
+    gap: 0.6rem;
+  }
+
+  .monopoly-trade-property-group-head {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border-radius: 16px;
+    padding: 0.65rem 0.75rem;
+    background: rgba(255,255,255,0.7);
+    border: 1px solid rgba(35,22,12,0.1);
+  }
+
+  .monopoly-trade-property-group-head > span {
+    width: 2.4rem;
+    height: 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.16);
+    flex: none;
+  }
+
+  .monopoly-trade-property-group-head strong,
+  .monopoly-trade-property-group-head em {
+    display: block;
+  }
+
+  .monopoly-trade-property-group-head strong {
+    color: #23160c;
+    font-size: 0.86rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-property-group-head em {
+    margin-top: 0.12rem;
+    color: #7c5d38;
+    font-size: 0.7rem;
+    font-style: normal;
+    font-weight: 850;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-target-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+
+  .monopoly-trade-deck-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monopoly-trade-property-card,
+  .monopoly-trade-target-card,
+  .monopoly-trade-deck-card {
+    border: 1px solid rgba(216, 200, 174, 0.92);
+    border-radius: 20px;
+    padding: 0.85rem;
+    background: rgba(255,255,255,0.76);
+    color: #23160c;
+    text-align: left;
+    transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+  }
+
+  .monopoly-trade-property-card:hover,
+  .monopoly-trade-target-card:hover,
+  .monopoly-trade-deck-card:hover {
+    transform: translateY(-1px);
+    border-color: #b5915e;
+    box-shadow: 0 14px 26px rgba(35,22,12,0.08);
+  }
+
+  .monopoly-trade-property-card.active,
+  .monopoly-trade-target-card.active,
+  .monopoly-trade-deck-card.active {
+    border-color: #0f766e;
+    background: linear-gradient(180deg, #effcf8, #e7f8f1);
+    box-shadow: 0 18px 30px rgba(15,118,110,0.14);
+  }
+
+  .monopoly-trade-property-card.is-locked {
+    border-style: dashed;
+    background:
+      linear-gradient(180deg, rgba(255,247,237,0.84), rgba(255,255,255,0.72));
+  }
+
+  .monopoly-trade-property-card.is-locked:not(.active) {
+    opacity: 0.78;
+  }
+
+  .monopoly-trade-property-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .monopoly-trade-property-top span,
+  .monopoly-trade-deck-card span {
+    display: block;
+    color: #7c5d38;
+    font-size: 0.68rem;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-deck-card em {
+    display: block;
+    margin-top: 0.45rem;
+    color: #6b4b2c;
+    font-size: 0.76rem;
+    font-style: normal;
+    font-weight: 780;
+    line-height: 1.35;
+  }
+
+  .monopoly-trade-property-top strong,
+  .monopoly-trade-target-card strong,
+  .monopoly-trade-deck-card strong {
+    display: block;
+    color: #23160c;
+    font-size: 0.92rem;
+    font-weight: 950;
+    line-height: 1.15;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-property-top i {
+    display: inline-block;
+    width: 1.2rem;
+    height: 1.2rem;
+    border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.14);
+    flex: none;
+  }
+
+  .monopoly-trade-property-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.7rem;
+  }
+
+  .monopoly-trade-property-tags em {
+    border-radius: 999px;
+    padding: 0.18rem 0.45rem;
+    background: #fff5df;
+    color: #8a5a00;
+    font-size: 0.64rem;
+    font-style: normal;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-property-tags em.warn {
+    background: #fff1ef;
+    color: #9f1d16;
+  }
+
+  .monopoly-trade-target-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.7rem;
+  }
+
+  .monopoly-trade-target-card span {
+    display: block;
+    margin-top: 0.18rem;
+    color: #7c5d38;
+    font-size: 0.78rem;
+    font-weight: 800;
+  }
+
+  .monopoly-trade-price-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+  }
+
+  .monopoly-trade-price-presets button {
+    min-height: 2.35rem;
+    border: 1px solid rgba(182, 145, 94, 0.34);
+    border-radius: 999px;
+    padding: 0 0.8rem;
+    background: rgba(255,255,255,0.76);
+    color: #6b4b2c;
+    font-size: 0.74rem;
+    font-weight: 950;
+    transition: transform 160ms ease, border-color 180ms ease, background 180ms ease;
+  }
+
+  .monopoly-trade-price-presets button:hover {
+    transform: translateY(-1px);
+    border-color: #b5915e;
+  }
+
+  .monopoly-trade-price-presets button.active {
+    border-color: #b02016;
+    background: #b02016;
+    color: white;
+    box-shadow: 0 12px 24px rgba(176,32,22,0.22);
+  }
+
+  .monopoly-trade-price-input {
+    text-align: center;
+    font-size: 1.05rem;
+    font-weight: 900;
+  }
+
+  .monopoly-trade-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border: 1px solid rgba(216, 200, 174, 0.92);
+    border-radius: 18px;
+    padding: 0.85rem;
+    background: rgba(255,255,255,0.62);
+    color: #6b4b2c;
+    font-size: 0.82rem;
+    font-weight: 850;
+  }
+
+  .monopoly-trade-summary {
+    display: grid;
+    gap: 0.7rem;
+    border-top: 1px solid rgba(166, 137, 95, 0.2);
+    padding: 1rem;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,0.4), rgba(255,248,236,0.82));
+  }
+
+  .monopoly-trade-summary h5 {
+    color: #23160c;
+    font-size: 1.08rem;
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-trade-summary p {
+    color: #6b4b2c;
+    font-size: 0.9rem;
+    font-weight: 760;
+    line-height: 1.45;
+  }
+
+  .monopoly-trade-money-flow {
+    display: grid;
+    gap: 0.5rem;
+  }
+
+  .monopoly-trade-money-flow span {
+    display: block;
+    border-radius: 16px;
+    padding: 0.75rem 0.85rem;
+    background: rgba(255,255,255,0.72);
+    color: #6b4b2c;
+    font-size: 0.82rem;
+    font-weight: 820;
+  }
+
+  .monopoly-trade-money-flow strong {
+    color: #14532d;
+    font-size: 0.9rem;
+    font-weight: 950;
+  }
+
+  .monopoly-trade-warning,
+  .monopoly-debt-rescue-note,
+  .monopoly-trade-help-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    border: 1px solid rgba(176, 32, 22, 0.18);
+    border-radius: 16px;
+    padding: 0.72rem 0.8rem;
+    background: rgba(255, 241, 239, 0.78);
+    color: #8f1d15;
+    font-size: 0.8rem;
+    font-weight: 850;
+    line-height: 1.35;
+  }
+
+  .monopoly-debt-rescue-note {
+    display: block;
+    border-color: rgba(138, 90, 0, 0.2);
+    background: rgba(255, 248, 225, 0.82);
+    color: #7c5200;
+    text-align: center;
+  }
+
+  .monopoly-trade-help-card {
+    border-color: rgba(15, 118, 110, 0.2);
+    background: rgba(236, 253, 245, 0.82);
+    color: #0f4d3f;
+  }
+
+  .monopoly-trade-help-card strong {
+    color: #083f36;
+    font-weight: 950;
+  }
+
+  @media (max-width: 720px) {
+    .auction-stats-grid,
+    .auction-bid-console {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .auction-quick-bids,
+    .auction-bid-warning {
+      grid-column: 1 / -1;
+    }
+
+    .monopoly-debt-manager-modal {
+      max-height: calc(100vh - 16px);
+      padding: 1rem;
+    }
+
+    .monopoly-debt-manager-layout {
+      grid-template-columns: 1fr;
+      max-height: calc(100vh - 150px);
+    }
+
+    .monopoly-debt-hero {
+      order: 2;
+    }
+
+    .monopoly-debt-arsenal {
+      order: 1;
+    }
+
+    .monopoly-debt-property-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .monopoly-trade-modal {
+      max-height: calc(100vh - 16px);
+      padding: 1rem;
+    }
+
+    .monopoly-trade-layout {
+      grid-template-columns: 1fr;
+      height: calc(100vh - 150px);
+      max-height: calc(100vh - 150px);
+      overflow-y: auto;
+    }
+
+    .monopoly-trade-route {
+      grid-template-columns: 1fr;
+      height: calc(100vh - 150px);
+      max-height: calc(100vh - 150px);
+      overflow-y: auto;
+    }
+
+    .monopoly-trade-route-menu {
+      overflow: visible;
+      padding-right: 0;
+    }
+
+    .monopoly-trade-intent-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .monopoly-trade-workbench {
+      min-height: min(640px, calc(100vh - 170px));
+    }
+
+    .monopoly-trade-panel {
+      min-height: min(560px, calc(100vh - 170px));
+    }
+
+    .monopoly-trade-property-grid,
+    .monopoly-trade-target-grid,
+    .monopoly-trade-deck-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .monopoly-chat-shell {
     @apply grid h-[360px] content-start gap-3 overflow-y-auto rounded-[20px] border p-4;
     border-color: #d8c8ae;
@@ -1625,6 +3379,25 @@
   50% { transform: scale(1.08); }
 }
 
+@keyframes money-burst-pop {
+  0% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--burst-x, 0px)), -38%) scale(0.72);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--burst-x, 0px)), -72%) scale(1.08);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(calc(-50% + var(--burst-x, 0px)), -118%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--burst-x, 0px)), -168%) scale(0.92);
+  }
+}
+
 @keyframes cam-target-pulse {
   0%, 100% {
     box-shadow: inset 0 0 0 4px #f59e0b, 0 0 0 4px rgba(245, 158, 11, 0.55), 0 14px 32px rgba(176, 32, 22, 0.25);
@@ -1647,6 +3420,22 @@
 @keyframes modal-in {
   0% { opacity: 0; transform: translateY(16px) scale(0.96); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes soft-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(176,32,22,0.18); }
+  50% { transform: scale(1.04); box-shadow: 0 0 0 6px rgba(176,32,22,0); }
+}
+
+@keyframes card-reveal {
+  0% { opacity: 0; transform: translateY(18px) rotate(-2deg) scale(0.92); }
+  100% { opacity: 1; transform: translateY(0) rotate(0deg) scale(1); }
+}
+
+@keyframes card-shine {
+  0% { opacity: 0; transform: translateX(-20%) rotate(18deg); }
+  25% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(260%) rotate(18deg); }
 }
 
 @keyframes cam-veil-in {
@@ -1955,7 +3744,7 @@
     top: 0.75rem;
     z-index: 25;
     display: grid;
-    grid-template-columns: minmax(170px, 0.55fr) minmax(0, 1.7fr) auto;
+    grid-template-columns: minmax(170px, 0.5fr) minmax(0, 1.45fr) minmax(250px, 0.7fr) auto;
     gap: 0.6rem;
     align-items: center;
     border: 2px solid rgba(205, 181, 145, 0.88);
@@ -2061,6 +3850,131 @@
     align-items: center;
     justify-content: flex-end;
     gap: 0.45rem;
+  }
+
+  .monopoly-radio {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.4rem;
+    min-width: 0;
+    border: 1px solid rgba(166, 137, 95, 0.42);
+    border-radius: 15px;
+    padding: 0.36rem;
+    background:
+      linear-gradient(180deg, rgba(255, 251, 241, 0.88), rgba(236, 227, 207, 0.84)),
+      repeating-linear-gradient(90deg, rgba(35, 22, 12, 0.03) 0 1px, transparent 1px 7px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  }
+
+  .monopoly-radio.is-playing {
+    border-color: rgba(15, 118, 110, 0.42);
+    background:
+      linear-gradient(180deg, rgba(239, 252, 248, 0.9), rgba(229, 244, 237, 0.86)),
+      repeating-linear-gradient(90deg, rgba(15, 118, 110, 0.035) 0 1px, transparent 1px 7px);
+  }
+
+  .monopoly-radio-main {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.42rem;
+    min-width: 0;
+  }
+
+  .monopoly-radio-play,
+  .monopoly-radio-controls button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    border: 1px solid rgba(166, 137, 95, 0.36);
+    background: rgba(255,255,255,0.64);
+    color: #23160c;
+    transition: transform 160ms ease, border-color 180ms ease, background 180ms ease;
+  }
+
+  .monopoly-radio-play {
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 12px;
+    color: #b02016;
+  }
+
+  .monopoly-radio-play:hover,
+  .monopoly-radio-controls button:hover {
+    transform: translateY(-1px);
+    border-color: #0f766e;
+    background: rgba(255,255,255,0.9);
+  }
+
+  .monopoly-radio-title {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.42rem;
+    min-width: 0;
+    color: #23160c;
+    text-align: left;
+  }
+
+  .monopoly-radio-title svg {
+    color: #8a5a00;
+  }
+
+  .monopoly-radio-title span {
+    min-width: 0;
+  }
+
+  .monopoly-radio-title em,
+  .monopoly-radio-title strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .monopoly-radio-title em {
+    color: #7c5d38;
+    font-size: 0.55rem;
+    font-style: normal;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-radio-title strong {
+    margin-top: 0.08rem;
+    color: #23160c;
+    font-size: 0.78rem;
+    font-weight: 950;
+    line-height: 1.05;
+    text-transform: uppercase;
+  }
+
+  .monopoly-radio-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .monopoly-radio-controls button {
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 10px;
+  }
+
+  .monopoly-radio-volume {
+    display: flex;
+    align-items: center;
+    gap: 0.28rem;
+    width: 4.9rem;
+    color: #7c5d38;
+  }
+
+  .monopoly-radio-volume input {
+    width: 3.35rem;
+    accent-color: #0f766e;
   }
 
   .monopoly-icon-button {
@@ -2185,6 +4099,11 @@
     border-radius: 18px;
     padding: 0.55rem;
     background: rgba(237, 249, 243, 0.82);
+  }
+
+  .monopoly-center-action-zone.is-auction-live {
+    display: block;
+    min-height: 0;
   }
 
   .monopoly-board-decision-copy {
@@ -2535,6 +4454,20 @@
     font-weight: 800;
   }
 
+  .monopoly-player-chip-card .jail-card-badge {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: 999px;
+    background: #fff1ef;
+    color: #7f1d1d;
+    padding: 0.12rem 0.42rem;
+    font-size: 0.66rem;
+    font-weight: 950;
+  }
+
   .monopoly-bottom-head {
     display: flex;
     align-items: center;
@@ -2625,6 +4558,28 @@
     border-color: #b5915e;
   }
 
+  .monopoly-asset-alert {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    width: fit-content;
+    margin-top: 0.35rem;
+    border-radius: 999px;
+    padding: 0.22rem 0.55rem;
+    background: #fff1ef;
+    color: #9f1d16;
+    font-size: 0.68rem;
+    font-weight: 950;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-property-mini-list button.is-mortgaged {
+    border-color: rgba(176, 32, 22, 0.32);
+    background:
+      linear-gradient(90deg, rgba(176,32,22,0.1), rgba(255,255,255,0.68));
+  }
+
   .monopoly-property-mini-list span {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2641,6 +4596,11 @@
     font-style: normal;
     font-weight: 950;
     text-transform: uppercase;
+  }
+
+  .monopoly-property-mini-list em.mortgage-badge {
+    background: #b02016;
+    color: #fff;
   }
 
   .monopoly-event-timeline {
@@ -3050,6 +5010,27 @@
 
     .monopoly-hud-stats {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .monopoly-radio {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .monopoly-radio-controls {
+      display: none;
+    }
+
+    .monopoly-radio.expanded .monopoly-radio-controls {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .monopoly-radio-volume {
+      width: min(8rem, 42vw);
+    }
+
+    .monopoly-radio-volume input {
+      width: 100%;
     }
 
     .monopoly-hud-pill {
