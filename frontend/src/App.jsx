@@ -1,4 +1,4 @@
-import { Club, Coins, Gamepad2, Globe2, LogOut, Sparkles, Spade, Volume2, VolumeX, Wifi, WifiOff } from "lucide-react";
+import { Coins, Gamepad2, Globe2, LogOut, MessageSquare, Sparkles, Spade, Volume2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
@@ -12,7 +12,7 @@ import WorldSidebar from "./components/WorldSidebar";
 
 const savedSession = () => {
   try {
-    return JSON.parse(localStorage.getItem("economy-arcade-session")) || null;
+    return JSON.parse(localStorage.getItem("easyno-session")) || null;
   } catch {
     return null;
   }
@@ -29,6 +29,7 @@ export default function App() {
   const [presence, setPresence] = useState([]);
   const [messages, setMessages] = useState([]);
   const [muted, setMuted] = useState(() => audio.isMuted());
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const worldRef = useRef(null);
   const presenceIdsRef = useRef(new Set());
   const lastMessageIdRef = useRef(null);
@@ -38,6 +39,12 @@ export default function App() {
 
   // Mantener el estado local sincronizado con el módulo de audio
   useEffect(() => audio.subscribe(setMuted), []);
+
+  // El panel de jugadores/chat se oculta por defecto en Blackjack para dar
+  // toda la pantalla a la mesa; en el resto de vistas se muestra.
+  useEffect(() => {
+    setSidebarOpen(view !== "blackjack");
+  }, [view]);
 
   // Preload de audios + desbloqueo en el primer click/teclado (autoplay policy)
   useEffect(() => {
@@ -66,9 +73,9 @@ export default function App() {
 
   useEffect(() => {
     if (session) {
-      localStorage.setItem("economy-arcade-session", JSON.stringify(session));
+      localStorage.setItem("easyno-session", JSON.stringify(session));
     } else {
-      localStorage.removeItem("economy-arcade-session");
+      localStorage.removeItem("easyno-session");
     }
   }, [session]);
 
@@ -307,87 +314,73 @@ export default function App() {
 
   return (
     <main className="min-h-screen text-zinc-100">
-      <header className={`${monopolyView ? "relative app-header-monopoly" : "sticky top-0"} z-20 border-b border-amber-300/20 bg-black/80 backdrop-blur`}>
+      <header className={`${monopolyView ? "relative app-header-monopoly" : "sticky top-0"} z-30 border-b border-amber-300/20 bg-black/75 backdrop-blur-xl`}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/60 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-amber-300/40 to-transparent" />
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+          {/* Marca */}
           <div className="flex min-w-0 items-center gap-3">
-            <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-amber-300/60 text-amber-200 shadow-goldSoft" style={{ background: "radial-gradient(circle at 35% 30%, #fef3c7, #fbbf24 60%, #b8860b 100%)" }}>
-              <Spade size={20} className="text-zinc-950" />
-              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full border border-amber-200 bg-zinc-950 text-[8px] font-black text-amber-200">
-                <Club size={9} />
+            <div className="brand-mark h-11 w-11">
+              <span className="font-display text-2xl font-black leading-none">e</span>
+              <span className="absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/70 bg-zinc-950 text-amber-200">
+                <Spade size={11} fill="currentColor" />
               </span>
             </div>
             <div className="min-w-0">
-              <h1 className="font-display text-lg font-black tracking-wide sm:text-xl">
-                <span className="gold-text">Economy Arcade</span>
+              <h1 className="font-display text-xl font-black leading-none tracking-tight">
+                <span className="brand-word">easyno</span>
               </h1>
-              <p className="truncate text-xs font-semibold uppercase tracking-[0.22em] text-amber-200/60">
+              <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/55">
                 {world ? world.name : `Bienvenido, ${session.user.username}`}
               </p>
             </div>
           </div>
 
+          {/* Navegación central (segmented) */}
+          {world && (
+            <nav className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/40 p-1">
+              <button className={`nav-tab ${view === "dishes" ? "is-active" : ""}`} onClick={() => setView("dishes")} title="Lavar platos">
+                <Sparkles size={17} />
+                Trabajo
+              </button>
+              <button className={`nav-tab ${view === "blackjack" ? "is-active" : ""}`} onClick={() => setView("blackjack")} title="Blackjack">
+                <Gamepad2 size={17} />
+                Blackjack
+              </button>
+              <button className={`nav-tab ${view === "monopoly" ? "is-active" : ""}`} onClick={() => setView("monopoly")} title="Monopoly">
+                <Coins size={17} />
+                Monopoly
+              </button>
+            </nav>
+          )}
+
+          {/* Acciones a la derecha */}
           <div className="flex flex-wrap items-center gap-2">
             {world && (
-              <div className="flex min-h-11 items-center gap-2 rounded-md border border-amber-300/40 px-4 font-display text-sm font-extrabold text-amber-100 shadow-goldSoft" style={{ background: "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(184,134,11,0.18))" }}>
+              <div className="hud-pill hud-pill--gold">
                 <span className="coin"><Coins size={12} /></span>
-                <span className="text-shadow-gold">{money}</span>
+                <span key={balance} className="tabnum inline-block animate-count-pop">{money}</span>
               </div>
             )}
             <div
-              className={`flex min-h-11 items-center gap-2 rounded-md border px-3 text-xs font-extrabold uppercase tracking-[0.14em] ${
-                socketStatus === "online"
-                  ? "border-emerald-300/40 bg-emerald-300/10 text-emerald-200 shadow-emeraldGlow"
-                  : "border-zinc-500/30 bg-zinc-500/10 text-zinc-400"
-              }`}
-              title={socketError || "Estado de Socket.io"}
+              className={`hud-pill ${socketStatus === "online" ? "hud-pill--emerald" : "hud-pill--muted"} text-xs uppercase tracking-[0.14em]`}
+              title={socketError || "Estado de conexión"}
             >
               {socketStatus === "online" ? (
                 <span className="relative flex items-center">
                   <span className="absolute inset-0 -m-0.5 animate-ping rounded-full bg-emerald-400/40" />
-                  <Wifi size={17} className="relative" />
+                  <Wifi size={15} className="relative" />
                 </span>
               ) : (
-                <WifiOff size={17} />
+                <WifiOff size={15} />
               )}
-              {socketStatus === "online" ? "EN VIVO" : "offline"}
+              {socketStatus === "online" ? "En vivo" : "offline"}
             </div>
             {world && (
-              <>
-                <button
-                  className={view === "dishes" ? "arcade-button" : "ghost-button"}
-                  onClick={() => setView("dishes")}
-                  title="Lavar platos"
-                >
-                  <Sparkles size={18} />
-                  Trabajo
-                </button>
-                <button
-                  className={view === "blackjack" ? "arcade-button" : "ghost-button"}
-                  onClick={() => setView("blackjack")}
-                  title="Blackjack"
-                >
-                  <Gamepad2 size={18} />
-                  Blackjack
-                </button>
-                <button
-                  className={view === "monopoly" ? "arcade-button" : "ghost-button"}
-                  onClick={() => setView("monopoly")}
-                  title="Monopoly"
-                >
-                  <Coins size={18} />
-                  Monopoly
-                </button>
-                <button
-                  className="ghost-button"
-                  onClick={leaveWorld}
-                  title="Cambiar mundo"
-                >
-                  <Globe2 size={18} />
-                  Sala
-                </button>
-              </>
+              <button className="ghost-button px-3" onClick={leaveWorld} title="Cambiar de sala">
+                <Globe2 size={18} />
+                <span className="hidden sm:inline">Sala</span>
+              </button>
             )}
             <button
               className="ghost-button px-3"
@@ -396,9 +389,9 @@ export default function App() {
             >
               {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
             </button>
-            <button className="ghost-button" onClick={handleLogout} title="Cerrar sesion">
+            <button className="ghost-button px-3" onClick={handleLogout} title="Cerrar sesión">
               <LogOut size={18} />
-              Salir
+              <span className="hidden sm:inline">Salir</span>
             </button>
           </div>
         </div>
@@ -429,35 +422,64 @@ export default function App() {
               onSendMessage={sendWorldMessage}
             />
           ) : (
-            <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-              <div className="min-w-0">
-                {view === "dishes" && (
-                  <DishesGame
-                    token={token}
-                    world={world}
-                    onBalanceChange={setBalance}
-                    onReloadWorld={reloadWorld}
-                  />
-                )}
+            <>
+              <div className={`grid gap-5 ${sidebarOpen ? "xl:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"}`}>
+                <div className="min-w-0">
+                  {view === "dishes" && (
+                    <DishesGame
+                      token={token}
+                      world={world}
+                      onBalanceChange={setBalance}
+                      onReloadWorld={reloadWorld}
+                    />
+                  )}
 
-                {view === "blackjack" && (
-                  <BlackjackTable
-                    socket={socket}
-                    currentUser={session.user}
-                    world={world}
-                    balance={balance}
-                  />
+                  {view === "blackjack" && (
+                    <BlackjackTable
+                      socket={socket}
+                      currentUser={session.user}
+                      world={world}
+                      balance={balance}
+                    />
+                  )}
+                </div>
+
+                {sidebarOpen && (
+                  <div className="flex flex-col gap-2 xl:sticky xl:top-20 xl:self-start">
+                    <button
+                      className="ghost-button self-end px-3 py-1.5 text-xs"
+                      onClick={() => setSidebarOpen(false)}
+                      title="Ocultar panel"
+                    >
+                      <X size={14} />
+                      Ocultar
+                    </button>
+                    <WorldSidebar
+                      connectionStatus={socketStatus}
+                      currentUser={session.user}
+                      messages={messages}
+                      players={presence}
+                      onSendMessage={sendWorldMessage}
+                    />
+                  </div>
                 )}
               </div>
 
-              <WorldSidebar
-                connectionStatus={socketStatus}
-                currentUser={session.user}
-                messages={messages}
-                players={presence}
-                onSendMessage={sendWorldMessage}
-              />
-            </div>
+              {/* Botón flotante para reabrir el panel cuando está oculto */}
+              {!sidebarOpen && (
+                <button
+                  className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/70 px-4 py-3 text-sm font-bold text-zinc-200 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur transition hover:border-amber-300/40 hover:text-amber-100"
+                  onClick={() => setSidebarOpen(true)}
+                  title="Mostrar jugadores y chat"
+                >
+                  <MessageSquare size={18} />
+                  <span className="hidden sm:inline">Jugadores y chat</span>
+                  {presence.length > 0 && (
+                    <span className="tabnum rounded-full bg-amber-300/20 px-1.5 text-xs font-extrabold text-amber-100">{presence.length}</span>
+                  )}
+                </button>
+              )}
+            </>
           )
         )}
       </section>

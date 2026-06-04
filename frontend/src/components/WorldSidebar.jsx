@@ -89,7 +89,7 @@ export default function WorldSidebar({
   }
 
   return (
-    <aside className="grid gap-5 xl:sticky xl:top-24 xl:self-start">
+    <aside className="grid gap-4">
       <section className="casino-panel p-4">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export default function WorldSidebar({
           </div>
         </div>
 
-        <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+        <div className="scrollbar-slim grid max-h-72 gap-2 overflow-y-auto pr-1">
           {sortedPlayers.length === 0 && (
             <div className="rounded-lg border border-dashed border-amber-300/20 bg-black/30 p-4 text-center text-sm font-bold text-zinc-500">
               <Sparkles className="mx-auto mb-2 text-amber-300/40" size={20} />
@@ -147,7 +147,7 @@ export default function WorldSidebar({
                   </p>
                 </div>
 
-                <div className={`shrink-0 rounded-md border px-2 py-1 text-xs font-extrabold ${tone.border} ${tone.bg} ${tone.text}`}>
+                <div className={`tabnum shrink-0 rounded-md border px-2 py-1 text-xs font-extrabold ${tone.border} ${tone.bg} ${tone.text}`}>
                   {currency.format(player.balance)}
                 </div>
               </div>
@@ -162,7 +162,7 @@ export default function WorldSidebar({
           <h2 className="font-display text-lg font-extrabold text-white">Chat de mesa</h2>
         </div>
 
-        <div ref={chatRef} className="mb-3 grid h-80 content-start gap-2 overflow-y-auto rounded-lg border border-amber-300/15 bg-black/45 p-3 scanline">
+        <div ref={chatRef} className="scrollbar-slim mb-3 grid h-80 content-start gap-2 overflow-y-auto rounded-lg border border-amber-300/15 bg-black/45 p-3 scanline">
           {messages.length === 0 && (
             <div className="self-center text-center text-sm font-bold text-zinc-500">
               <MessageCircle className="mx-auto mb-2 text-amber-300/30" size={28} />

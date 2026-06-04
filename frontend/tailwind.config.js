@@ -106,6 +106,41 @@ export default {
           "0%": { transform: "translateY(-200%) scale(0.6)", opacity: "0" },
           "60%": { transform: "translateY(8%) scale(1.05)", opacity: "1" },
           "100%": { transform: "translateY(0) scale(1)", opacity: "1" }
+        },
+        "deal-in": {
+          "0%": { transform: "translate(60px, -130px) rotate(-18deg) scale(0.85)", opacity: "0" },
+          "60%": { opacity: "1" },
+          "100%": { transform: "translate(0, 0) rotate(var(--card-rot, 0deg)) scale(1)", opacity: "1" }
+        },
+        "card-flip": {
+          "0%": { transform: "rotateY(90deg) scale(0.92)", opacity: "0" },
+          "100%": { transform: "rotateY(0) scale(1)", opacity: "1" }
+        },
+        "turn-pulse": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(251,191,36,0.5), 0 0 22px rgba(251,191,36,0.32)" },
+          "50%": { boxShadow: "0 0 0 7px rgba(251,191,36,0), 0 0 34px rgba(251,191,36,0.6)" }
+        },
+        "count-pop": {
+          "0%": { transform: "scale(1)" },
+          "35%": { transform: "scale(1.18)" },
+          "100%": { transform: "scale(1)" }
+        },
+        "float-soft": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-6px)" }
+        },
+        "pulse-ring": {
+          "0%": { transform: "scale(0.8)", opacity: "0.7" },
+          "100%": { transform: "scale(1.7)", opacity: "0" }
+        },
+        "fade-in": {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" }
+        },
+        "pop-in": {
+          "0%": { transform: "scale(0.6)", opacity: "0" },
+          "70%": { transform: "scale(1.08)", opacity: "1" },
+          "100%": { transform: "scale(1)", opacity: "1" }
         }
       },
       animation: {
@@ -120,7 +155,15 @@ export default {
         "deal-card": "deal-card 0.35s ease-out forwards",
         "spin-slow": "spin-slow 12s linear infinite",
         "ring-spin": "ring-spin 6s linear infinite",
-        "chip-bounce": "chip-bounce 0.55s cubic-bezier(.34,1.56,.64,1) forwards"
+        "chip-bounce": "chip-bounce 0.55s cubic-bezier(.34,1.56,.64,1) forwards",
+        "deal-in": "deal-in 0.42s cubic-bezier(.22,1.2,.36,1) forwards",
+        "card-flip": "card-flip 0.45s cubic-bezier(.4,0,.2,1) forwards",
+        "turn-pulse": "turn-pulse 1.8s ease-in-out infinite",
+        "count-pop": "count-pop 0.4s ease-out",
+        "float-soft": "float-soft 4s ease-in-out infinite",
+        "pulse-ring": "pulse-ring 1.6s ease-out infinite",
+        "fade-in": "fade-in 0.3s ease-out forwards",
+        "pop-in": "pop-in 0.4s cubic-bezier(.34,1.56,.64,1) forwards"
       }
     }
   },

@@ -2,7 +2,6 @@ import {
   ArrowLeft,
   BadgeDollarSign,
   Bot,
-  CircleDollarSign,
   Club,
   Coins,
   Crown,
@@ -84,13 +83,17 @@ function handValue(cards) {
   return total;
 }
 
-function Card({ card, compact = false }) {
+function Card({ card, compact = false, index = 0 }) {
+  // Pequeño retardo escalonado para que las cartas se "repartan" una tras otra
+  const dealStyle = { animationDelay: `${Math.min(index, 6) * 90}ms` };
+
   if (card.hidden) {
     return (
       <div
-        className={`playing-card-back animate-deal-card ${
+        className={`playing-card-back animate-deal-in ${
           compact ? "w-16" : "w-24 sm:w-28"
         }`}
+        style={dealStyle}
       >
         <div className="absolute inset-1.5 rounded-md border border-amber-300/40" />
         <div className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full border border-amber-300/50 bg-black/55 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-[0.16em] text-amber-100">
@@ -112,7 +115,8 @@ function Card({ card, compact = false }) {
 
   return (
     <div
-      className={`playing-card animate-deal-card ${compact ? "w-16 p-2" : "w-24 p-3 sm:w-28"}`}
+      className={`playing-card animate-deal-in ${compact ? "w-16 p-2" : "w-24 p-3 sm:w-28"}`}
+      style={dealStyle}
       title={`${card.rank} de ${suit.name}`}
     >
       <div className={`flex items-center justify-between font-display font-extrabold ${compact ? "text-sm" : "text-lg"} ${color}`}>
@@ -147,66 +151,6 @@ function TimerBar({ seconds, active, totalSeconds = 15 }) {
           className={`h-full transition-all ${seconds <= 5 ? "bg-rose-400" : "bg-cyan-300"}`}
           style={{ width: `${percent}%` }}
         />
-      </div>
-    </div>
-  );
-}
-
-function PhaseBanner({ phase, bettingSeconds, turnSeconds, currentTurnPlayer, isMyTurn, message }) {
-  const tone =
-    phase === "playing" && isMyTurn
-      ? "border-amber-300/60 shadow-gold"
-      : phase === "settled"
-        ? "border-emerald-300/50 shadow-emeraldGlow"
-        : phase === "betting"
-          ? "border-amber-300/40 shadow-goldSoft"
-          : "border-violet-300/30";
-
-  const bg =
-    phase === "playing" && isMyTurn
-      ? "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(245,158,11,0.10))"
-      : phase === "settled"
-        ? "linear-gradient(135deg, rgba(16,185,129,0.15), rgba(5,150,105,0.10))"
-        : phase === "betting"
-          ? "linear-gradient(135deg, rgba(251,191,36,0.14), rgba(0,0,0,0.4))"
-          : "linear-gradient(135deg, rgba(124,58,237,0.12), rgba(0,0,0,0.5))";
-
-  const title =
-    phase === "idle"
-      ? "Mesa abierta"
-      : phase === "betting"
-        ? `Apuestas: ${bettingSeconds}s`
-        : phase === "playing"
-          ? isMyTurn
-            ? "TU TURNO"
-            : `Turno de ${currentTurnPlayer?.username || "jugador"}`
-          : phase === "dealer"
-            ? "La banca revela"
-            : "Ronda terminada";
-
-  const Icon = phase === "betting" ? Hourglass : phase === "playing" ? Zap : phase === "settled" ? Trophy : Shield;
-
-  return (
-    <div className={`relative overflow-hidden rounded-xl border-2 p-4 ${tone}`} style={{ background: bg }}>
-      {phase === "playing" && isMyTurn && (
-        <div className="pointer-events-none absolute inset-0 opacity-30" style={{
-          background: "linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.4) 50%, transparent 70%)",
-          backgroundSize: "200% 100%",
-          animation: "shimmer 2s linear infinite"
-        }} />
-      )}
-      <div className="relative grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
-        <div>
-          <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-amber-200/80">Fase actual</p>
-          <h3 className={`mt-1 font-display text-2xl font-black sm:text-3xl ${isMyTurn && phase === "playing" ? "gold-text" : "text-white"}`}>
-            {title}
-          </h3>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-white/15 bg-black/35 px-3 py-2 text-sm font-extrabold text-zinc-100">
-            <Icon size={18} className="text-amber-300" />
-            {message}
-          </div>
-        </div>
-        <TimerBar seconds={phase === "playing" ? turnSeconds : bettingSeconds} active={phase === "playing" || phase === "betting"} />
       </div>
     </div>
   );
@@ -378,83 +322,6 @@ function ResultModal({ notice, onClose }) {
   );
 }
 
-function CommandCenter({ phase, me, isMyTurn, currentTurnPlayer, turnSeconds, bettingSeconds, tablePot, limits }) {
-  const myTotal = me?.cards?.length ? handValue(me.cards) : null;
-  const action =
-    phase === "betting"
-      ? me
-        ? "Apuesta bloqueada"
-        : "Confirma apuesta"
-      : phase === "playing"
-        ? isMyTurn
-          ? "Pide o plantate"
-          : `Espera a ${currentTurnPlayer?.username || "la mesa"}`
-        : phase === "dealer"
-          ? "Resolviendo banca"
-          : phase === "settled"
-            ? "Ronda finalizada"
-            : "Mesa lista";
-
-  return (
-    <section className="grid gap-3 md:grid-cols-4">
-      <div className={`rounded-lg border-2 p-4 transition ${isMyTurn ? "border-amber-300/70 bg-amber-300/15 shadow-gold" : "border-white/10 bg-black/40"}`}>
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/70">Accion</p>
-        <p className="mt-2 font-display text-xl font-extrabold text-white">{action}</p>
-      </div>
-      <div className="rounded-lg border-2 border-cyan-300/30 bg-cyan-300/10 p-4">
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-200/70">Tu mano</p>
-        <p className="mt-2 font-display text-2xl font-black text-cyan-100">{myTotal ?? "-"}</p>
-      </div>
-      <div className={`rounded-lg border-2 p-4 transition ${turnSeconds <= 5 && phase === "playing" ? "border-rose-400/50 bg-rose-500/15 animate-defeat-shake" : "border-amber-300/30 bg-amber-300/10"}`}>
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/70">Reloj</p>
-        <p className={`mt-2 font-display text-2xl font-black ${turnSeconds <= 5 && phase === "playing" ? "text-rose-200" : "text-amber-200"}`}>
-          {phase === "playing" ? `${turnSeconds}s` : phase === "betting" ? `${bettingSeconds}s` : "-"}
-        </p>
-      </div>
-      <div className="rounded-lg border-2 border-emerald-300/30 bg-emerald-300/10 p-4 shadow-emeraldGlow">
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-200/70">Pozo / cap</p>
-        <p className="mt-2 font-display text-xl font-black text-emerald-200">
-          ${tablePot} / ${limits.max}
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function DealerHand({ table }) {
-  const total = table.dealerTotal ?? (table.dealerCards?.length ? handValue(table.dealerCards) : null);
-
-  return (
-    <section className="felt-panel p-5">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-rose-300/60 shadow-ruby" style={{ background: "linear-gradient(135deg, #ef4444, #7f1d1d)" }}>
-            <Bot size={20} className="text-white" />
-          </div>
-          <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-rose-200/80">Crupier</p>
-            <h3 className="font-display text-lg font-extrabold text-white">Banca IA</h3>
-          </div>
-        </div>
-        <span className="rounded-md border border-rose-300/40 bg-rose-500/20 px-3 py-1.5 text-sm font-extrabold text-rose-100 shadow-ruby">
-          {table.phase === "playing" ? "Total ?" : `Total ${total ?? "-"}`}
-        </span>
-      </div>
-      <div className="flex min-h-36 flex-wrap items-end gap-3">
-        {table.dealerCards?.length ? (
-          table.dealerCards.map((card, index) => (
-            <Card key={`${card.rank || "hidden"}-${card.suit || "x"}-${index}`} card={card} />
-          ))
-        ) : (
-          <div className="flex h-32 w-24 items-center justify-center rounded-lg border-2 border-dashed border-amber-300/30 bg-black/30 text-amber-300/50 sm:w-28">
-            <Spade size={28} />
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 // ===== Helpers compartidos para los asientos =====
 const SEAT_AVATAR_GRADIENTS = [
   "linear-gradient(135deg, #fbbf24, #b8860b)",
@@ -501,7 +368,7 @@ function HandFan({ cards, emptyHint = "-", hideFirstOnly = false, spotlight = fa
   const overlap = cards.length <= 2 ? 0 : cards.length <= 4 ? 28 : 36;
 
   return (
-    <div className={`relative flex items-end justify-center rounded-xl border px-2 py-3 transition ${spotlight ? "border-amber-300/45 bg-amber-300/8 shadow-gold animate-glow-pulse" : "border-white/8 bg-black/15"}`} style={{ minHeight: "7.5rem" }}>
+    <div className={`relative flex items-end justify-center rounded-xl border px-2 py-3 transition ${spotlight ? "border-amber-300/45 bg-amber-300/8 shadow-gold animate-glow-pulse" : "border-white/[0.08] bg-black/15"}`} style={{ minHeight: "7.5rem" }}>
       {cards.map((card, index) => {
         const total = cards.length;
         const mid = (total - 1) / 2;
@@ -518,7 +385,37 @@ function HandFan({ cards, emptyHint = "-", hideFirstOnly = false, spotlight = fa
               zIndex: index
             }}
           >
-            <Card card={renderCard} compact />
+            <Card card={renderCard} compact index={index} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Mano grande y centrada para el escenario principal (dealer y jugador)
+function StageHand({ cards, hideFirstOnly = false, empty = "—" }) {
+  if (!cards?.length) {
+    return (
+      <div className="flex h-32 items-center justify-center sm:h-36">
+        <span className="font-display text-sm font-extrabold uppercase tracking-[0.2em] text-white/25">{empty}</span>
+      </div>
+    );
+  }
+
+  const overlap = cards.length <= 2 ? 6 : cards.length <= 4 ? 26 : 38;
+
+  return (
+    <div className="flex min-h-32 items-end justify-center sm:min-h-36">
+      {cards.map((card, index) => {
+        const render = hideFirstOnly && index === 0 ? { hidden: true } : card;
+        return (
+          <div
+            key={`${card.rank || "h"}-${card.suit || "x"}-${index}`}
+            className="relative transition-transform duration-200 hover:-translate-y-3 hover:z-20"
+            style={{ marginLeft: index === 0 ? 0 : -overlap, zIndex: index }}
+          >
+            <Card card={render} index={index} />
           </div>
         );
       })}
@@ -564,61 +461,6 @@ function SeatFooter({ total, outcome, payout, formatPayout, hideTotal = false })
   );
 }
 
-function PlayerSeat({ player, currentUserId, active, phase }) {
-  const isCurrentUser = player.userId === currentUserId;
-  const connected = player.connected !== false;
-  // Ocultar solo la primera carta y el total de rivales hasta que se resuelva la ronda.
-  const hideRivalInfo = !isCurrentUser && phase !== "settled";
-  const spotlightHand = isCurrentUser && ["betting", "playing", "dealer"].includes(phase);
-
-  return (
-    <article
-      className={`relative overflow-hidden rounded-xl border-2 p-4 transition ${
-        active
-          ? "border-amber-300/70 pt-10 shadow-gold animate-glow-pulse"
-          : isCurrentUser
-            ? "border-amber-300/40"
-            : "border-white/10"
-      }`}
-      style={{
-        background: active
-          ? "radial-gradient(ellipse at top, rgba(251,191,36,0.18), rgba(15,74,48,0.65) 60%, rgba(6,21,15,0.85))"
-          : isCurrentUser
-            ? "radial-gradient(ellipse at top, rgba(251,191,36,0.10), rgba(15,74,48,0.55) 60%, rgba(6,21,15,0.85))"
-            : "radial-gradient(ellipse at top, rgba(124,58,237,0.08), rgba(10,36,24,0.7) 60%, rgba(6,21,15,0.85))"
-      }}
-    >
-      {active && (
-        <div className="absolute left-4 top-3 z-10 inline-flex items-center gap-1.5 rounded-full border border-amber-200/90 bg-amber-300 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-amber-950 shadow-[0_8px_24px_rgba(251,191,36,0.45)]">
-          <Zap size={12} />
-          Turno
-        </div>
-      )}
-
-      <div className="mb-3 flex items-center gap-3">
-        <SeatAvatar username={player.username} size={44} />
-        <div className="min-w-0 flex-1">
-          <h4 className="truncate font-display text-base font-black text-white">
-            {player.username}
-            {isCurrentUser ? " (tu)" : ""}
-          </h4>
-          <p className={`mt-0.5 text-[11px] font-bold uppercase tracking-[0.14em] ${connected ? "text-amber-200/70" : "text-rose-300"}`}>
-            {connected ? (active ? "Turno activo" : statusLabel[player.status] || player.status) : "Desconectado"}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300/40 bg-amber-300/15 px-2.5 py-1 text-xs font-extrabold text-amber-100 shadow-goldSoft">
-          <Coins size={12} />
-          ${player.bet}
-        </div>
-      </div>
-
-      <HandFan cards={player.cards} hideFirstOnly={hideRivalInfo} spotlight={spotlightHand} />
-
-      <SeatFooter total={player.total} outcome={player.outcome} payout={player.payout} hideTotal={hideRivalInfo} />
-    </article>
-  );
-}
-
 function PvpSeat({ seat, currentUserId, active, buyIn, phase }) {
   const isCurrentUser = seat.userId === currentUserId;
   const cards = seat.cards || [];
@@ -630,7 +472,7 @@ function PvpSeat({ seat, currentUserId, active, buyIn, phase }) {
     <article
       className={`relative overflow-hidden rounded-xl border-2 p-4 transition ${
         active
-          ? "border-amber-300/70 pt-10 shadow-gold animate-glow-pulse"
+          ? "turn-ring border-amber-300/80 pt-10"
           : isCurrentUser
             ? "border-amber-300/40"
             : "border-white/10"
@@ -675,7 +517,6 @@ function PvpSeat({ seat, currentUserId, active, buyIn, phase }) {
 }
 
 function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, onRequestRematch, onConfirmRematch }) {
-  const [controlsOpen, setControlsOpen] = useState(false);
   const currentTurnSeat = table.seats.find((seat) => seat.userId === table.currentTurnUserId);
   const me = table.seats.find((seat) => seat.userId === currentUser.id);
   const isMyTurn = table.phase === "playing" && table.currentTurnUserId === currentUser.id;
@@ -690,12 +531,6 @@ function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, o
     .filter((seat) => table.winners?.includes(seat.userId))
     .map((seat) => seat.username)
     .join(", ");
-
-  useEffect(() => {
-    if (table.phase === "playing") {
-      setControlsOpen(false);
-    }
-  }, [table.id, table.phase]);
 
   return (
     <div className="grid gap-4">
@@ -781,30 +616,20 @@ function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, o
       </section>
 
       {table.phase === "playing" && (
-        <div className="grid gap-3 rounded-lg border border-white/10 bg-black/25 p-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Controles</p>
-              <p className="text-sm font-bold text-zinc-300">Abrelos solo cuando vayas a jugar tu mano.</p>
-            </div>
-            <button className="ghost-button" onClick={() => setControlsOpen((open) => !open)}>
-              {controlsOpen ? <LockKeyhole size={18} /> : <Hand size={18} />}
-              {controlsOpen ? "Ocultar controles" : "Mostrar controles"}
+        <div className={`grid gap-3 rounded-xl border p-3 transition ${isMyTurn ? "border-amber-300/50 bg-amber-300/5 shadow-goldSoft" : "border-white/10 bg-black/25"}`}>
+          <p className="text-center text-xs font-extrabold uppercase tracking-[0.18em] text-amber-200/70">
+            {isMyTurn ? "Es tu turno — decide" : `Turno de ${currentTurnSeat?.username || "la mesa"}`}
+          </p>
+          <div className="flex gap-3">
+            <button className="action-key action-key--hit" onClick={() => onAction(table.id, "hit")} disabled={!isMyTurn}>
+              <Hand size={20} />
+              Pedir
+            </button>
+            <button className="action-key action-key--stand" onClick={() => onAction(table.id, "stand")} disabled={!isMyTurn}>
+              <Hand size={20} className="rotate-90" />
+              Plantarse
             </button>
           </div>
-
-          {controlsOpen && (
-            <div className="grid gap-3 sm:grid-cols-2">
-              <button className="arcade-button w-full" onClick={() => onAction(table.id, "hit")} disabled={!isMyTurn}>
-                <Hand size={18} />
-                Pedir carta
-              </button>
-              <button className="danger-button w-full" onClick={() => onAction(table.id, "stand")} disabled={!isMyTurn}>
-                <StepForward size={18} />
-                Plantarse
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -1198,7 +1023,7 @@ function TableSelection({ balance, onSelect }) {
         <div className="border-b border-amber-300/15 bg-black/40 p-5">
           <p className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.28em] text-amber-200">
             <Spade size={14} />
-            Blackjack &middot; Casino Arcade
+            Blackjack &middot; easyno
           </p>
           <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="font-display text-4xl font-black"><span className="gold-text">Elige tu mesa</span></h2>
@@ -1287,7 +1112,6 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(null);
   const [now, setNow] = useState(Date.now());
-  const [aiControlsOpen, setAiControlsOpen] = useState(false);
   const lastAiResultKey = useRef("");
   const lastNoticeKeyRef = useRef(null);
 
@@ -1373,22 +1197,32 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
     balance >= betValue &&
     !seatsFull &&
     (phase === "idle" || phase === "settled" || (phase === "betting" && !me));
-  const myInstruction =
-    phase === "idle"
-      ? "Elige ficha y entra a la ronda"
-      : phase === "betting"
-        ? me
-          ? "Apuesta reservada, esperando cierre"
-          : "Aun puedes sentarte"
-        : phase === "playing"
-          ? isMyTurn
-            ? "Decide antes del timer"
-            : "Espera tu turno"
-          : phase === "dealer"
-            ? "La banca esta jugando"
-            : me?.outcome
-              ? `${outcomeLabel[me.outcome]} en esta ronda`
-              : "Nueva ronda disponible";
+  // ----- Datos derivados para el escenario de la mesa IA -----
+  const others = table.players.filter((player) => player.userId !== currentUser.id);
+  const myCards = me?.cards || [];
+  const myTotal = myCards.length ? handValue(myCards) : null;
+  const myBust = myTotal != null && myTotal > 21;
+  const myBlackjack = me?.status === "blackjack";
+  const dealerTotal = table.dealerTotal ?? (table.dealerCards?.length ? handValue(table.dealerCards) : null);
+  const dealerHideTotal = phase === "playing" || phase === "betting" || phase === "idle";
+  const betLocked = phase === "playing" || phase === "dealer" || !!me;
+  const chipOptions = [
+    { value: 50, cls: "chip-red" },
+    { value: 100, cls: "chip-blue" },
+    { value: 500, cls: "chip-gold" }
+  ];
+  const centerStatus =
+    phase === "betting"
+      ? "Hagan sus apuestas"
+      : phase === "playing"
+        ? isMyTurn
+          ? "Tu turno"
+          : `Turno de ${currentTurnPlayer?.username || "jugador"}`
+        : phase === "dealer"
+          ? "La banca revela"
+          : phase === "settled"
+            ? "Ronda terminada"
+            : "Esperando jugadores";
 
   useEffect(() => {
     if (mode !== "ai" || phase !== "settled" || !me?.outcome) return;
@@ -1410,12 +1244,6 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
             : "La banca se quedo con esta mano. Ajusta apuesta y vuelve al siguiente ciclo."
     });
   }, [me?.outcome, me?.payout, mode, phase, table.roundId]);
-
-  useEffect(() => {
-    if (mode === "ai" && (phase === "playing" || phase === "dealer")) {
-      setAiControlsOpen(false);
-    }
-  }, [mode, phase, table.roundId]);
 
   function placeBet() {
     if (!socket?.connected) {
@@ -1491,231 +1319,163 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
   }
 
   return (
-    <div className="grid gap-5">
+    <div className="grid gap-4">
       <ResultModal notice={notice} onClose={() => setNotice(null)} />
-      <div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-black/35 p-2 sm:flex-row sm:items-center sm:justify-between">
-        <button className="ghost-button" onClick={() => setMode(null)}>
+
+      {/* Barra superior mínima */}
+      <div className="flex items-center justify-between gap-3">
+        <button className="ghost-button px-3" onClick={() => setMode(null)}>
           <ArrowLeft size={18} />
-          Cambiar mesa
+          <span className="hidden sm:inline">Cambiar mesa</span>
         </button>
-        <div className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-cyan-300/30 bg-cyan-300/10 px-4 py-2 text-sm font-extrabold text-cyan-200">
-          <Bot size={18} />
-          Mesa con dealer IA
+        <div className="flex items-center gap-2">
+          <span className="hud-pill hud-pill--muted text-xs uppercase tracking-[0.14em]"><Bot size={14} /> Dealer</span>
+          <span className="hud-pill text-xs"><Users size={13} className="opacity-70" /> <span className="tabnum">{table.players.length}/{maxPlayers}</span></span>
         </div>
       </div>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="grid gap-5">
-          <PhaseBanner
-            phase={phase}
-            bettingSeconds={bettingSeconds}
-            turnSeconds={turnSeconds}
-            currentTurnPlayer={currentTurnPlayer}
-            isMyTurn={isMyTurn}
-            message={table.message}
-          />
-
-          <CommandCenter
-            phase={phase}
-            me={me}
-            isMyTurn={isMyTurn}
-            currentTurnPlayer={currentTurnPlayer}
-            turnSeconds={turnSeconds}
-            bettingSeconds={bettingSeconds}
-            tablePot={tablePot}
-            limits={limits}
-          />
-
-          <div className="casino-panel marquee-lights p-5">
-            <div className="mb-5 flex flex-col gap-3 border-b border-amber-300/15 pb-5 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <p className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.22em] text-rose-200">
-                  <Heart size={12} fill="currentColor" />
-                  Casino sincronizado
-                </p>
-                <h2 className="mt-1 font-display text-3xl font-black"><span className="gold-text">Blackjack Vs IA</span></h2>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-center">
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-amber-200/60">Mesa</p>
-                  <p className="font-display text-lg font-extrabold text-amber-200">${tablePot}</p>
-                </div>
-                <div className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-center">
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-cyan-200/60">Jugadores</p>
-                  <p className="font-display text-lg font-extrabold text-cyan-200">{table.players.length}/{maxPlayers}</p>
-                </div>
-                <div className="rounded-md border border-rose-300/30 bg-rose-300/10 px-3 py-2 text-center">
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-rose-200/60">Apuesta max</p>
-                  <p className="font-display text-lg font-extrabold text-rose-200">${limits.max}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid gap-4">
-              <DealerHand table={table} />
-
-              <section className="felt-panel p-5">
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <Users size={18} className="text-amber-300" />
-                    <h3 className="font-display text-lg font-extrabold text-white">Asientos</h3>
-                  </div>
-                  <span className="rounded-md border-2 border-amber-300/40 bg-amber-300/15 px-3 py-1 font-display text-sm font-black text-amber-100 shadow-goldSoft">
-                    {table.players.length}/{maxPlayers}
-                  </span>
-                </div>
-
-                {table.players.length === 0 ? (
-                  <div className="rounded-xl border-2 border-dashed border-amber-300/20 bg-black/30 p-8 text-center">
-                    <Spade className="mx-auto mb-2 text-amber-300/40" size={28} />
-                    <p className="font-display text-sm font-extrabold uppercase tracking-[0.18em] text-zinc-500">
-                      La mesa esta vacia
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {table.players.map((player) => (
-                      <PlayerSeat
-                        key={player.userId}
-                        player={player}
-                        currentUserId={currentUser.id}
-                        active={player.userId === table.currentTurnUserId}
-                        phase={phase}
-                      />
-                    ))}
-                  </div>
-                )}
-              </section>
-            </div>
+      {/* ===== Escenario de la mesa ===== */}
+      <div className="felt-table relative px-3 py-6 sm:px-10 sm:py-9">
+        {/* Rivales discretos */}
+        {others.length > 0 && (
+          <div className="absolute left-3 top-3 z-10 flex max-w-[44%] flex-wrap gap-1.5 sm:left-5 sm:top-5">
+            {others.map((player) => (
+              <span
+                key={player.userId}
+                className={`rival-chip ${player.userId === table.currentTurnUserId ? "is-turn" : ""}`}
+                title={player.username}
+              >
+                <SeatAvatar username={player.username} size={20} />
+                <span className="hidden max-w-[72px] truncate sm:inline">{player.username}</span>
+                <span className="tabnum opacity-70">{phase === "settled" ? (player.total || "—") : "·"}</span>
+              </span>
+            ))}
           </div>
+        )}
+
+        {/* Zona del dealer (arriba/centro) */}
+        <div className="flex flex-col items-center gap-3 pt-7 sm:pt-1">
+          <div className="flex items-center gap-2">
+            <span className="zone-label"><Bot size={12} /> Dealer</span>
+            <span className={`total-badge ${dealerHideTotal ? "" : dealerTotal > 21 ? "total-badge--bust" : "total-badge--live"}`}>
+              {dealerHideTotal ? "?" : (dealerTotal ?? "—")}
+            </span>
+          </div>
+          <StageHand cards={table.dealerCards} empty="Esperando reparto" />
         </div>
 
-        <aside className="casino-panel p-5">
-          <p className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.22em] text-amber-200">
-            <Spade size={12} />
-            Tu control
-          </p>
-          <h3 className="mt-1 font-display text-xl font-extrabold text-white">{myInstruction}</h3>
+        {/* Estado central (un solo indicador sutil) */}
+        <div className="my-5 flex items-center justify-center gap-3 sm:my-7">
+          <div className="h-px w-8 bg-white/10 sm:w-16" />
+          <span className={`inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-extrabold uppercase tracking-[0.18em] ${isMyTurn && phase === "playing" ? "turn-ring bg-amber-300/15 text-amber-100" : "bg-black/30 text-white/55"}`}>
+            {phase === "playing" ? <Zap size={13} /> : phase === "dealer" ? <Bot size={13} /> : phase === "settled" ? <Trophy size={13} /> : <Hourglass size={13} />}
+            {centerStatus}
+            {(phase === "playing" || phase === "betting") && (
+              <span className="tabnum ml-1 opacity-80">· {phase === "playing" ? turnSeconds : bettingSeconds}s</span>
+            )}
+          </span>
+          <div className="h-px w-8 bg-white/10 sm:w-16" />
+        </div>
 
-          <div className="mt-4 rounded-lg border border-amber-300/15 bg-black/40 p-4">
-            <label className="mb-2 flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/70">
-              <Coins size={16} />
-              Apuesta actual
-            </label>
-            <input
-              className="arcade-input text-center font-display text-lg"
-              type="number"
-              min={limits.min}
-              max={limits.max}
-              value={bet}
-              disabled={phase === "playing" || phase === "dealer" || !!me}
-              onChange={(event) => setBet(event.target.value)}
-            />
-            <p className="mt-3 mb-2 text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/70">Elige tu ficha</p>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { value: 50, cls: "chip-red" },
-                { value: 100, cls: "chip-blue" },
-                { value: 500, cls: "chip-gold" }
-              ].map((chip) => (
-                <button
-                  key={chip.value}
-                  className={`chip ${chip.cls} mx-auto scale-90 transition hover:scale-100 disabled:opacity-40 disabled:saturate-50`}
-                  onClick={() => setBet(chip.value)}
-                  disabled={phase === "playing" || phase === "dealer" || !!me}
-                  type="button"
-                >
-                  ${chip.value}
-                </button>
-              ))}
-            </div>
-            {!validBet && (
-              <p className="mt-3 text-xs font-bold text-rose-200">
-                Limite: ${limits.min} a ${limits.max}
-              </p>
+        {/* Zona del jugador (abajo/centro) */}
+        <div className="flex flex-col items-center gap-3 pb-1">
+          <StageHand cards={myCards} empty={me ? "Repartiendo…" : "Confirma tu apuesta para entrar"} />
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span className="zone-label text-amber-200/70"><Spade size={11} fill="currentColor" /> Tú</span>
+            {me && (
+              <span className="rival-chip">
+                <Coins size={12} className="text-amber-300/80" /> <span className="tabnum">${me.bet}</span>
+              </span>
+            )}
+            <span className={`total-badge ${myBust ? "total-badge--bust" : myTotal != null ? "total-badge--live" : ""}`}>
+              {myTotal ?? "—"}
+            </span>
+            {myBlackjack && (
+              <span className="rival-chip is-turn font-display tracking-wide">BLACKJACK</span>
             )}
           </div>
+        </div>
+      </div>
 
-          {error && (
-            <div className="mt-4 rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-200">
-              {error}
-            </div>
-          )}
+      {error && (
+        <div className="rounded-lg border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-center text-sm font-bold text-rose-200">
+          {error}
+        </div>
+      )}
 
-          <div className="mt-5 grid gap-3">
-            {(phase === "idle" || phase === "betting" || phase === "settled") && (
-              <AnimatedButton baseClassName="arcade-button w-full" onClick={placeBet} disabled={!canPlaceBet} ignoreGate>
+      {/* ===== Barra de acciones inferior ===== */}
+      <div className="action-bar justify-between">
+        <div className="hud-stat">
+          <span className="hud-stat__k">Saldo</span>
+          <span key={balance} className="hud-stat__v animate-count-pop text-emerald-300">${Math.max(0, balance)}</span>
+        </div>
+
+        <div className="order-last flex w-full items-center justify-center gap-3 sm:order-none sm:w-auto sm:flex-1">
+          {phase === "playing" || phase === "dealer" ? (
+            <>
+              <AnimatedButton baseClassName="action-key action-key--hit" onClick={() => playerAction("hit")} disabled={!isMyTurn} ignoreGate>
+                <Hand size={20} />
+                Pedir
+              </AnimatedButton>
+              <AnimatedButton baseClassName="action-key action-key--stand" onClick={() => playerAction("stand")} disabled={!isMyTurn} ignoreGate>
+                <Hand size={20} className="rotate-90" />
+                Plantarse
+              </AnimatedButton>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2.5">
+                {chipOptions.map((chip) => {
+                  const selected = !betLocked && betValue === chip.value;
+                  return (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      aria-pressed={selected}
+                      className={`chip ${chip.cls} ${selected ? "is-selected" : "scale-[0.78] hover:scale-90"} transition disabled:opacity-40 disabled:saturate-50`}
+                      onClick={() => setBet(chip.value)}
+                      disabled={betLocked}
+                    >
+                      ${chip.value}
+                    </button>
+                  );
+                })}
+              </div>
+              <AnimatedButton baseClassName="action-key action-key--hit !max-w-[230px]" onClick={placeBet} disabled={!canPlaceBet} ignoreGate>
                 {phase === "settled" ? <RotateCcw size={18} /> : me ? <LockKeyhole size={18} /> : <BadgeDollarSign size={18} />}
                 {phase === "settled"
                   ? seatsFull && !me
                     ? "Sala llena"
                     : "Nueva apuesta"
                   : me
-                    ? "Apuesta reservada"
+                    ? phase === "betting"
+                      ? `Reservada · ${bettingSeconds}s`
+                      : "Reservada"
                     : seatsFull
                       ? "Sala llena"
-                      : "Confirmar apuesta"}
+                      : "Apostar"}
               </AnimatedButton>
-            )}
+            </>
+          )}
+        </div>
 
-            {phase === "betting" && (
-              <div className={`rounded-lg border-2 px-4 py-3 text-center font-display text-sm font-extrabold ${bettingSeconds <= 5 ? "border-rose-400 bg-rose-500/20 text-rose-100 animate-defeat-shake" : "border-amber-300/40 bg-amber-300/15 text-amber-100 shadow-goldSoft"}`}>
-                <Hourglass className="mr-2 inline animate-spin-slow" size={18} />
-                Cierre en <span className="text-shadow-gold">{bettingSeconds}s</span>
-              </div>
-            )}
-
-            {(phase === "playing" || phase === "dealer") && (
-              <div className="grid gap-3 rounded-lg border border-white/10 bg-black/25 p-3">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Controles</p>
-                    <p className="text-sm font-bold text-zinc-300">Ocultalos para centrar la atencion en cartas y asientos.</p>
-                  </div>
-                  <button className="ghost-button" onClick={() => setAiControlsOpen((open) => !open)}>
-                    {aiControlsOpen ? <LockKeyhole size={18} /> : <Hand size={18} />}
-                    {aiControlsOpen ? "Ocultar controles" : "Mostrar controles"}
-                  </button>
-                </div>
-
-                {aiControlsOpen && (
-                  <div className="grid gap-3">
-                    <AnimatedButton baseClassName="arcade-button w-full" onClick={() => playerAction("hit")} disabled={!isMyTurn} ignoreGate>
-                      <Hand size={18} />
-                      Pedir carta
-                    </AnimatedButton>
-                    <AnimatedButton baseClassName="danger-button w-full" onClick={() => playerAction("stand")} disabled={!isMyTurn} ignoreGate>
-                      <StepForward size={18} />
-                      Plantarse
-                    </AnimatedButton>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {phase === "settled" && me?.outcome && (
-              <div
-                className={`relative overflow-hidden rounded-lg border-2 px-4 py-3 text-center font-display text-xl font-black uppercase ${
-                  me.outcome === "win"
-                    ? "border-amber-300 bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 shadow-gold animate-glow-pulse"
-                    : me.outcome === "lose"
-                      ? "border-rose-400 bg-gradient-to-br from-rose-500 to-rose-700 text-white shadow-ruby"
-                      : "border-cyan-300 bg-gradient-to-br from-cyan-400 to-cyan-600 text-cyan-950"
-                }`}
-              >
-                {me.outcome === "win" ? <Crown className="mr-2 inline" size={22} /> : me.outcome === "lose" ? <Frown className="mr-2 inline" size={22} /> : <Shield className="mr-2 inline" size={22} />}
-                {outcomeLabel[me.outcome]}
-                {me.payout ? ` +$${me.payout}` : ""}
-              </div>
-            )}
-
-            <div className="flex items-center justify-center gap-2 rounded-lg border-2 border-emerald-300/40 bg-emerald-300/10 px-4 py-3 font-display text-lg font-black text-emerald-200 shadow-emeraldGlow">
-              <span className="coin"><CircleDollarSign size={12} /></span>
-              <span>${Math.max(0, balance)}</span>
-            </div>
+        <div className="flex items-center gap-5">
+          <div className="hud-stat items-end text-right">
+            <span className="hud-stat__k">Apuesta</span>
+            <span className="hud-stat__v text-amber-200">${me?.bet ?? betValue}</span>
           </div>
-        </aside>
-      </section>
+          <div className="hud-stat items-end text-right">
+            <span className="hud-stat__k">Pozo</span>
+            <span className="hud-stat__v text-white">${tablePot}</span>
+          </div>
+        </div>
+      </div>
+
+      {!validBet && !betLocked && (
+        <p className="text-center text-xs font-bold text-rose-200">
+          Apuesta entre ${limits.min} y ${limits.max}
+        </p>
+      )}
     </div>
   );
 }

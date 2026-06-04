@@ -72,7 +72,7 @@ const volumes = {
   vender: 0.75
 };
 
-const STORAGE_KEY = "economy-arcade-muted";
+const STORAGE_KEY = "easyno-muted";
 const DICE_AUDIO_POOL = ["rodar1", "rodar2", "rodar3"];
 
 function readMuted() {

@@ -68,14 +68,16 @@ export default function AuthPanel({ onAuth }) {
       <div className="relative z-10 max-w-2xl">
         <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-amber-300/40 bg-amber-300/10 px-4 py-2 text-xs font-extrabold uppercase tracking-[0.28em] text-amber-200 shadow-goldSoft">
           <Sparkles size={15} />
-          Acceso VIP &middot; Casino Arcade
+          Acceso VIP &middot; easyno casino
         </div>
 
-        <h1 className="font-display text-5xl font-black leading-[1.05] sm:text-7xl">
-          <span className="gold-text">Economy</span>
-          <br />
-          <span className="text-white drop-shadow-[0_0_20px_rgba(251,191,36,0.35)]">Arcade</span>
+        <h1 className="font-display text-6xl font-black leading-[0.95] sm:text-8xl">
+          <span className="brand-word">easyno</span>
         </h1>
+
+        <p className="mt-3 font-display text-lg font-bold uppercase tracking-[0.3em] text-amber-200/70">
+          Casino &amp; Arcade
+        </p>
 
         <p className="mt-6 max-w-xl text-lg font-semibold leading-8 text-zinc-300">
           Entra al gran salon: apuesta, trabaja por monedas y juega Blackjack contra la banca o contra otros jugadores en mesas en vivo.

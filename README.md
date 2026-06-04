@@ -1,6 +1,6 @@
-# Economy Arcade Sim
+# easyno
 
-Videojuego web local de economia con mundos persistentes, minijuego de trabajo y Blackjack contra IA.
+Casino web local: videojuego de economia con mundos persistentes, minijuego de trabajo y Blackjack (contra la banca y PvP).
 
 ## Requisitos
 

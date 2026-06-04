@@ -55,36 +55,89 @@
 @layer components {
   /* ============ PANELES ============ */
   .arcade-panel {
-    @apply relative rounded-xl border border-amber-300/15 bg-zinc-950/80 shadow-[0_8px_36px_rgba(0,0,0,0.6)] backdrop-blur;
-    background-image:
-      linear-gradient(180deg, rgba(251, 191, 36, 0.04), transparent 35%),
-      linear-gradient(180deg, rgba(8, 9, 13, 0.92), rgba(8, 9, 13, 0.98));
+    @apply relative rounded-2xl border border-white/[0.08] bg-zinc-950/70 shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur;
+    background-image: linear-gradient(180deg, rgba(20, 22, 28, 0.7), rgba(8, 9, 13, 0.85));
   }
 
   .casino-panel {
-    @apply relative overflow-hidden rounded-xl border border-amber-300/25 shadow-gold backdrop-blur;
+    @apply relative overflow-hidden rounded-2xl border border-white/[0.08] shadow-[0_10px_30px_rgba(0,0,0,0.45)] backdrop-blur;
     background:
-      linear-gradient(180deg, rgba(251, 191, 36, 0.06), transparent 40%),
-      radial-gradient(ellipse at top, rgba(124, 58, 237, 0.10), transparent 55%),
-      linear-gradient(180deg, rgba(10, 36, 24, 0.92), rgba(6, 21, 15, 0.96));
+      linear-gradient(180deg, rgba(16, 38, 28, 0.8), rgba(6, 18, 13, 0.92));
   }
 
   .felt-panel {
     @apply relative overflow-hidden rounded-2xl border border-amber-300/20 shadow-[0_12px_40px_rgba(0,0,0,0.7)];
     background:
-      radial-gradient(ellipse at center, rgba(19, 107, 70, 0.95) 0%, rgba(15, 74, 48, 0.95) 45%, rgba(10, 36, 24, 0.95) 100%),
+      radial-gradient(ellipse at 50% 0%, rgba(34, 139, 90, 0.55) 0%, transparent 55%),
+      radial-gradient(ellipse at center, rgba(19, 107, 70, 0.95) 0%, rgba(15, 74, 48, 0.95) 45%, rgba(10, 36, 24, 0.96) 100%),
       repeating-linear-gradient(45deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 4px);
+  }
+
+  .felt-panel::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.55), inset 0 2px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* Mesa principal de blackjack: superficie de fieltro cinematográfica, sin marco recargado */
+  .felt-table {
+    @apply relative overflow-hidden;
+    border-radius: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background:
+      radial-gradient(ellipse at 50% 12%, rgba(38, 138, 92, 0.6) 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 60%, rgba(17, 92, 60, 0.98) 0%, rgba(11, 58, 38, 0.98) 50%, rgba(6, 28, 19, 1) 100%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 6px);
+    box-shadow:
+      0 30px 80px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05),
+      inset 0 0 160px rgba(0, 0, 0, 0.55);
+  }
+
+  /* Arco sutil de la mesa (una sola línea tenue) */
+  .felt-table::before {
+    content: "";
+    position: absolute;
+    inset: 22px;
+    border-radius: 999px / 64px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    pointer-events: none;
+  }
+
+  /* Círculo de apuesta sobre el fieltro */
+  .bet-spot {
+    @apply relative flex items-center justify-center rounded-full;
+    width: 80px;
+    height: 80px;
+    border: 1px dashed rgba(251, 191, 36, 0.35);
+    background: radial-gradient(circle at 50% 35%, rgba(251, 191, 36, 0.08), rgba(0, 0, 0, 0.3) 70%);
   }
 
   /* ============ BOTONES ============ */
   .arcade-button {
-    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-md border border-amber-300/40 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-zinc-950 shadow-gold transition disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-lg border border-amber-300/30 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-zinc-950 shadow-[0_6px_16px_rgba(0,0,0,0.4)] transition disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
     background: linear-gradient(135deg, #fde68a 0%, #fbbf24 40%, #d97706 100%);
   }
 
   .arcade-button:hover:not(:disabled) {
     @apply -translate-y-0.5;
-    box-shadow: 0 0 32px rgba(251, 191, 36, 0.7), 0 0 12px rgba(251, 191, 36, 0.6) inset;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), 0 0 16px rgba(251, 191, 36, 0.3);
+  }
+
+  .arcade-button:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4) inset;
+  }
+
+  .arcade-button:focus-visible,
+  .danger-button:focus-visible,
+  .royal-button:focus-visible,
+  .ghost-button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.55), 0 0 22px rgba(251, 191, 36, 0.4);
   }
 
   .arcade-button::after {
@@ -101,17 +154,22 @@
   }
 
   .danger-button {
-    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-md border border-rose-300/40 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-white shadow-ruby transition disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-lg border border-rose-300/30 px-4 py-2 text-sm font-extrabold uppercase tracking-wide text-white shadow-[0_6px_16px_rgba(0,0,0,0.4)] transition disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-zinc-700 disabled:text-zinc-400 disabled:shadow-none;
     background: linear-gradient(135deg, #f87171 0%, #dc2626 50%, #7f1d1d 100%);
   }
 
   .danger-button:hover:not(:disabled) {
     @apply -translate-y-0.5;
-    box-shadow: 0 0 32px rgba(220, 38, 38, 0.65);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4), 0 0 16px rgba(220, 38, 38, 0.3);
+  }
+
+  .danger-button:active:not(:disabled) {
+    transform: translateY(1px) scale(0.985);
+    box-shadow: 0 0 18px rgba(220, 38, 38, 0.5), 0 0 10px rgba(0, 0, 0, 0.35) inset;
   }
 
   .ghost-button {
-    @apply relative inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-amber-300/15 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-100 transition hover:-translate-y-0.5 hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 disabled:cursor-not-allowed disabled:text-zinc-500;
+    @apply relative inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-amber-300/15 bg-white/5 px-4 py-2 text-sm font-bold text-zinc-100 transition hover:-translate-y-0.5 hover:border-amber-300/40 hover:bg-amber-300/10 hover:text-amber-100 active:translate-y-px active:scale-[0.985] disabled:cursor-not-allowed disabled:text-zinc-500 disabled:hover:translate-y-0 disabled:hover:border-amber-300/15 disabled:hover:bg-white/5 disabled:hover:text-zinc-500;
   }
 
   .royal-button {
@@ -142,6 +200,27 @@
       0 6px 0 rgba(0, 0, 0, 0.45),
       0 10px 16px rgba(0, 0, 0, 0.6);
     border: 3px dashed rgba(255, 255, 255, 0.35);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .chip:active:not(:disabled) {
+    transform: translateY(3px) scale(0.96);
+    box-shadow:
+      0 0 0 4px rgba(255, 255, 255, 0.1),
+      0 0 0 5px var(--chip-color, #dc2626),
+      0 3px 0 rgba(0, 0, 0, 0.45),
+      0 6px 10px rgba(0, 0, 0, 0.6);
+  }
+
+  /* Ficha seleccionada: halo dorado + elevación */
+  .chip.is-selected {
+    transform: translateY(-4px) scale(1.05);
+    box-shadow:
+      0 0 0 4px rgba(255, 255, 255, 0.15),
+      0 0 0 6px rgba(251, 191, 36, 0.9),
+      0 0 26px rgba(251, 191, 36, 0.7),
+      0 10px 18px rgba(0, 0, 0, 0.6);
   }
 
   .chip-red    { --chip-color: #dc2626; --chip-edge: #7f1d1d; }
@@ -216,9 +295,9 @@
     inset-inline: 0;
     height: 6px;
     background-image: radial-gradient(circle, #fbbf24 1.5px, transparent 2px);
-    background-size: 14px 6px;
+    background-size: 16px 6px;
     background-repeat: repeat-x;
-    opacity: 0.65;
+    opacity: 0.25;
   }
 
   .marquee-lights::before { top: -6px; }
@@ -226,7 +305,18 @@
 
   /* ============ TARJETAS ============ */
   .playing-card {
-    @apply relative flex aspect-[3/4] flex-col justify-between rounded-lg border-2 border-white/30 bg-gradient-to-br from-white to-zinc-200 text-zinc-950 shadow-cardLift;
+    @apply relative flex aspect-[3/4] flex-col justify-between overflow-hidden rounded-lg border border-white/60 bg-gradient-to-br from-white to-zinc-200 text-zinc-950 shadow-cardLift;
+  }
+
+  /* Brillo sutil que cruza la carta al repartirse */
+  .playing-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.65) 50%, transparent 65%);
+    transform: translateX(-120%);
+    animation: card-shine 0.9s ease-out 0.15s 1;
+    pointer-events: none;
   }
 
   .playing-card-back {
@@ -5502,3 +5592,166 @@
 .monopoly-waitroom-seat-name { display: flex; flex-direction: column; font-weight: 800; color: #23160c; font-size: 0.9rem; min-width: 0; }
 .monopoly-waitroom-host { font-size: 0.64rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: #0f766e; }
 .monopoly-waitroom-actions { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.3rem; }
+
+/* ============================================================ */
+/* ============  easyno · UI premium (shell + blackjack)  ===== */
+/* ============================================================ */
+@layer components {
+  /* ----- Marca / logo ----- */
+  .brand-mark {
+    @apply relative flex shrink-0 items-center justify-center rounded-2xl border border-amber-300/50 text-zinc-950;
+    background:
+      linear-gradient(145deg, rgba(255,255,255,0.5), transparent 45%),
+      linear-gradient(135deg, #fde68a 0%, #fbbf24 45%, #b8860b 100%);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.5), 0 0 22px rgba(251,191,36,0.35), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+
+  .brand-word {
+    @apply font-display font-black tracking-tight;
+    background: linear-gradient(135deg, #fff7e0 0%, #fbbf24 55%, #b8860b 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: 0 0 26px rgba(251,191,36,0.3);
+  }
+
+  /* ----- Píldoras de HUD (saldo, estado, info) ----- */
+  .hud-pill {
+    @apply inline-flex min-h-10 items-center gap-2 rounded-full border px-3.5 text-sm font-extrabold transition;
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(6px);
+  }
+  .hud-pill--gold {
+    border-color: rgba(251,191,36,0.28);
+    color: #fde9b8;
+    background: rgba(251,191,36,0.08);
+  }
+  .hud-pill--emerald {
+    border-color: rgba(16,185,129,0.28);
+    color: #9ce8c5;
+    background: rgba(16,185,129,0.07);
+  }
+  .hud-pill--muted { color: #a1a1aa; }
+
+  /* ----- Pestañas de navegación ----- */
+  .nav-tab {
+    @apply relative inline-flex min-h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-bold text-zinc-300 transition;
+  }
+  .nav-tab:hover { @apply text-amber-100; background: rgba(251,191,36,0.08); }
+  .nav-tab.is-active {
+    @apply text-amber-100;
+    background: rgba(251,191,36,0.1);
+  }
+  .nav-tab.is-active::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: -7px;
+    width: 20px;
+    height: 2px;
+    border-radius: 3px;
+    transform: translateX(-50%);
+    background: linear-gradient(90deg, #fde68a, #fbbf24);
+  }
+
+  /* ----- Tarjetas de estadística compactas ----- */
+  .stat-tile {
+    @apply relative overflow-hidden rounded-xl border px-3.5 py-3 text-center transition;
+    border-color: rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.35);
+  }
+  .stat-tile__label {
+    @apply text-[10px] font-extrabold uppercase tracking-[0.16em];
+    color: rgba(255,255,255,0.5);
+  }
+  .stat-tile__value {
+    @apply mt-1 font-display text-xl font-black leading-none;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ----- Botones de acción grandes del juego (pedir / plantarse) ----- */
+  .action-key {
+    @apply relative inline-flex min-h-[58px] flex-1 items-center justify-center gap-2.5 overflow-hidden rounded-xl border-2 px-4 font-display text-base font-black uppercase tracking-wide transition disabled:cursor-not-allowed disabled:opacity-40 disabled:saturate-50;
+  }
+  .action-key:active:not(:disabled) { transform: translateY(2px) scale(0.98); }
+  .action-key--hit {
+    @apply border-amber-200/70 text-amber-950;
+    background: linear-gradient(135deg, #fde68a 0%, #fbbf24 45%, #d97706 100%);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.45), 0 0 22px rgba(251,191,36,0.35);
+  }
+  .action-key--hit:hover:not(:disabled) { @apply -translate-y-0.5; box-shadow: 0 10px 26px rgba(0,0,0,0.5), 0 0 34px rgba(251,191,36,0.6); }
+  .action-key--stand {
+    @apply border-rose-300/70 text-white;
+    background: linear-gradient(135deg, #fb7185 0%, #e11d48 50%, #881337 100%);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.45), 0 0 22px rgba(225,29,72,0.35);
+  }
+  .action-key--stand:hover:not(:disabled) { @apply -translate-y-0.5; box-shadow: 0 10px 26px rgba(0,0,0,0.5), 0 0 34px rgba(225,29,72,0.6); }
+
+  /* ----- Halo de turno activo (anillo dorado pulsante) ----- */
+  .turn-ring { animation: turn-pulse 1.8s ease-in-out infinite; }
+
+  /* ----- Divisor con degradado ----- */
+  .divider-fade {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  }
+
+  /* ============ Escenario de Blackjack ============ */
+  /* Etiqueta discreta de zona (DEALER / TÚ) */
+  .zone-label {
+    @apply inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[10px] font-extrabold uppercase tracking-[0.24em];
+    color: rgba(255,255,255,0.55);
+    background: rgba(0,0,0,0.28);
+  }
+
+  /* Badge de total de mano (neutro por defecto, dorado solo si es importante) */
+  .total-badge {
+    @apply inline-flex h-9 min-w-[2.75rem] items-center justify-center rounded-xl px-3 font-display text-lg font-black;
+    font-variant-numeric: tabular-nums;
+    color: #f4f4f5;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .total-badge--live { color: #fde9b8; border-color: rgba(251,191,36,0.45); background: rgba(251,191,36,0.1); }
+  .total-badge--bust { color: #fecaca; border-color: rgba(244,63,94,0.5); background: rgba(244,63,94,0.12); }
+
+  /* Barra de acciones inferior, compacta y cinematográfica */
+  .action-bar {
+    @apply relative flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-3;
+    border-color: rgba(255,255,255,0.08);
+    background: linear-gradient(180deg, rgba(18,20,26,0.85), rgba(8,9,13,0.92));
+    box-shadow: 0 -8px 28px rgba(0,0,0,0.35);
+    backdrop-filter: blur(8px);
+  }
+
+  /* Dato compacto del HUD inferior (saldo / apuesta / pozo) */
+  .hud-stat { @apply flex flex-col leading-none; }
+  .hud-stat__k { @apply text-[10px] font-extrabold uppercase tracking-[0.16em]; color: rgba(255,255,255,0.45); }
+  .hud-stat__v { @apply mt-1 font-display text-lg font-black; font-variant-numeric: tabular-nums; }
+
+  /* Asiento de rival compacto (discreto) */
+  .rival-chip {
+    @apply inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-bold;
+    border-color: rgba(255,255,255,0.08);
+    background: rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.8);
+  }
+  .rival-chip.is-turn { border-color: rgba(251,191,36,0.5); color: #fde9b8; background: rgba(251,191,36,0.1); }
+}
+
+/* Numeración tabular para montos */
+.tabnum { font-variant-numeric: tabular-nums; }
+
+/* Scrollbar fino y temático */
+.scrollbar-slim { scrollbar-width: thin; scrollbar-color: rgba(251,191,36,0.35) transparent; }
+.scrollbar-slim::-webkit-scrollbar { width: 8px; height: 8px; }
+.scrollbar-slim::-webkit-scrollbar-track { background: transparent; }
+.scrollbar-slim::-webkit-scrollbar-thumb { background: rgba(251,191,36,0.3); border-radius: 999px; }
+.scrollbar-slim::-webkit-scrollbar-thumb:hover { background: rgba(251,191,36,0.5); }
+
+/* Respeta usuarios que prefieren menos movimiento */
+@media (prefers-reduced-motion: reduce) {
+  .turn-ring, .animate-glow-pulse, .animate-float-soft, .animate-coin-fall,
+  .animate-sparkle, .animate-shimmer, .animate-pulse-ring { animation: none !important; }
+}
