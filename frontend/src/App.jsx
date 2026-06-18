@@ -1,4 +1,4 @@
-import { Coins, Gamepad2, Globe2, LogOut, MessageSquare, Sparkles, Spade, Volume2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
+import { Coins, Cuboid, Gamepad2, Globe2, LogOut, MessageSquare, Sparkles, Spade, Volume2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
@@ -35,7 +35,7 @@ export default function App() {
   const lastMessageIdRef = useRef(null);
 
   const token = session?.token;
-  const monopolyView = Boolean(world && view === "monopoly");
+  const monopolyView = Boolean(world && (view === "monopoly" || view === "monopoly3d"));
 
   // Mantener el estado local sincronizado con el módulo de audio
   useEffect(() => audio.subscribe(setMuted), []);
@@ -338,7 +338,7 @@ export default function App() {
 
           {/* Navegación central (segmented) */}
           {world && (
-            <nav className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/40 p-1">
+            <nav className="flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/40 p-1 sm:w-auto">
               <button className={`nav-tab ${view === "dishes" ? "is-active" : ""}`} onClick={() => setView("dishes")} title="Lavar platos">
                 <Sparkles size={17} />
                 Trabajo
@@ -350,6 +350,10 @@ export default function App() {
               <button className={`nav-tab ${view === "monopoly" ? "is-active" : ""}`} onClick={() => setView("monopoly")} title="Monopoly">
                 <Coins size={17} />
                 Monopoly
+              </button>
+              <button className={`nav-tab ${view === "monopoly3d" ? "is-active" : ""}`} onClick={() => setView("monopoly3d")} title="Monopoly 3D">
+                <Cuboid size={17} />
+                3D
               </button>
             </nav>
           )}
@@ -410,7 +414,7 @@ export default function App() {
         )}
 
         {world && (
-          monopolyView ? (
+          view === "monopoly" || view === "monopoly3d" ? (
             <MonopolyGame
               token={token}
               socket={socket}
@@ -420,6 +424,8 @@ export default function App() {
               messages={messages}
               connectionStatus={socketStatus}
               onSendMessage={sendWorldMessage}
+              preferredBoardViewMode={view === "monopoly3d" ? "3d" : "2d"}
+              onBoardViewModeChange={(nextMode) => setView(nextMode === "3d" ? "monopoly3d" : "monopoly")}
             />
           ) : (
             <>

@@ -74,6 +74,7 @@ const volumes = {
 
 const STORAGE_KEY = "easyno-muted";
 const DICE_AUDIO_POOL = ["rodar1", "rodar2", "rodar3"];
+const DICE_POOL_SIZE = 2;
 
 function readMuted() {
   try {
@@ -86,16 +87,50 @@ function readMuted() {
 let muted = readMuted();
 const listeners = new Set();
 const cache = {};
+const diceCache = {};
+
+function createAudioNode(name) {
+  if (!sources[name]) return null;
+  const node = new Audio(sources[name]);
+  node.preload = "auto";
+  node.volume = volumes[name] ?? 0.7;
+  try {
+    node.load();
+  } catch {
+    // noop
+  }
+  return node;
+}
 
 function getAudio(name) {
   if (!sources[name]) return null;
   if (!cache[name]) {
-    const node = new Audio(sources[name]);
-    node.preload = "auto";
-    node.volume = volumes[name] ?? 0.7;
-    cache[name] = node;
+    cache[name] = createAudioNode(name);
   }
   return cache[name];
+}
+
+function getDiceAudio(name) {
+  if (!sources[name]) return null;
+  if (!diceCache[name]) {
+    diceCache[name] = Array.from({ length: DICE_POOL_SIZE }, () => createAudioNode(name)).filter(Boolean);
+  }
+  const pool = diceCache[name];
+  return pool.find((node) => node.paused || node.ended) || pool[0] || null;
+}
+
+function playAudioNode(node) {
+  if (!node) return;
+  try {
+    node.pause();
+    node.currentTime = 0;
+    const playPromise = node.play();
+    if (playPromise && typeof playPromise.catch === "function") {
+      playPromise.catch(() => {});
+    }
+  } catch {
+    // noop
+  }
 }
 
 function notify() {
@@ -105,7 +140,8 @@ function notify() {
 export const audio = {
   playRandomDice() {
     const pick = DICE_AUDIO_POOL[Math.floor(Math.random() * DICE_AUDIO_POOL.length)];
-    this.play(pick);
+    if (muted) return;
+    playAudioNode(getDiceAudio(pick));
   },
   play(name) {
     if (muted) return;
@@ -125,6 +161,7 @@ export const audio = {
   },
   preload() {
     Object.keys(sources).forEach((name) => getAudio(name));
+    DICE_AUDIO_POOL.forEach((name) => getDiceAudio(name));
   },
   isMuted() {
     return muted;

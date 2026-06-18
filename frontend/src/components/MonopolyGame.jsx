@@ -3,6 +3,7 @@ import {
   Bot,
   Building2,
   Bug,
+  Cuboid,
   Chrome,
   Code2,
   Coffee,
@@ -11,6 +12,8 @@ import {
   Cpu,
   Dice5,
   DoorOpen,
+  Eye,
+  EyeOff,
   Gem,
   Gavel,
   Github,
@@ -47,10 +50,11 @@ import {
   Wallet,
   X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 // Lobby rediseñado: pantalla principal inmersiva + flujos Unirse/Crear.
 import { audio, radioTracks } from "../audio";
+import Monopoly3DView from "./monopoly3d/Monopoly3DView";
 import { Dice } from "./shared";
 
 const actionAudioMap = {
@@ -217,6 +221,10 @@ const tokenColorChoices = [...new Set(tokenColorPresets.flatMap((color) => [colo
 const tokenFigureColorChoices = ["#ffffff", "#23160c", ...tokenColorChoices.filter((color) => !["#ffffff", "#23160c"].includes(color))];
 
 const TOKEN_STORAGE_KEY = "monopoly-custom-tokens-v1";
+
+function normalizeTokenColor(value) {
+  return String(value || "").trim().toLowerCase();
+}
 
 function loadCustomTokens() {
   if (typeof window === "undefined") return {};
@@ -403,11 +411,44 @@ function boardMetaLabel(space, owner) {
   }
 }
 
+function boardBaseRentLabel(space) {
+  if (!space) return "";
+  if (Array.isArray(space.rents) && space.rents.length > 0) {
+    return moneyFormatter.format(space.rents[0] || 0);
+  }
+  if (Array.isArray(space.rentSchedule) && space.rentSchedule.length > 0) {
+    return moneyFormatter.format(space.rentSchedule[0] || 0);
+  }
+  if (space.type === "SERVICIO_PUBLICO") {
+    return "4x dados";
+  }
+  if (space.type === "IMPUESTO" && space.fixedAmount) {
+    return moneyFormatter.format(space.fixedAmount);
+  }
+  return "";
+}
+
 const moneyFormatter = new Intl.NumberFormat("es-MX", {
   style: "currency",
   currency: "MXN",
   maximumFractionDigits: 0
 });
+
+const MONOPOLY_3D_DEBUG_KEY = "monopoly3dDebug";
+
+function isMonopoly3DDebugEnabled() {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(MONOPOLY_3D_DEBUG_KEY) === "1";
+  } catch (error) {
+    return false;
+  }
+}
+
+function debugMonopoly3DSelection(label, payload) {
+  if (!isMonopoly3DDebugEnabled()) return;
+  console.debug(`[Monopoly3D] ${label}`, payload);
+}
 
 const ruleCards = [
   {
@@ -581,13 +622,18 @@ function boardCell(index) {
   return { row: index - 30, col: 10, side: "right", corner: false };
 }
 
-const boardTokenColumnWeights = [1.5, ...Array(9).fill(0.9), 1.5];
-const boardTokenRowWeights = [1.85, ...Array(9).fill(0.72), 1.85];
-const CINEMATIC_DICE_PHASE_MS = 2400;
-const CINEMATIC_DICE_REST_MS = 650;
-const CINEMATIC_STEP_MS = 520;
-const CINEMATIC_SETTLE_HOLD_MS = 1700;
-const MONEY_BURST_LIFETIME_MS = 1550;
+const boardTokenColumnWeights = Array(11).fill(1);
+const boardTokenRowWeights = Array(11).fill(1);
+const CINEMATIC_DICE_FOCUS_MS = 520;
+const CINEMATIC_DICE_ROLL_MS = 1180;
+const CINEMATIC_DICE_PHASE_MS = CINEMATIC_DICE_FOCUS_MS + CINEMATIC_DICE_ROLL_MS;
+const CINEMATIC_DICE_REST_MS = 320;
+const CINEMATIC_TARGET_HIGHLIGHT_MS = 220;
+const CINEMATIC_STEP_MS = 330;
+const CINEMATIC_SETTLE_HOLD_MS = 900;
+const MIN_DICE_STATE_HOLD_MS = 420;
+const CARD_MODAL_REVEAL_DELAY_MS = 1150;
+const MONEY_BURST_LIFETIME_MS = 2800;
 
 function trackCenterPercent(weights, index) {
   const total = weights.reduce((sum, weight) => sum + weight, 0);
@@ -1200,6 +1246,7 @@ function buildMoneyBursts(event, playersById, boardById) {
     bursts.push({
       id: `${event.id}-gain`,
       spaceIndex: payload.reason === "PASO_POR_SALIDA" ? 0 : playerSpace,
+      playerId: payload.playerId || null,
       label: moneyBurstText(payload.amount, "+"),
       tone: "gain",
       slot: 0
@@ -1210,6 +1257,7 @@ function buildMoneyBursts(event, playersById, boardById) {
     bursts.push({
       id: `${event.id}-loss`,
       spaceIndex: playerSpace,
+      playerId: payload.playerId || null,
       label: moneyBurstText(payload.amount, "-"),
       tone: "loss",
       slot: 0
@@ -1219,6 +1267,7 @@ function buildMoneyBursts(event, playersById, boardById) {
       bursts.push({
         id: `${event.id}-creditor-gain`,
         spaceIndex: creditorSpace,
+        playerId: payload.creditorId,
         label: moneyBurstText(payload.amount, "+"),
         tone: "gain",
         slot: 0
@@ -1231,6 +1280,7 @@ function buildMoneyBursts(event, playersById, boardById) {
     bursts.push({
       id: `${event.id}-purchase`,
       spaceIndex: Number.isFinite(space?.index) ? space.index : playerSpace,
+      playerId: payload.playerId || null,
       label: moneyBurstText(payload.price, "-"),
       tone: "loss",
       slot: 0
@@ -1241,6 +1291,7 @@ function buildMoneyBursts(event, playersById, boardById) {
     bursts.push({
       id: `${event.id}-paid`,
       spaceIndex: playerSpace,
+      playerId: payload.playerId || payload.debtorId || null,
       label: moneyBurstText(payload.amount, "-"),
       tone: "loss",
       slot: 0
@@ -1253,7 +1304,7 @@ function buildMoneyBursts(event, playersById, boardById) {
 function eventBurstDelay(event, movementTimeline) {
   if (!movementTimeline) return 0;
   const payload = event?.payload || {};
-  const stepStart = CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS;
+  const stepStart = CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + CINEMATIC_TARGET_HIGHLIGHT_MS;
 
   if (event?.type === "PLAYER_RECEIVED_MONEY" && payload.reason === "PASO_POR_SALIDA") {
     const passGoIndex = movementTimeline.path.findIndex((position) => position === 0);
@@ -1272,7 +1323,7 @@ function eventBurstDelay(event, movementTimeline) {
 function eventToastDelay(event, movementTimeline) {
   if (!movementTimeline) return 0;
   const payload = event?.payload || {};
-  const stepStart = CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS;
+  const stepStart = CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + CINEMATIC_TARGET_HIGHLIGHT_MS;
   const landingDelay = stepStart + movementTimeline.path.length * CINEMATIC_STEP_MS + 220;
 
   if (event?.type === "PLAYER_RECEIVED_MONEY" && payload.reason === "PASO_POR_SALIDA") {
@@ -1300,7 +1351,7 @@ function eventToastDelay(event, movementTimeline) {
 function eventSoundDelay(event, movementTimeline) {
   if (!movementTimeline) return 0;
   if (event?.type === "CARD_DRAWN") {
-    return CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + movementTimeline.path.length * CINEMATIC_STEP_MS + 320;
+    return CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + CINEMATIC_TARGET_HIGHLIGHT_MS + movementTimeline.path.length * CINEMATIC_STEP_MS + 320;
   }
   return eventBurstDelay(event, movementTimeline);
 }
@@ -1544,6 +1595,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
   const isCardSpace = space.type === "CASUALIDAD" || space.type === "ARCA_COMUNAL";
   const cardDeckName = space.type === "CASUALIDAD" ? "Casualidad" : "Arca comunal";
   const cardDeckCode = space.type === "CASUALIDAD" ? "?" : "!";
+  const rentLabel = boardBaseRentLabel(space);
   const style = {
     gridRowStart: cell.row + 1,
     gridColumnStart: cell.col + 1
@@ -1553,6 +1605,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
     space.name,
     spaceTypeLabel(space),
     space.price ? `Precio ${moneyFormatter.format(space.price)}` : null,
+    rentLabel ? `Renta ${rentLabel}` : null,
     owner ? `Dueno: ${owner.name}` : "Sin dueno",
     space.isMortgaged ? "Hipotecada: no cobra renta" : null,
     players.length ? `Fichas aqui: ${players.map((player) => player.name).join(", ")}` : null
@@ -1608,9 +1661,10 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
           )}
         </div>
 
-        {(space.price || space.houses || space.hasHotel || space.isMortgaged) && (
+        {(space.price || rentLabel || space.houses || space.hasHotel || space.isMortgaged) && (
           <div className="space-footer">
-            {space.price ? <span className="monopoly-space-price">{moneyFormatter.format(space.price)}</span> : <span className="monopoly-space-price">{spaceTypeLabel(space)}</span>}
+            {space.price ? <span className="monopoly-space-price">P {moneyFormatter.format(space.price)}</span> : <span className="monopoly-space-price">{spaceTypeLabel(space)}</span>}
+            {rentLabel ? <span className="monopoly-space-rent">R {rentLabel}</span> : null}
             {(space.houses > 0 || space.hasHotel) && (
               <span className="monopoly-buildings">
                 {buildings.map((_, index) => (
@@ -2642,14 +2696,43 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
   );
 }
 
-function TokenCustomizer({ open, onClose, currentPlayer, currentTokenStyle, onChange, onReset }) {
-  const [draft, setDraft] = useState(currentTokenStyle);
+function TokenCustomizer({
+  open,
+  onClose,
+  currentPlayer,
+  currentTokenStyle,
+  onChange,
+  onReset,
+  colorOnly = false,
+  reservedTokenColors = []
+}) {
+  const [draft, setDraft] = useState(() => colorOnly ? buildColorOnlyDraft(currentTokenStyle) : currentTokenStyle);
+  const reservedColorSet = useMemo(
+    () => new Set((reservedTokenColors || []).map(normalizeTokenColor).filter(Boolean)),
+    [reservedTokenColors]
+  );
+
+  function buildColorOnlyDraft(style = {}) {
+    const fallbackLabel = initialLetters(currentPlayer?.name || currentPlayer?.username || "");
+    const bg = style?.bg || tokenColorPresets[0].bg;
+    const preset = tokenColorPresets.find((option) => normalizeTokenColor(option.bg) === normalizeTokenColor(bg));
+
+    return {
+      ...style,
+      label: String(style?.label || fallbackLabel || "?").trim().slice(0, 4).toUpperCase(),
+      icon: "",
+      bg,
+      ring: preset?.ring || style?.ring || tokenColorPresets[0].ring,
+      fg: "#ffffff",
+      shape: "circle"
+    };
+  }
 
   useEffect(() => {
     if (open) {
-      setDraft(currentTokenStyle);
+      setDraft(colorOnly ? buildColorOnlyDraft(currentTokenStyle) : currentTokenStyle);
     }
-  }, [open, currentTokenStyle]);
+  }, [open, currentTokenStyle, colorOnly]);
 
   if (!open) return null;
 
@@ -2658,13 +2741,14 @@ function TokenCustomizer({ open, onClose, currentPlayer, currentTokenStyle, onCh
   }
 
   function applyAndClose() {
+    const finalDraft = colorOnly ? buildColorOnlyDraft(draft) : draft;
     onChange({
-      label: draft.label,
-      icon: draft.icon || "",
-      bg: draft.bg,
-      ring: draft.ring,
-      fg: draft.fg || "#ffffff",
-      shape: draft.shape
+      label: finalDraft.label,
+      icon: finalDraft.icon || "",
+      bg: finalDraft.bg,
+      ring: finalDraft.ring,
+      fg: finalDraft.fg || "#ffffff",
+      shape: finalDraft.shape
     });
     onClose();
   }
@@ -2940,6 +3024,10 @@ function TopHud({
   onToken,
   onRules,
   onMenu,
+  boardViewMode,
+  onBoardViewModeChange,
+  cameraAutoFollow,
+  onCameraAutoFollowChange,
   onLeave,
   onSurrender,
   onCloseTable,
@@ -2998,6 +3086,35 @@ function TopHud({
       <MonopolyRadio />
 
       <div className="monopoly-hud-actions">
+        <div className="monopoly-hud-view-switch" aria-label="Cambiar vista del tablero">
+          <button
+            type="button"
+            className={cx("monopoly-hud-view-button", boardViewMode === "2d" && "is-active")}
+            onClick={() => onBoardViewModeChange?.("2d")}
+            title="Vista clasica"
+          >
+            <MapIcon size={16} />
+            2D
+          </button>
+          <button
+            type="button"
+            className={cx("monopoly-hud-view-button", boardViewMode === "3d" && "is-active")}
+            onClick={() => onBoardViewModeChange?.("3d")}
+            title="Vista 3D"
+          >
+            <Cuboid size={16} />
+            3D
+          </button>
+        </div>
+        <button
+          type="button"
+          className={cx("monopoly-hud-camera-button", cameraAutoFollow && "is-active")}
+          onClick={() => onCameraAutoFollowChange?.(!cameraAutoFollow)}
+          title={cameraAutoFollow ? "Desactivar seguimiento de camara" : "Activar seguimiento de camara"}
+        >
+          {cameraAutoFollow ? <Eye size={16} /> : <EyeOff size={16} />}
+          {cameraAutoFollow ? "Sigue camara" : "Camara libre"}
+        </button>
         <button type="button" className="monopoly-icon-button" onClick={onToken} title="Personalizar ficha">
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
         </button>
@@ -3060,6 +3177,7 @@ function BoardArea({
 }) {
   const locked = rollingDice || Boolean(cinematic);
   const boardById = useMemo(() => new Map((board || []).map((space) => [space.id, space])), [board]);
+  const diceCinematicActive = ["cameraFocusDice", "diceRolling", "dice"].includes(cinematic?.phase);
 
   return (
     <section className="monopoly-board-area" aria-label="Tablero de Monopoly">
@@ -3098,14 +3216,14 @@ function BoardArea({
 
             <MoneyBurstOverlay bursts={moneyBursts} />
 
-            <div className={cx("monopoly-center", cinematic?.phase === "dice" && "de-emphasized", cinematic?.phase === "move" && "board-live", cinematic?.phase === "settle" && "board-live")}>
+            <div className={cx("monopoly-center", diceCinematicActive && "de-emphasized", cinematic?.phase === "move" && "board-live", cinematic?.phase === "settle" && "board-live")}>
               <div className="monopoly-board-core">
                 <div className={cx("monopoly-callout monopoly-center-callout", prompt?.tone && `tone-${prompt.tone}`)}>
                   <p className="text-[11px] font-extrabold uppercase tracking-[0.22em] truncate">
-                    {cinematic?.phase === "dice" ? "Dados en mesa" : cinematic?.phase === "move" ? "Ficha en movimiento" : cinematic?.phase === "settle" ? "Casilla enfocada" : prompt?.eyebrow}
+                    {diceCinematicActive ? "Dados en mesa" : cinematic?.phase === "move" ? "Ficha en movimiento" : cinematic?.phase === "settle" ? "Casilla enfocada" : prompt?.eyebrow}
                   </p>
                   <h2 className="mt-1 text-xl font-black uppercase leading-tight line-clamp-2">
-                    {cinematic?.phase === "dice"
+                    {diceCinematicActive
                       ? `${playersById.get(cinematic.playerId)?.name || "Jugador"} esta lanzando`
                       : cinematic?.phase === "move"
                         ? "La ficha avanza casilla por casilla"
@@ -3179,6 +3297,585 @@ function BoardArea({
         </div>
       </div>
     </section>
+  );
+}
+
+function ThreeDBoardActionPanel({
+  prompt,
+  playersById,
+  state,
+  rollingDice,
+  cinematic,
+  isMyTurn,
+  myActions,
+  pendingPurchaseSpace,
+  pendingTax,
+  pendingDebt,
+  pendingCard,
+  auction,
+  bidAmount,
+  setBidAmount,
+  canBidAuction,
+  canPassAuction,
+  onAction,
+  onManageDebt,
+  onOpenTrade
+}) {
+  const boardById = useMemo(() => new Map((state?.board || []).map((space) => [space.id, space])), [state?.board]);
+  const locked = rollingDice || Boolean(cinematic);
+  const diceRollingVisual = rollingDice || cinematic?.phase === "diceRolling";
+  const canRollFromDice = isMyTurn && myActions.includes("tirarDados") && !locked;
+  const displayPrompt = locked
+    ? {
+        tone: "info",
+        eyebrow: "Escena 3D",
+        title: diceRollingVisual ? "Dados en movimiento" : "Animacion en curso",
+        body: "El tablero esta resolviendo la secuencia visual."
+      }
+    : canRollFromDice
+      ? {
+          tone: "info",
+          eyebrow: "Tu turno",
+          title: "Haz click en los dados",
+          body: "La tirada empieza directamente desde el tablero 3D."
+        }
+      : prompt;
+  const actionPanel = canRollFromDice
+    ? {
+        tone: "info",
+        title: "Dados listos",
+        body: "Usa los dados del centro del tablero para tirar."
+      }
+    : null;
+
+  return (
+    <section className="monopoly-turn-panel monopoly-3d-turn-panel">
+      <div className={cx("monopoly-turn-card", displayPrompt?.tone && `tone-${displayPrompt.tone}`)}>
+        <p className="monopoly-panel-eyebrow">{displayPrompt?.eyebrow || "Turno"}</p>
+        <h3>{displayPrompt?.title || "Mesa en curso"}</h3>
+        <p>{displayPrompt?.body || "La partida sigue en tiempo real."}</p>
+      </div>
+
+      <div className="monopoly-turn-card monopoly-3d-support-card">
+        {actionPanel ? (
+          <div className="monopoly-center-action-zone is-passive">
+            <span>{actionPanel.title}</span>
+            <small>{actionPanel.body}</small>
+          </div>
+        ) : (
+          <BoardCenterActions
+            locked={locked}
+            isMyTurn={isMyTurn}
+            myActions={myActions}
+            pendingPurchaseSpace={pendingPurchaseSpace}
+            pendingTax={pendingTax}
+            pendingDebt={pendingDebt}
+            pendingCard={pendingCard}
+            auction={auction}
+            playersById={playersById}
+            boardById={boardById}
+            state={state}
+            bidAmount={bidAmount}
+            setBidAmount={setBidAmount}
+            canBidAuction={canBidAuction}
+            canPassAuction={canPassAuction}
+            onAction={onAction}
+            onManageDebt={onManageDebt}
+          />
+        )}
+
+        {pendingDebt && isMyTurn && myActions.includes("resolverDeudaPendiente") && (
+          <div className="monopoly-secondary-actions">
+            <button type="button" onClick={onOpenTrade}>
+              <Scale size={16} />
+              Negocios
+            </button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function suggestedPropertyTradePrice(property) {
+  if (!property) return 100;
+  return Math.max(
+    property.mortgageValue || 0,
+    Math.round(((property.price || property.mortgageValue || 100) * 0.7) / 50) * 50
+  );
+}
+
+function ownerControlsColorGroup(space, owner = null, board = []) {
+  if (!space?.colorGroup || !owner) return false;
+  const groupSpaces = board.filter((candidate) => candidate.colorGroup === space.colorGroup);
+  if (groupSpaces.length === 0) return false;
+  const ownedInGroup = (owner.properties || []).filter((candidate) => candidate.colorGroup === space.colorGroup).length;
+  return ownedInGroup >= groupSpaces.length;
+}
+
+function buildThreeDRentRows(space, owner = null, ownerProperty = null, board = []) {
+  const property = ownerProperty || space;
+  if (!property) return [];
+
+  if (Array.isArray(property.rents) && property.rents.length > 0) {
+    const groupOwned = ownerControlsColorGroup(space, owner, board);
+    const hasBuildings = Boolean(property.hasHotel || property.houses > 0);
+    const rows = [
+      { label: "Base", value: moneyFormatter.format(property.rents[0] || 0), active: !groupOwned && !hasBuildings },
+      { label: "Grupo completo", value: moneyFormatter.format((property.rents[0] || 0) * 2), active: groupOwned && !hasBuildings }
+    ];
+    const buildingLabels = ["1 casa", "2 casas", "3 casas", "4 casas", "Hotel"];
+    for (let index = 1; index <= 5; index += 1) {
+      rows.push({
+        label: buildingLabels[index - 1],
+        value: moneyFormatter.format(property.rents[index] || 0),
+        active: property.hasHotel ? index === 5 : (property.houses || 0) === index
+      });
+    }
+    return rows;
+  }
+
+  if (Array.isArray(property.rentSchedule) && property.rentSchedule.length > 0) {
+    return property.rentSchedule.map((rent, index) => ({
+      label: `${index + 1} tren${index === 0 ? "" : "es"}`,
+      value: moneyFormatter.format(rent || 0),
+      active: false
+    }));
+  }
+
+  if (property.propertyKind === "SERVICIO_PUBLICO" || property.type === "SERVICIO_PUBLICO") {
+    return [
+      { label: "1 servicio", value: "4x dados", active: false },
+      { label: "2 servicios", value: "10x dados", active: false }
+    ];
+  }
+
+  return [];
+}
+
+function currentRentPreview(space, owner = null, ownerProperty = null, board = []) {
+  const property = ownerProperty || space;
+  if (!property || property.isMortgaged) return "Sin renta";
+
+  if (Array.isArray(property.rents) && property.rents.length > 0) {
+    if (property.hasHotel) return moneyFormatter.format(property.rents[5] || 0);
+    if ((property.houses || 0) > 0) return moneyFormatter.format(property.rents[property.houses] || 0);
+    const groupOwned = ownerControlsColorGroup(space, owner, board);
+    return moneyFormatter.format(groupOwned ? (property.rents[0] || 0) * 2 : (property.rents[0] || 0));
+  }
+
+  if (Array.isArray(property.rentSchedule) && property.rentSchedule.length > 0) {
+    const railroadsOwned = Math.max(
+      1,
+      (owner?.properties || []).filter((candidate) => candidate.propertyKind === "FERROCARRIL").length || 1
+    );
+    return moneyFormatter.format(property.rentSchedule[Math.min(railroadsOwned - 1, property.rentSchedule.length - 1)] || 0);
+  }
+
+  if (property.propertyKind === "SERVICIO_PUBLICO" || property.type === "SERVICIO_PUBLICO") {
+    const utilitiesOwned = (owner?.properties || []).filter((candidate) => candidate.propertyKind === "SERVICIO_PUBLICO").length;
+    return utilitiesOwned >= 2 ? "10x dados" : "4x dados";
+  }
+
+  return "--";
+}
+
+function buildThreeDSpaceSummary(space, owner = null, ownerProperty = null, visitors = [], board = []) {
+  const property = ownerProperty || space;
+  const ownerName = owner?.name || "Banco";
+  const visitorCount = visitors.length;
+
+  if (!space) {
+    return {
+      statusLabel: "Sin datos",
+      description: "Selecciona una casilla para ver detalles.",
+      rentPreviewLabel: "--"
+    };
+  }
+
+  if (space.price) {
+    const statusLabel = property?.isMortgaged
+      ? "Hipotecada"
+      : property?.hasHotel
+      ? "Con hotel"
+      : property?.houses
+      ? `${property.houses} casas`
+      : owner
+      ? "En renta"
+      : "Disponible";
+
+    const description = property?.isMortgaged
+      ? "No cobra renta hasta levantar la hipoteca."
+      : space.propertyKind === "FERROCARRIL"
+      ? `La renta escala segun los trenes que tenga ${ownerName}.`
+      : space.propertyKind === "SERVICIO_PUBLICO"
+      ? `La renta depende del resultado de los dados y de cuantos servicios controle ${ownerName}.`
+      : owner
+      ? `${ownerName} controla esta propiedad.${visitorCount ? ` Hay ${visitorCount} ficha${visitorCount === 1 ? "" : "s"} aqui.` : ""}`
+      : "Puede comprarse si caes aqui y el turno lo permite.";
+
+    return {
+      statusLabel,
+      description,
+      rentPreviewLabel: currentRentPreview(space, owner, ownerProperty, board)
+    };
+  }
+
+  switch (space.type) {
+    case "SALIDA":
+      return {
+        statusLabel: "Bonificacion",
+        description: "Al pasar por aqui cobras 200 del banco.",
+        rentPreviewLabel: "Cobras 200"
+      };
+    case "CASUALIDAD":
+      return {
+        statusLabel: "Carta",
+        description: "Robas una carta de Casualidad al caer en esta casilla.",
+        rentPreviewLabel: "Evento"
+      };
+    case "ARCA_COMUNAL":
+      return {
+        statusLabel: "Carta",
+        description: "Robas una carta de Arca comunal al caer en esta casilla.",
+        rentPreviewLabel: "Evento"
+      };
+    case "IMPUESTO":
+      return {
+        statusLabel: space.taxKind === "OPTIONAL_PERCENT" ? "Impuesto opcional" : "Impuesto fijo",
+        description: space.taxKind === "OPTIONAL_PERCENT"
+          ? `Debes elegir entre ${moneyFormatter.format(space.fixedAmount || 0)} fijo o porcentaje de patrimonio.`
+          : `Pagas ${moneyFormatter.format(space.fixedAmount || 0)} al banco.`,
+        rentPreviewLabel: moneyFormatter.format(space.fixedAmount || 0)
+      };
+    case "CARCEL_VISITA":
+      return {
+        statusLabel: "Visita / carcel",
+        description: "Aqui solo visitas. Si te envian preso, quedas bloqueado hasta resolver tu salida.",
+        rentPreviewLabel: "Sin renta"
+      };
+    case "VAYASE_A_LA_CARCEL":
+      return {
+        statusLabel: "Directo a carcel",
+        description: "Te envia inmediatamente a la carcel y no cobras por pasar por Salida.",
+        rentPreviewLabel: "Pierdes turno"
+      };
+    case "PARADA_LIBRE":
+      return {
+        statusLabel: "Descanso",
+        description: "No pagas ni cobras nada. Es una casilla neutral.",
+        rentPreviewLabel: "Sin efecto"
+      };
+    default:
+      return {
+        statusLabel: "Especial",
+        description: "Casilla especial del tablero.",
+        rentPreviewLabel: "--"
+      };
+  }
+}
+
+function mergeThreeDSpaceProperty(space, ownerProperty = null) {
+  if (!space) return null;
+  if (!ownerProperty) return space;
+
+  return {
+    ...space,
+    ...ownerProperty,
+    index: space.index,
+    id: space.id,
+    name: ownerProperty.name || space.name,
+    type: ownerProperty.type || space.type,
+    propertyKind: ownerProperty.propertyKind || space.propertyKind || null,
+    colorGroup: ownerProperty.colorGroup || space.colorGroup || null,
+    ownerId: space.ownerId || ownerProperty.ownerId || null,
+    price: ownerProperty.price ?? space.price ?? null,
+    mortgageValue: ownerProperty.mortgageValue ?? space.mortgageValue ?? null,
+    houseCost: ownerProperty.houseCost ?? space.houseCost ?? 0,
+    hotelCost: ownerProperty.hotelCost ?? space.hotelCost ?? 0,
+    rents: Array.isArray(ownerProperty.rents) ? ownerProperty.rents : space.rents,
+    rentSchedule: Array.isArray(ownerProperty.rentSchedule) ? ownerProperty.rentSchedule : space.rentSchedule,
+    houses: ownerProperty.houses ?? space.houses ?? 0,
+    hasHotel: Boolean(ownerProperty.hasHotel ?? space.hasHotel),
+    isMortgaged: Boolean(ownerProperty.isMortgaged ?? space.isMortgaged),
+    management: ownerProperty.management || space.management || null
+  };
+}
+
+function threeDGroupLabel(property) {
+  if (property?.colorGroup) return colorGroupMeta[property.colorGroup]?.label || property.colorGroup;
+  if (property?.propertyKind === "FERROCARRIL" || property?.type === "FERROCARRIL") return "Estacion";
+  if (property?.propertyKind === "SERVICIO_PUBLICO" || property?.type === "SERVICIO_PUBLICO") return "Servicio";
+  return "Especial";
+}
+
+function threeDBaseRentLabel(property) {
+  if (!property?.price) return "--";
+  if (Array.isArray(property.rents) && property.rents.length > 0) {
+    return moneyFormatter.format(property.rents[0] || 0);
+  }
+  if (Array.isArray(property.rentSchedule) && property.rentSchedule.length > 0) {
+    return moneyFormatter.format(property.rentSchedule[0] || 0);
+  }
+  if (property.propertyKind === "SERVICIO_PUBLICO" || property.type === "SERVICIO_PUBLICO") {
+    return "4x dados";
+  }
+  return "Informacion no disponible";
+}
+
+function threeDBuildLabel(property, statusLabel) {
+  if (!property?.price) return statusLabel || "No aplica";
+  if (property.hasHotel) return "Hotel";
+  if ((property.houses || 0) > 0) return `${property.houses} casas`;
+  if (property.propertyKind === "SOLAR") return "Sin construcciones";
+  return statusLabel || "Sin construcciones";
+}
+
+function buildThreeDSelectedSpaceModel({ space, owner = null, ownerProperty = null, visitors = [], board = [] }) {
+  if (!space) return null;
+
+  const property = mergeThreeDSpaceProperty(space, ownerProperty);
+  const summary = buildThreeDSpaceSummary(space, owner, property, visitors, board);
+  const typeLabel = spaceTypeLabel(property);
+  const groupLabel = threeDGroupLabel(property);
+  const ownerName = owner?.name || (property?.price ? "Banco" : "No aplica");
+
+  return {
+    space,
+    property,
+    owner,
+    visitors,
+    typeLabel,
+    groupLabel,
+    ownerName,
+    statusLabel: summary.statusLabel || "Informacion no disponible",
+    description: summary.description || "Informacion no disponible para esta casilla.",
+    priceLabel: property?.price ? moneyFormatter.format(property.price) : "No aplica",
+    baseRentLabel: threeDBaseRentLabel(property),
+    rentPreviewLabel: summary.rentPreviewLabel || "Informacion no disponible",
+    mortgageLabel: property?.mortgageValue ? moneyFormatter.format(property.mortgageValue) : "No aplica",
+    buildLabel: threeDBuildLabel(property, summary.statusLabel),
+    visitorLabel: visitors.length ? visitors.map((player) => player.name).join(", ") : "Sin visitas",
+    accent: property?.colorGroup
+      ? colorGroupMeta[property.colorGroup]?.accent || colorGroupMeta[property.colorGroup]?.color || "#fbbf24"
+      : "#fbbf24",
+    rentRows: buildThreeDRentRows(space, owner, property, board)
+  };
+}
+
+function buildThreeDSpaceActions({
+  spaceModel,
+  visiblePendingPurchaseSpace,
+  isMyTurn,
+  myActions,
+  currentUserId
+}) {
+  if (!spaceModel?.space) return [];
+
+  const { space, property, owner } = spaceModel;
+  const isOwnedByMe = sameEntityId(owner?.id, currentUserId);
+  const isTradableSpace = Boolean(property?.price && property?.id);
+  const purchaseIsHere = visiblePendingPurchaseSpace?.id === space.id && isMyTurn;
+  const actions = [];
+
+  if (purchaseIsHere && myActions.includes("comprarPropiedad")) {
+    actions.push(
+      { label: "Comprar", type: "engine", actionName: "comprarPropiedad", tone: "success" },
+      { label: "Subastar", type: "engine", actionName: "rechazarCompra", tone: "danger" }
+    );
+  }
+
+  if (isOwnedByMe && property?.management) {
+    propertyActionOrder.forEach(([actionName, label]) => {
+      if (property.management[actionName]?.allowed) {
+        actions.push({ label, type: "engine", actionName, payload: { propertyId: property.id } });
+      }
+    });
+  }
+
+  if (isTradableSpace && isOwnedByMe) {
+    actions.push({ label: "Vender", type: "trade", intent: "sell" });
+  }
+
+  if (isTradableSpace && owner && !isOwnedByMe) {
+    actions.push({ label: "Ofertar", type: "trade", intent: "buy" });
+  }
+
+  return actions.slice(0, 4);
+}
+
+function buildThreeDSelectedSpaceInfo(spaceModel, actions = [], ownerDisplay = null) {
+  if (!spaceModel?.property) return null;
+
+  const { property, typeLabel, groupLabel } = spaceModel;
+  const typeWithGroup = groupLabel && groupLabel !== "Especial"
+    ? `${typeLabel} - ${groupLabel}`
+    : typeLabel || groupLabel || "Especial";
+
+  return {
+    id: property.id,
+    index: Number.isInteger(property.index) ? property.index : 0,
+    name: property.name || "Informacion no disponible",
+    type: typeWithGroup,
+    groupLabel,
+    ownerName: spaceModel.ownerName || "Banco",
+    statusLabel: spaceModel.statusLabel || "Informacion no disponible",
+    description: spaceModel.description || "Informacion no disponible",
+    priceLabel: spaceModel.priceLabel || "Informacion no disponible",
+    baseRentLabel: spaceModel.baseRentLabel || "Informacion no disponible",
+    rentPreviewLabel: spaceModel.rentPreviewLabel || "Informacion no disponible",
+    mortgageLabel: spaceModel.mortgageLabel || "Informacion no disponible",
+    buildLabel: spaceModel.buildLabel || "Informacion no disponible",
+    visitorLabel: spaceModel.visitorLabel || "Sin visitas",
+    accent: spaceModel.accent || "#fbbf24",
+    ownerColor: ownerDisplay?.color || null,
+    rentRows: spaceModel.rentRows || [],
+    actions
+  };
+}
+
+const ThreeDTablePanel = memo(function ThreeDTablePanel({
+  state,
+  players,
+  currentUserId,
+  currentPlayerId,
+  tokenStylesById,
+  customTokens,
+  myPlayer,
+  selectedSpace,
+  selectionVersion,
+  selectedOwner,
+  selectedVisitors,
+  selectedOwnerProperty,
+  events,
+  playersById,
+  boardById,
+  onSelectSpace,
+  onManage,
+  onOpenTrade,
+  onPrepareTrade
+}) {
+  const [activeTab, setActiveTab] = useState("players");
+
+  useEffect(() => {
+    if (activeTab === "space") setActiveTab("players");
+  }, [activeTab, selectedSpace?.id, selectionVersion]);
+
+  const tabs = [
+    ["players", "Jugadores", Users],
+    ["assets", "Activos", Building2],
+    ["events", "Eventos", Receipt]
+  ];
+
+  return (
+    <section className="monopoly-3d-info-panel">
+      <nav className="monopoly-3d-tabs" aria-label="Panel 3D">
+        {tabs.map(([tabId, label, Icon]) => (
+          <button
+            key={tabId}
+            type="button"
+            className={cx(activeTab === tabId && "is-active")}
+            onClick={() => setActiveTab(tabId)}
+          >
+            <Icon size={15} />
+            {label}
+          </button>
+        ))}
+      </nav>
+
+      <div className="monopoly-3d-tab-body">
+        {activeTab === "players" && (
+          <div className="monopoly-3d-list">
+            {players.map((player, index) => {
+              const tokenStyle = tokenStylesById[player.id] || customTokens?.[player.id] || resolveTokenStyle({ ...player, colorIndex: index }, customTokens || {});
+              return (
+                <button
+                  key={player.id}
+                  type="button"
+                  className={cx("monopoly-3d-row", sameEntityId(player.id, currentPlayerId) && "is-current")}
+                  onClick={() => {
+                    const space = state?.board?.find((entry) => entry.index === player.position);
+                    if (space) onSelectSpace(space.id);
+                  }}
+                >
+                  <TokenChip tokenStyle={tokenStyle} className="h-9 w-9 text-xs" />
+                  <span className="monopoly-3d-row-main">
+                    <strong>{player.name}</strong>
+                    <em>Casilla {player.position}</em>
+                  </span>
+                  <Money amount={player.cash} className="monopoly-3d-money" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {activeTab === "assets" && (
+          <div className="monopoly-3d-list">
+            <div className="monopoly-3d-panel-head">
+              <strong>Mis activos</strong>
+              <button type="button" onClick={onOpenTrade}>Mercado</button>
+            </div>
+            {(myPlayer?.properties || []).length === 0 ? (
+              <p className="monopoly-3d-empty">Todavia no tienes propiedades.</p>
+            ) : (
+              (myPlayer.properties || []).map((property) => (
+                <button
+                  key={property.id}
+                  type="button"
+                  className="monopoly-3d-asset"
+                  onClick={() => onSelectSpace(property.id)}
+                >
+                  <span>
+                    <strong>{property.name}</strong>
+                    <em>{spaceTypeLabel(property)} {property.isMortgaged ? "- Hipotecada" : ""}</em>
+                  </span>
+                  <i>{property.hasHotel ? "Hotel" : property.houses ? `${property.houses} casas` : moneyFormatter.format(property.price || 0)}</i>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+
+        {activeTab === "events" && (
+          <div className="monopoly-3d-events">
+            {(events || []).length === 0 ? (
+              <p className="monopoly-3d-empty">Aun no hay eventos visibles.</p>
+            ) : (
+              events.slice(-12).reverse().map((event) => {
+                const summary = describeEvent(event, playersById, boardById);
+                return (
+                  <article key={event.id}>
+                    <strong>{summary.title}</strong>
+                    <p>{summary.body}</p>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}, areThreeDTablePanelPropsEqual);
+
+function areThreeDTablePanelPropsEqual(previous, next) {
+  return (
+    previous.state === next.state &&
+    previous.players === next.players &&
+    previous.currentUserId === next.currentUserId &&
+    previous.currentPlayerId === next.currentPlayerId &&
+    previous.tokenStylesById === next.tokenStylesById &&
+    previous.customTokens === next.customTokens &&
+    previous.myPlayer === next.myPlayer &&
+    previous.selectedSpace === next.selectedSpace &&
+    previous.selectionVersion === next.selectionVersion &&
+    previous.selectedOwner === next.selectedOwner &&
+    previous.selectedVisitors === next.selectedVisitors &&
+    previous.selectedOwnerProperty === next.selectedOwnerProperty &&
+    previous.events === next.events &&
+    previous.playersById === next.playersById &&
+    previous.boardById === next.boardById
   );
 }
 
@@ -5589,7 +6286,18 @@ function WaitingRoom({
   );
 }
 
-export default function MonopolyGame({ token, socket, currentUser, world, presence, messages, connectionStatus, onSendMessage }) {
+export default function MonopolyGame({
+  token,
+  socket,
+  currentUser,
+  world,
+  presence,
+  messages,
+  connectionStatus,
+  onSendMessage,
+  preferredBoardViewMode = "2d",
+  onBoardViewModeChange
+}) {
   const [state, setState] = useState(null);
   const [tableMeta, setTableMeta] = useState(null);
   const [tables, setTables] = useState([]);
@@ -5601,6 +6309,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const [turnTimeSeconds, setTurnTimeSeconds] = useState(60);
   const [bidAmount, setBidAmount] = useState(100);
   const [selectedSpaceId, setSelectedSpaceId] = useState("go");
+  const [threeDInfoSpaceId, setThreeDInfoSpaceId] = useState("");
   const [propertyTrade, setPropertyTrade] = useState(() => ({ ...defaultPropertyTrade }));
   const [cardTrade, setCardTrade] = useState(() => ({ ...defaultCardTrade }));
   const [toasts, setToasts] = useState([]);
@@ -5609,11 +6318,15 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const [diceFaces, setDiceFaces] = useState([1, 6]);
   const [rollingDice, setRollingDice] = useState(false);
   const [modalDismissKey, setModalDismissKey] = useState("");
+  const [cardModalRevealKey, setCardModalRevealKey] = useState("");
   const [displayPositions, setDisplayPositions] = useState(new Map());
   const [cinematic, setCinematic] = useState(null);
   const [customTokens, setCustomTokens] = useState(() => loadCustomTokens());
   const [tokenEditorOpen, setTokenEditorOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState("players");
+  const [threeDSelectionVersion, setThreeDSelectionVersion] = useState(0);
+  const [boardViewMode, setBoardViewMode] = useState(preferredBoardViewMode === "3d" ? "3d" : "2d");
+  const [cameraAutoFollow, setCameraAutoFollow] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
   const [tradeOpen, setTradeOpen] = useState(false);
@@ -5632,15 +6345,41 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const seenEventIdsRef = useRef(new Set());
   const lastRollSignatureRef = useRef("");
   const previousSnapshotRef = useRef(null);
+  const autoEndTurnSignatureRef = useRef("");
   const diceIntervalRef = useRef(null);
+  const diceFocusTimeoutRef = useRef(null);
   const diceTimeoutRef = useRef(null);
+  const diceSequenceStartedAtRef = useRef(0);
+  const diceRollStartedAtRef = useRef(0);
+  const rollingDiceRef = useRef(false);
+  const cinematicRef = useRef(null);
   const cinematicTimeoutsRef = useRef([]);
+  const cardModalRevealTimeoutRef = useRef(null);
   const moneyBurstTimeoutsRef = useRef([]);
   // Bloqueo anti doble-clic / reentrada de acciones (robustez de interaccion).
   const actionLockRef = useRef(false);
   const actionLockTimeoutRef = useRef(null);
+  const diceStateHoldUntilRef = useRef(0);
+  const heldMonopolyStateTimeoutRef = useRef(null);
   const [tick, setTick] = useState(Date.now());
   const currentUserId = Number.isFinite(Number(currentUser.id)) ? Number(currentUser.id) : currentUser.id;
+  const boardViewModeRef = useRef(boardViewMode);
+
+  useEffect(() => {
+    rollingDiceRef.current = rollingDice;
+  }, [rollingDice]);
+
+  useEffect(() => {
+    cinematicRef.current = cinematic;
+  }, [cinematic]);
+
+  useEffect(() => {
+    setBoardViewMode(preferredBoardViewMode === "3d" ? "3d" : "2d");
+  }, [preferredBoardViewMode]);
+
+  useEffect(() => {
+    boardViewModeRef.current = boardViewMode;
+  }, [boardViewMode]);
 
   useEffect(() => {
     if (!world || !token) return undefined;
@@ -5682,16 +6421,34 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       if (payload.tableId && activeTableId && payload.tableId !== activeTableId) {
         return;
       }
-      if (payload.tableId && !activeTableId) {
-        const shouldAutoOpen = payload.table?.seatedPlayers?.some((player) => sameEntityId(player.id, currentUserId));
-        if (!shouldAutoOpen) {
-          return;
+
+      const applyPayload = () => {
+        if (payload.tableId && !activeTableId) {
+          const shouldAutoOpen = payload.table?.seatedPlayers?.some((player) => sameEntityId(player.id, currentUserId));
+          if (!shouldAutoOpen) {
+            return;
+          }
+          setActiveTableId(payload.tableId);
         }
-        setActiveTableId(payload.tableId);
+        setTableMeta(payload.table || null);
+        setState(payload.table?.game || null);
+        setError("");
+      };
+
+      const holdUntil = diceStateHoldUntilRef.current;
+      if (holdUntil && performance.now() < holdUntil && payload.table?.game?.turn?.lastRoll) {
+        if (heldMonopolyStateTimeoutRef.current) {
+          window.clearTimeout(heldMonopolyStateTimeoutRef.current);
+        }
+        heldMonopolyStateTimeoutRef.current = window.setTimeout(() => {
+          heldMonopolyStateTimeoutRef.current = null;
+          diceStateHoldUntilRef.current = 0;
+          applyPayload();
+        }, Math.max(0, holdUntil - performance.now()));
+        return;
       }
-      setTableMeta(payload.table || null);
-      setState(payload.table?.game || null);
-      setError("");
+
+      applyPayload();
     }
 
     function handleMonopolyError(payload) {
@@ -5767,10 +6524,12 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   const myPlayer = playersById.get(currentUserId);
   const myActions = myPlayer?.availableActions || [];
   const board = state?.board || [];
-  const pendingPurchaseSpace = state?.turn?.pendingPurchase ? board.find((space) => space.id === state.turn.pendingPurchase.propertyId) : null;
+  const pendingPurchase = state?.turn?.pendingPurchase || null;
+  const pendingPurchaseSpace = pendingPurchase ? board.find((space) => space.id === pendingPurchase.propertyId) : null;
   const pendingTax = state?.turn?.pendingTax || null;
   const pendingDebt = state?.turn?.pendingDebt || null;
   const pendingCard = state?.turn?.pendingCard || null;
+  const pendingRentClaim = state?.turn?.pendingRentClaim || null;
   const auction = state?.turn?.auction || null;
   const isMyAuctionTurn = sameEntityId(auction?.activeBidderId, currentUserId);
   const canBidAuction = isMyAuctionTurn || myActions.includes("hacerOferta");
@@ -5911,9 +6670,94 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     });
   }
 
+  function clearDiceVisualTimers({ clearFocus = true, clearResult = true } = {}) {
+    if (diceIntervalRef.current) {
+      window.clearInterval(diceIntervalRef.current);
+      diceIntervalRef.current = null;
+    }
+    if (clearFocus && diceFocusTimeoutRef.current) {
+      window.clearTimeout(diceFocusTimeoutRef.current);
+      diceFocusTimeoutRef.current = null;
+    }
+    if (clearResult && diceTimeoutRef.current) {
+      window.clearTimeout(diceTimeoutRef.current);
+      diceTimeoutRef.current = null;
+    }
+  }
+
+  function clearMovementTimers() {
+    cinematicTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    cinematicTimeoutsRef.current = [];
+  }
+
+  function setCinematicPhase(nextCinematic) {
+    cinematicRef.current = nextCinematic;
+    setCinematic(nextCinematic);
+  }
+
+  function setRollingDiceVisual(nextRolling) {
+    rollingDiceRef.current = nextRolling;
+    setRollingDice(nextRolling);
+  }
+
+  function startDiceRollVisual() {
+    if (diceRollStartedAtRef.current) return;
+    if (diceFocusTimeoutRef.current) {
+      window.clearTimeout(diceFocusTimeoutRef.current);
+      diceFocusTimeoutRef.current = null;
+    }
+
+    diceRollStartedAtRef.current = performance.now();
+    if (boardViewModeRef.current !== "3d") {
+      setRollingDiceVisual(true);
+    }
+    window.setTimeout(() => audio.playRandomDice(), 90);
+  }
+
+  function startDiceCameraFocus(playerId, { restart = false, optimistic = false } = {}) {
+    const phase = cinematicRef.current?.phase;
+    const preserveStartedRoll = !restart && Boolean(diceRollStartedAtRef.current);
+    const alreadyInDiceFlow =
+      phase === "cameraFocusDice" ||
+      phase === "diceRolling" ||
+      phase === "dice" ||
+      rollingDiceRef.current;
+
+    if (!restart && alreadyInDiceFlow) {
+      if (!diceRollStartedAtRef.current && !diceFocusTimeoutRef.current) {
+        startDiceRollVisual();
+      }
+      return;
+    }
+
+    clearDiceVisualTimers();
+    clearMovementTimers();
+    if (!preserveStartedRoll || !diceSequenceStartedAtRef.current) {
+      diceSequenceStartedAtRef.current = performance.now();
+    }
+    if (!preserveStartedRoll) {
+      diceRollStartedAtRef.current = 0;
+    }
+    if (!(optimistic && boardViewModeRef.current === "3d")) {
+      setCinematicPhase({ phase: "cameraFocusDice", playerId });
+    }
+    if (!preserveStartedRoll) {
+      startDiceRollVisual();
+    }
+  }
+
+  function stopDiceCinematic() {
+    clearDiceVisualTimers();
+    clearMovementTimers();
+    diceSequenceStartedAtRef.current = 0;
+    diceRollStartedAtRef.current = 0;
+    setRollingDiceVisual(false);
+    setCinematicPhase(null);
+  }
+
   const cameraFocus = useMemo(() => {
     if (!cinematic) return null;
-    if (cinematic.phase === "dice") return null;
+    if (cinematic.phase === "cameraFocusDice" || cinematic.phase === "diceRolling" || cinematic.phase === "dice" || cinematic.phase === "highlightTarget") return null;
     const mover = displayBoardPlayers.find((player) => player.id === cinematic.playerId);
     if (!mover) return null;
     const cell = boardCell(mover.position);
@@ -5947,26 +6791,84 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     null;
   const selectedOwner = selectedSpace?.ownerId ? playersById.get(selectedSpace.ownerId) : null;
   const selectedOwnerProperty = selectedOwner?.properties.find((property) => property.id === selectedSpace?.id) || null;
-  const selectedVisitors = displayBoardPlayers.filter((player) => player.position === selectedSpace?.index && !player.bankrupt);
+  const selectedVisitors = useMemo(
+    () => displayBoardPlayers.filter((player) => player.position === selectedSpace?.index && !player.bankrupt),
+    [displayBoardPlayers, selectedSpace?.index]
+  );
+  const lastRollSignatureForUi = state?.turn?.lastRoll
+    ? `${state.turn.turnNumber}:${state.turn.lastRoll.dice.join("-")}:${state.currentPlayerId}`
+    : "";
+  const rollSequencePending = Boolean(lastRollSignatureForUi && lastRollSignatureRef.current !== lastRollSignatureForUi);
+  const outcomeUiLocked = Boolean(cinematic || rollingDice || rollSequencePending);
+  const visiblePendingPurchaseSpace = outcomeUiLocked ? null : pendingPurchaseSpace;
+  const visiblePendingTax = outcomeUiLocked ? null : pendingTax;
+  const visiblePendingDebt = outcomeUiLocked ? null : pendingDebt;
+  const visiblePendingCard = outcomeUiLocked ? null : pendingCard;
+  const visibleAuction = outcomeUiLocked ? null : auction;
+  const autoEndIsMyTurn = state ? sameEntityId(state.currentPlayerId, currentUserId) : false;
   const prompt = state
-    ? currentPrompt({ state, playersById, currentUserId, pendingPurchaseSpace, pendingTax, pendingDebt, pendingCard, auction })
+    ? currentPrompt({
+        state,
+        playersById,
+        currentUserId,
+        pendingPurchaseSpace: visiblePendingPurchaseSpace,
+        pendingTax: visiblePendingTax,
+        pendingDebt: visiblePendingDebt,
+        pendingCard: visiblePendingCard,
+        auction: visibleAuction
+      })
     : null;
   const mainQuickAction = state
-    ? quickAction({ state, myActions, pendingCard, pendingDebt, pendingPurchaseSpace, auction, pendingTax })
+    ? quickAction({
+        state,
+        myActions,
+        pendingCard: visiblePendingCard,
+        pendingDebt: visiblePendingDebt,
+        pendingPurchaseSpace: visiblePendingPurchaseSpace,
+        auction: visibleAuction,
+        pendingTax: visiblePendingTax
+      })
     : null;
   const boardById = useMemo(() => new Map(board.map((space) => [space.id, space])), [board]);
-  const rawModalState = state ? buildModalState({ state, currentUserId, playersById, boardById }) : null;
+  const rawModalState = state && !outcomeUiLocked ? buildModalState({ state, currentUserId, playersById, boardById }) : null;
   const modalShouldBlock = modalNeedsAction(rawModalState, myActions);
   const modalKey = rawModalState
     ? `${rawModalState.type}:${rawModalState.offer?.id || rawModalState.property?.id || rawModalState.card?.id || rawModalState.auction?.id || rawModalState.debt?.debtorId || state.turn.currentPlayerId}:${state.turn.turnNumber}`
     : "";
-  const activeModal = (cinematic || rollingDice)
+  const cardModalReady = rawModalState?.type !== "card" || boardViewMode !== "3d" || cardModalRevealKey === modalKey;
+  const activeModal = outcomeUiLocked
+    ? null
+    : !cardModalReady
     ? null
     : rawModalState && modalShouldBlock
     ? { ...rawModalState, blocking: true }
     : rawModalState && modalDismissKey !== modalKey
       ? { ...rawModalState, blocking: false }
       : null;
+
+  useEffect(() => {
+    if (cardModalRevealTimeoutRef.current) {
+      window.clearTimeout(cardModalRevealTimeoutRef.current);
+      cardModalRevealTimeoutRef.current = null;
+    }
+
+    if (boardViewMode !== "3d" || outcomeUiLocked || rawModalState?.type !== "card" || !modalKey) {
+      setCardModalRevealKey("");
+      return undefined;
+    }
+
+    cardModalRevealTimeoutRef.current = window.setTimeout(() => {
+      setCardModalRevealKey(modalKey);
+      cardModalRevealTimeoutRef.current = null;
+    }, CARD_MODAL_REVEAL_DELAY_MS);
+
+    return () => {
+      if (cardModalRevealTimeoutRef.current) {
+        window.clearTimeout(cardModalRevealTimeoutRef.current);
+        cardModalRevealTimeoutRef.current = null;
+      }
+    };
+  }, [boardViewMode, modalKey, outcomeUiLocked, rawModalState?.type]);
 
   function scheduleMoneyBursts(bursts, delay = 0) {
     if (!bursts.length) return;
@@ -5994,10 +6896,25 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     setDebtManagerOpen(true);
   }
 
+  function preparePropertyTradeFromSpace(intent, space, owner) {
+    if (!space?.id) return;
+    setPropertyTrade({
+      ...defaultPropertyTrade,
+      intent,
+      propertyId: space.id,
+      sellerId: intent === "buy" ? owner?.id || "" : "",
+      price: suggestedPropertyTradePrice(space)
+    });
+    setTradeOpen(true);
+  }
+
   useEffect(() => {
     return () => {
       if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
+      if (diceFocusTimeoutRef.current) window.clearTimeout(diceFocusTimeoutRef.current);
       if (diceTimeoutRef.current) window.clearTimeout(diceTimeoutRef.current);
+      if (heldMonopolyStateTimeoutRef.current) window.clearTimeout(heldMonopolyStateTimeoutRef.current);
+      if (cardModalRevealTimeoutRef.current) window.clearTimeout(cardModalRevealTimeoutRef.current);
       cinematicTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
       moneyBurstTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     };
@@ -6028,6 +6945,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
 
     const newEvents = state.recentEvents.filter((event) => !seenEventIdsRef.current.has(event.id));
     if (newEvents.length > 0) {
+      const shouldUpdateEventUi = boardViewModeRef.current !== "3d";
       const previous = previousSnapshotRef.current;
       const previousRoll = previous?.turn?.lastRoll;
       const currentRoll = state.turn?.lastRoll;
@@ -6050,18 +6968,29 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
           })()
         : null;
 
-      newEvents.filter(shouldShowEvent).forEach((event, index) => {
-        const delay = eventToastDelay(event, movementTimeline);
-        const addTimeoutId = window.setTimeout(() => {
-          setVisibleRecentEvents((current) => [...current, event].slice(-60));
-          setToasts((current) => [...current, event].slice(-4));
-          const removeTimeoutId = window.setTimeout(() => {
-            setToasts((current) => current.filter((toast) => toast.id !== event.id));
-          }, 4200 + index * 350);
-          moneyBurstTimeoutsRef.current.push(removeTimeoutId);
-        }, Math.max(0, delay));
-        moneyBurstTimeoutsRef.current.push(addTimeoutId);
-      });
+      if (shouldUpdateEventUi) {
+        newEvents.filter(shouldShowEvent).forEach((event, index) => {
+          const delay = eventToastDelay(event, movementTimeline);
+          const addTimeoutId = window.setTimeout(() => {
+            setVisibleRecentEvents((current) => [...current, event].slice(-60));
+            setToasts((current) => [...current, event].slice(-4));
+            const removeTimeoutId = window.setTimeout(() => {
+              setToasts((current) => current.filter((toast) => toast.id !== event.id));
+            }, 4200 + index * 350);
+            moneyBurstTimeoutsRef.current.push(removeTimeoutId);
+          }, Math.max(0, delay));
+          moneyBurstTimeoutsRef.current.push(addTimeoutId);
+        });
+      } else {
+        const visibleEvents = newEvents.filter(shouldShowEvent);
+        if (visibleEvents.length > 0) {
+          const delay = eventToastDelay(visibleEvents[visibleEvents.length - 1], movementTimeline);
+          const addTimeoutId = window.setTimeout(() => {
+            setVisibleRecentEvents((current) => [...current, ...visibleEvents].slice(-60));
+          }, Math.max(0, delay));
+          moneyBurstTimeoutsRef.current.push(addTimeoutId);
+        }
+      }
 
       const burstGroups = new Map();
       newEvents.forEach((event) => {
@@ -6120,10 +7049,8 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       ? buildMovementPath(from, state.turn.lastRoll.total, boardSize)
       : [];
 
-    if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
-    if (diceTimeoutRef.current) window.clearTimeout(diceTimeoutRef.current);
-    cinematicTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
-    cinematicTimeoutsRef.current = [];
+    clearDiceVisualTimers({ clearFocus: false, clearResult: true });
+    clearMovementTimers();
 
     if (moverId && Number.isInteger(from)) {
       setDisplayPositions((current) => {
@@ -6133,67 +7060,126 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       });
     }
 
-    setRollingDice(true);
-    setCinematic({ phase: "dice", playerId: moverId || previous?.currentPlayerId || state.currentPlayerId });
-    // Solo reproducir si todavía no se disparó al clickear (evita duplicado)
-    if (!rollingDice) {
-      audio.playRandomDice();
-    }
-    diceIntervalRef.current = window.setInterval(() => {
-      setDiceFaces([
-        Math.floor(Math.random() * 6) + 1,
-        Math.floor(Math.random() * 6) + 1
-      ]);
-    }, 180);
+    const cinematicPlayerId = moverId || previous?.currentPlayerId || state.currentPlayerId;
+    startDiceCameraFocus(cinematicPlayerId);
 
-    // Timings cinemáticos (más visibles y disfrutables):
-    //  dice phase  : 2400ms  (cara final visible al final, +800ms para reposo antes de mover)
-    //  step delay  : 460ms   (paso entre casillas durante el recorrido)
-    //  settle hold : 1500ms  (zoom en la casilla destino antes de soltar el control)
+    // Timings cinematográficos cortos: la cámara acompaña, pero el turno no se siente retenido.
+    //  camera focus: 520ms
+    //  dice roll   : 1180ms
+    //  step delay  : 330ms
+    //  settle hold : 900ms
+    const now = performance.now();
+    const finishDelay = diceRollStartedAtRef.current
+      ? Math.max(420, CINEMATIC_DICE_ROLL_MS - (now - diceRollStartedAtRef.current))
+      : Math.max(0, CINEMATIC_DICE_FOCUS_MS - (now - diceSequenceStartedAtRef.current)) + CINEMATIC_DICE_ROLL_MS;
+
     diceTimeoutRef.current = window.setTimeout(() => {
-      if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
+      if (!diceRollStartedAtRef.current) {
+        startDiceRollVisual();
+      }
+      clearDiceVisualTimers({ clearFocus: true, clearResult: false });
       setDiceFaces(state.turn.lastRoll.dice);
-      setRollingDice(false);
+      setRollingDiceVisual(false);
+      setCinematicPhase({ phase: "dice", playerId: cinematicPlayerId });
       // Mantener el foco en los dados un instante más para que sí se aprecien
-      const stepStartTimeoutId = window.setTimeout(() => {
-        setCinematic((current) => current ? { ...current, phase: "move" } : current);
+      const highlightTimeoutId = window.setTimeout(() => {
+        setCinematicPhase({ phase: "highlightTarget", playerId: cinematicPlayerId });
 
-        if (moverId && path.length > 0) {
-          path.forEach((position, index) => {
-            const timeoutId = window.setTimeout(() => {
+        const stepStartTimeoutId = window.setTimeout(() => {
+          setCinematicPhase({ phase: "move", playerId: cinematicPlayerId });
+
+          if (moverId && path.length > 0) {
+            path.forEach((position, index) => {
+              const timeoutId = window.setTimeout(() => {
+                setDisplayPositions((current) => {
+                  const next = new Map(current);
+                  next.set(moverId, position);
+                  return next;
+                });
+              }, index * CINEMATIC_STEP_MS);
+              cinematicTimeoutsRef.current.push(timeoutId);
+            });
+
+            const settleTimeoutId = window.setTimeout(() => {
               setDisplayPositions((current) => {
                 const next = new Map(current);
-                next.set(moverId, position);
+                next.set(moverId, to ?? path[path.length - 1]);
                 return next;
               });
-            }, index * CINEMATIC_STEP_MS);
-            cinematicTimeoutsRef.current.push(timeoutId);
-          });
+              setCinematicPhase({ phase: "settle", playerId: moverId });
+            }, path.length * CINEMATIC_STEP_MS + 120);
+            cinematicTimeoutsRef.current.push(settleTimeoutId);
 
-          const settleTimeoutId = window.setTimeout(() => {
-            setDisplayPositions((current) => {
-              const next = new Map(current);
-              next.set(moverId, to ?? path[path.length - 1]);
-              return next;
-            });
-            setCinematic({ phase: "settle", playerId: moverId });
-          }, path.length * CINEMATIC_STEP_MS + 120);
-          cinematicTimeoutsRef.current.push(settleTimeoutId);
-
-          const finishTimeoutId = window.setTimeout(() => {
-            setCinematic(null);
-          }, path.length * CINEMATIC_STEP_MS + CINEMATIC_SETTLE_HOLD_MS);
-          cinematicTimeoutsRef.current.push(finishTimeoutId);
-        } else {
-          const finishTimeoutId = window.setTimeout(() => {
-            setCinematic(null);
-          }, 1100);
-          cinematicTimeoutsRef.current.push(finishTimeoutId);
-        }
+            const finishTimeoutId = window.setTimeout(() => {
+              diceSequenceStartedAtRef.current = 0;
+              diceRollStartedAtRef.current = 0;
+              setCinematicPhase(null);
+            }, path.length * CINEMATIC_STEP_MS + CINEMATIC_SETTLE_HOLD_MS);
+            cinematicTimeoutsRef.current.push(finishTimeoutId);
+          } else {
+            const finishTimeoutId = window.setTimeout(() => {
+              diceSequenceStartedAtRef.current = 0;
+              diceRollStartedAtRef.current = 0;
+              setCinematicPhase(null);
+            }, 1100);
+            cinematicTimeoutsRef.current.push(finishTimeoutId);
+          }
+        }, CINEMATIC_TARGET_HIGHLIGHT_MS);
+        cinematicTimeoutsRef.current.push(stepStartTimeoutId);
       }, CINEMATIC_DICE_REST_MS);
-      cinematicTimeoutsRef.current.push(stepStartTimeoutId);
-    }, CINEMATIC_DICE_PHASE_MS);
+      cinematicTimeoutsRef.current.push(highlightTimeoutId);
+    }, finishDelay);
   }, [state?.turn?.lastRoll, state?.turn?.turnNumber, state?.currentPlayerId]);
+
+  useEffect(() => {
+    if (cinematic || rollingDice) return;
+    if (!autoEndIsMyTurn || !myActions.includes("terminarTurno")) return;
+    if (pendingPurchase || pendingCard || pendingTax || pendingDebt || pendingRentClaim || auction) return;
+    if (state.turn.phase !== "AWAITING_TURN_END") return;
+
+    const rollKey = state.turn.lastRoll?.dice?.join("-") || "no-roll";
+    const signature = `${state.turn.turnNumber}:${rollKey}:${state.currentPlayerId}:${state.turn.phase}:auto-end`;
+    if (autoEndTurnSignatureRef.current === signature) return;
+
+    let cancelled = false;
+    let timeoutId = null;
+    const startedAt = performance.now();
+
+    const tryAutoEndTurn = () => {
+      if (cancelled) return;
+      if (actionLockRef.current) {
+        if (performance.now() - startedAt < 9000) {
+          timeoutId = window.setTimeout(tryAutoEndTurn, 180);
+        }
+        return;
+      }
+
+      autoEndTurnSignatureRef.current = signature;
+      act("terminarTurno", { auto: true });
+    };
+
+    timeoutId = window.setTimeout(tryAutoEndTurn, 260);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [
+    auction,
+    autoEndIsMyTurn,
+    cinematic,
+    myActions,
+    pendingCard,
+    pendingDebt,
+    pendingPurchase,
+    pendingRentClaim,
+    pendingTax,
+    rollingDice,
+    state?.currentPlayerId,
+    state?.turn?.lastRoll,
+    state?.turn?.phase,
+    state?.turn?.turnNumber
+  ]);
 
   useEffect(() => {
     if (state) {
@@ -6371,36 +7357,58 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
     }
 
     if (action === "tirarDados") {
-      if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
-      if (diceTimeoutRef.current) window.clearTimeout(diceTimeoutRef.current);
-      setRollingDice(true);
-      audio.playRandomDice();
-      diceIntervalRef.current = window.setInterval(() => {
-        setDiceFaces([
-          Math.floor(Math.random() * 6) + 1,
-          Math.floor(Math.random() * 6) + 1
-        ]);
-      }, 130);
+      diceStateHoldUntilRef.current = performance.now() + MIN_DICE_STATE_HOLD_MS;
+      startDiceCameraFocus(state?.currentPlayerId || myPlayer?.id || currentUserId, { restart: true, optimistic: true });
     }
 
-    socket.emit("monopoly_action", { worldId: world.id, tableId: activeTableId, action, payload }, (response) => {
-      releaseActionLock();
+    const emitAction = () => socket.emit("monopoly_action", { worldId: world.id, tableId: activeTableId, action, payload }, (response) => {
       if (!response?.ok) {
-        if (diceIntervalRef.current) window.clearInterval(diceIntervalRef.current);
-        setRollingDice(false);
+        releaseActionLock();
+        diceStateHoldUntilRef.current = 0;
+        if (action === "tirarDados") {
+          stopDiceCinematic();
+        }
         setError(response?.error || "No se pudo ejecutar la accion");
         return;
       }
 
-      if (response.state?.tables) {
-        setTables(response.state.tables);
+      const applyResponse = () => {
+        if (heldMonopolyStateTimeoutRef.current) {
+          window.clearTimeout(heldMonopolyStateTimeoutRef.current);
+          heldMonopolyStateTimeoutRef.current = null;
+        }
+        diceStateHoldUntilRef.current = 0;
+        if (response.state?.tables) {
+          setTables(response.state.tables);
+        }
+        if (response.state?.table) {
+          setTableMeta(response.state.table);
+          setState(response.state.table.game || null);
+        }
+        setError("");
+        releaseActionLock();
+      };
+
+      if (action === "tirarDados") {
+        const delay = Math.max(0, diceStateHoldUntilRef.current - performance.now());
+        if (delay > 0) {
+          const timeoutId = window.setTimeout(applyResponse, delay);
+          cinematicTimeoutsRef.current.push(timeoutId);
+          return;
+        }
       }
-      if (response.state?.table) {
-        setTableMeta(response.state.table);
-        setState(response.state.table.game || null);
-      }
-      setError("");
+
+      applyResponse();
     });
+
+    if (action === "tirarDados" && typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(emitAction, 0);
+      });
+      return;
+    }
+
+    emitAction();
   }
 
   function leaveTable() {
@@ -6539,10 +7547,91 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
   }
 
   const isMyTurn = sameEntityId(state.currentPlayerId, currentUserId);
+  const showThreeDSpaceCard = Boolean(
+    threeDInfoSpaceId
+  );
+  const threeDInfoSpace = board.find((space) => space.id === threeDInfoSpaceId) || null;
+  const threeDInfoOwner = threeDInfoSpace?.ownerId ? playersById.get(threeDInfoSpace.ownerId) : null;
+  const threeDInfoOwnerDisplay = displayBoardPlayers.find((player) => sameEntityId(player.id, threeDInfoOwner?.id));
+  const threeDInfoOwnerProperty = threeDInfoOwner?.properties.find((property) => property.id === threeDInfoSpace?.id) || null;
+  const threeDInfoVisitors = displayBoardPlayers.filter((player) => player.position === threeDInfoSpace?.index && !player.bankrupt);
+  const threeDSelectedSpaceModel = showThreeDSpaceCard
+    ? buildThreeDSelectedSpaceModel({
+      space: threeDInfoSpace,
+      owner: threeDInfoOwner,
+      ownerProperty: threeDInfoOwnerProperty,
+      visitors: threeDInfoVisitors,
+      board
+    })
+    : null;
+  const selectedSpaceActions3D = buildThreeDSpaceActions({
+    spaceModel: threeDSelectedSpaceModel,
+    visiblePendingPurchaseSpace,
+    isMyTurn,
+    myActions,
+    currentUserId
+  });
+  const selectedSpaceInfo3D = buildThreeDSelectedSpaceInfo(
+    threeDSelectedSpaceModel,
+    selectedSpaceActions3D,
+    threeDInfoOwnerDisplay
+  );
+
+  function handleThreeDSelectionAction(action) {
+    if (!action) return;
+    debugMonopoly3DSelection("action", {
+      action,
+      space: threeDSelectedSpaceModel?.space || null,
+      property: threeDSelectedSpaceModel?.property || null,
+      owner: threeDSelectedSpaceModel?.owner || null,
+      info: selectedSpaceInfo3D
+    });
+    if (action.type === "close") {
+      setThreeDInfoSpaceId("");
+      return;
+    }
+    if (action.type === "trade") {
+      preparePropertyTradeFromSpace(action.intent, threeDInfoSpace, threeDInfoOwner);
+      return;
+    }
+    if (action.type === "engine" && action.actionName) {
+      act(action.actionName, action.payload || {});
+    }
+  }
+
+  function selectThreeDSpace(spaceId, source = "board") {
+    const nextSpace = board.find((space) => space.id === spaceId) || null;
+    const nextOwner = nextSpace?.ownerId ? playersById.get(nextSpace.ownerId) : null;
+    const nextOwnerProperty = nextOwner?.properties.find((property) => property.id === nextSpace?.id) || null;
+    const nextVisitors = displayBoardPlayers.filter((player) => player.position === nextSpace?.index && !player.bankrupt);
+    const nextModel = buildThreeDSelectedSpaceModel({
+      space: nextSpace,
+      owner: nextOwner,
+      ownerProperty: nextOwnerProperty,
+      visitors: nextVisitors,
+      board
+    });
+
+    debugMonopoly3DSelection("select", {
+      source,
+      spaceId,
+      space: nextSpace,
+      owner: nextOwner,
+      ownerProperty: nextOwnerProperty,
+      normalizedProperty: nextModel?.property || null
+    });
+
+    setSelectedSpaceId(spaceId);
+    setThreeDInfoSpaceId(spaceId);
+    setBottomTab("space");
+    setThreeDSelectionVersion((current) => current + 1);
+  }
 
   return (
     <GameLayout>
-      <EventToasts toasts={toasts} onDismiss={dismissToast} playersById={playersById} boardById={boardById} />
+      {boardViewMode !== "3d" && (
+        <EventToasts toasts={toasts} onDismiss={dismissToast} playersById={playersById} boardById={boardById} />
+      )}
 
       <TopHud
         tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
@@ -6554,6 +7643,13 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         onToken={() => setTokenEditorOpen(true)}
         onRules={() => setRulesOpen(true)}
         onMenu={() => setMenuOpen(true)}
+        boardViewMode={boardViewMode}
+        onBoardViewModeChange={(nextMode) => {
+          setBoardViewMode(nextMode);
+          onBoardViewModeChange?.(nextMode);
+        }}
+        cameraAutoFollow={cameraAutoFollow}
+        onCameraAutoFollowChange={setCameraAutoFollow}
         onLeave={leaveTable}
         onSurrender={surrenderGame}
         onCloseTable={closeTable}
@@ -6570,63 +7666,116 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
       )}
 
       <main className="monopoly-game-main">
-        <BoardArea
-          board={board}
-          selectedSpace={selectedSpace}
-          coloredPlayersById={coloredPlayersById}
-          playersById={playersById}
-          displayBoardPlayers={displayBoardPlayers}
-          state={state}
-          tokenStylesById={tokenStylesById}
-          moneyBursts={moneyBursts}
-          cameraFocus={cameraFocus}
-          cinematic={cinematic}
-          prompt={prompt}
-          diceFaces={diceFaces}
-          rollingDice={rollingDice}
-          myPlayer={myPlayer}
-          isMyTurn={isMyTurn}
-          myActions={myActions}
-          pendingPurchaseSpace={pendingPurchaseSpace}
-          pendingTax={pendingTax}
-          pendingDebt={pendingDebt}
-          pendingCard={pendingCard}
-          auction={auction}
-          bidAmount={bidAmount}
-          setBidAmount={setBidAmount}
-          canBidAuction={canBidAuction}
-          canPassAuction={canPassAuction}
-          onAction={act}
-          onManageDebt={() => openDebtManager()}
-          onSelect={setSelectedSpaceId}
-        />
+        {boardViewMode === "3d" ? (
+          <Monopoly3DView
+            currentUser={currentUser}
+            gameState={state}
+            players={displayBoardPlayers}
+            currentPlayerId={state.currentPlayerId}
+            selectedSpaceId={selectedSpace?.id}
+            onSelectSpaceId={(spaceId) => selectThreeDSpace(spaceId, "board")}
+            rollingDice={rollingDice}
+            diceFaces={diceFaces}
+            cinematic={cinematic}
+            moneyBursts={moneyBursts}
+            pendingCard={visiblePendingCard}
+            selectedSpaceInfo={selectedSpaceInfo3D}
+            cameraFocus={cameraAutoFollow ? cameraFocus : null}
+            cameraAutoFollow={cameraAutoFollow}
+            canRollDice={isMyTurn && myActions.includes("tirarDados") && !rollingDice && !cinematic}
+            canEndTurn={isMyTurn && myActions.includes("terminarTurno") && !rollingDice && !cinematic}
+            onRollDice={() => act("tirarDados")}
+            onEndTurn={() => act("terminarTurno")}
+            onSelectionAction={handleThreeDSelectionAction}
+            tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
+            statusTitle={prompt?.title || prompt?.eyebrow || ""}
+            statusBody={prompt?.body || ""}
+            endTurnLabel={hasPendingDoubleReroll(state) ? "Volver a tirar" : "Cerrar turno"}
+            sidePanel={(
+              <ThreeDTablePanel
+                state={state}
+                players={state.players}
+                currentUserId={currentUserId}
+                currentPlayerId={state.currentPlayerId}
+                tokenStylesById={tokenStylesById}
+                customTokens={customTokens}
+                myPlayer={myPlayer}
+                selectedSpace={selectedSpace}
+                selectionVersion={threeDSelectionVersion}
+                selectedOwner={selectedOwner}
+                selectedVisitors={selectedVisitors}
+                selectedOwnerProperty={selectedOwnerProperty}
+                events={visibleRecentEvents}
+                playersById={playersById}
+                boardById={boardById}
+                onSelectSpace={(spaceId) => selectThreeDSpace(spaceId, "side-panel")}
+                onManage={(action, propertyId) => act(action, { propertyId })}
+                onOpenTrade={() => setTradeOpen(true)}
+                onPrepareTrade={preparePropertyTradeFromSpace}
+              />
+            )}
+          />
+        ) : (
+          <BoardArea
+            board={board}
+            selectedSpace={selectedSpace}
+            coloredPlayersById={coloredPlayersById}
+            playersById={playersById}
+            displayBoardPlayers={displayBoardPlayers}
+            state={state}
+            tokenStylesById={tokenStylesById}
+            moneyBursts={moneyBursts}
+            cameraFocus={cameraAutoFollow ? cameraFocus : null}
+            cinematic={cinematic}
+            prompt={prompt}
+            diceFaces={diceFaces}
+            rollingDice={rollingDice}
+            myPlayer={myPlayer}
+            isMyTurn={isMyTurn}
+            myActions={myActions}
+            pendingPurchaseSpace={visiblePendingPurchaseSpace}
+            pendingTax={visiblePendingTax}
+            pendingDebt={visiblePendingDebt}
+            pendingCard={visiblePendingCard}
+            auction={visibleAuction}
+            bidAmount={bidAmount}
+            setBidAmount={setBidAmount}
+            canBidAuction={canBidAuction}
+            canPassAuction={canPassAuction}
+            onAction={act}
+            onManageDebt={() => openDebtManager()}
+            onSelect={setSelectedSpaceId}
+          />
+        )}
       </main>
 
-      <BottomDock
-        activeTab={bottomTab}
-        onTabChange={setBottomTab}
-        players={state.players}
-        currentUserId={currentUserId}
-        currentPlayerId={state.currentPlayerId}
-        tokenStylesById={tokenStylesById}
-        customTokens={customTokens}
-        myPlayer={myPlayer}
-        selectedSpace={selectedSpace}
-        selectedOwner={selectedOwner}
-        selectedVisitors={selectedVisitors}
-        selectedOwnerProperty={selectedOwnerProperty}
-        onSelectSpace={(spaceId) => {
-          setSelectedSpaceId(spaceId);
-          setBottomTab("space");
-        }}
-        onManage={(action, propertyId) => act(action, { propertyId })}
-        events={visibleRecentEvents}
-        playersById={playersById}
-        boardById={boardById}
-        onOpenTrade={() => setTradeOpen(true)}
-        onOpenRanking={() => setRankingOpen(true)}
-        onToggleChat={() => setChatOpen((current) => !current)}
-      />
+      {boardViewMode !== "3d" && (
+        <BottomDock
+          activeTab={bottomTab}
+          onTabChange={setBottomTab}
+          players={state.players}
+          currentUserId={currentUserId}
+          currentPlayerId={state.currentPlayerId}
+          tokenStylesById={tokenStylesById}
+          customTokens={customTokens}
+          myPlayer={myPlayer}
+          selectedSpace={selectedSpace}
+          selectedOwner={selectedOwner}
+          selectedVisitors={selectedVisitors}
+          selectedOwnerProperty={selectedOwnerProperty}
+          onSelectSpace={(spaceId) => {
+            setSelectedSpaceId(spaceId);
+            setBottomTab("space");
+          }}
+          onManage={(action, propertyId) => act(action, { propertyId })}
+          events={visibleRecentEvents}
+          playersById={playersById}
+          boardById={boardById}
+          onOpenTrade={() => setTradeOpen(true)}
+          onOpenRanking={() => setRankingOpen(true)}
+          onToggleChat={() => setChatOpen((current) => !current)}
+        />
+      )}
 
       <PropertyModal
         modalState={debtManagerOpen ? null : activeModal}
@@ -6716,7 +7865,7 @@ export default function MonopolyGame({ token, socket, currentUser, world, presen
         onReset={resetMyToken}
       />
 
-      {(rollingDice || cinematic) && (
+      {boardViewMode !== "3d" && (rollingDice || cinematic) && (
         <div className="monopoly-anim-veil" aria-hidden="true" />
       )}
     </GameLayout>
