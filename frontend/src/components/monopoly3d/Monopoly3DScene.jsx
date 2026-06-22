@@ -17,7 +17,7 @@ import {
 } from "./Board3D";
 import { animateSceneEffects3D, createSceneEffects3D, syncMoneyBursts3D } from "./SceneEffects3D";
 
-const PRE_MOVE_STAGES = new Set(["cameraFocusDice", "diceRolling", "diceResult", "highlightDestination"]);
+const PRE_MOVE_STAGES = new Set(["cameraFocusDice", "diceRolling", "diceResult"]);
 const HOME_CAMERA_POSITION = { x: 12.2, y: 15.2, z: 14.4 };
 
 function dampVector3(current, target, lambda, delta) {
@@ -197,7 +197,7 @@ export default function Monopoly3DScene({
       localDiceRollRef.current = {
         active: true,
         startedAt: now,
-        maxUntil: now + 8500
+        maxUntil: now + 4200
       };
       setSequenceStage("cameraFocusDice");
       dice.userData.hovered = false;
@@ -333,6 +333,7 @@ export default function Monopoly3DScene({
         localRoll.active &&
         (
           ["dice", "highlightTarget", "move", "settle"].includes(globalPhase) ||
+          (!visualState.rollingDice && !globalPhase && !canRollDiceRef.current && performance.now() - localRoll.startedAt > 900) ||
           performance.now() > localRoll.maxUntil
         )
       ) {
@@ -341,7 +342,6 @@ export default function Monopoly3DScene({
       const rollingDiceVisual = visualState.rollingDice || localDiceRollRef.current.active || globalPhase === "diceRolling";
       const focusingDice = globalPhase === "cameraFocusDice";
       const showingDiceResult = globalPhase === "dice" && !rollingDiceVisual;
-      const highlightingTarget = globalPhase === "highlightTarget";
       const cameraReadyForDice =
         camera.position.distanceTo(dicePosition) < 0.62 &&
         controls.target.distanceTo(diceTarget) < 0.3;
@@ -366,23 +366,15 @@ export default function Monopoly3DScene({
         }
       } else if (showingDiceResult && ["cameraFocusDice", "diceRolling"].includes(sequence.stage)) {
         setSequenceStage("diceResult");
-      } else if (highlightingTarget && Number.isInteger(rawDestinationIndex)) {
-        setSequenceStage("highlightDestination");
       } else if (sequence.stage === "diceResult" && sequence.stageTime > 0.28) {
-        if (globalPhase === "move") {
+        if (globalPhase === "move" || globalPhase === "highlightTarget") {
           setSequenceStage("tokenMoving");
         } else if (globalPhase === "settle") {
           setSequenceStage("settle");
         } else if (!globalPhase) {
           setSequenceStage("idle");
         }
-      } else if (sequence.stage === "highlightDestination" && sequence.stageTime > 0.24) {
-        if (globalPhase === "move") {
-          setSequenceStage("tokenMoving");
-        } else if (globalPhase === "settle") {
-          setSequenceStage("settle");
-        }
-      } else if (globalPhase === "move" && !PRE_MOVE_STAGES.has(sequence.stage)) {
+      } else if (["move", "highlightTarget"].includes(globalPhase) && !PRE_MOVE_STAGES.has(sequence.stage)) {
         setSequenceStage("tokenMoving");
       } else if (globalPhase === "settle" && sequence.stage !== "settle") {
         setSequenceStage("settle");
@@ -390,7 +382,7 @@ export default function Monopoly3DScene({
         setSequenceStage("idle");
       }
 
-      const revealDestination = ["highlightDestination", "tokenMoving", "settle"].includes(sequenceRef.current.stage);
+      const revealDestination = ["tokenMoving", "settle"].includes(sequenceRef.current.stage);
       const destinationIndex = revealDestination ? rawDestinationIndex : null;
 
       markSelectedTile(model, selectedRef.current, {
@@ -424,11 +416,6 @@ export default function Monopoly3DScene({
       } else if (["cameraFocusDice", "diceRolling", "diceResult"].includes(sequenceRef.current.stage)) {
         desiredTarget.lerp(diceTarget, 0.45);
         desiredPosition.set(6.9, 8.8, 7.4);
-      } else if (sequenceRef.current.stage === "highlightDestination" && Number.isInteger(rawDestinationIndex)) {
-        const tileGroup = model.tileGroups.get(rawDestinationIndex);
-        const focusPosition = tileGroup?.position || new THREE.Vector3();
-        desiredTarget.set(focusPosition.x, 0.34, focusPosition.z);
-        desiredPosition.set(focusPosition.x + 8.6, 9.6, focusPosition.z + 8.6);
       } else if (visualState.cinematic && moverPiece) {
         const cinematicOffset = visualState.cinematic.phase === "settle" ? 7.2 : 8.4;
         desiredTarget.set(moverPiece.position.x, 0.42, moverPiece.position.z);
@@ -447,15 +434,11 @@ export default function Monopoly3DScene({
 
       const cameraLerpSpeed = sequenceRef.current.stage === "cameraFocusDice"
         ? 3.15
-        : sequenceRef.current.stage === "highlightDestination"
-        ? 3.35
         : autoCamera
           ? 3.05
           : 1.55;
       const targetLerpSpeed = sequenceRef.current.stage === "cameraFocusDice"
         ? 3.45
-        : sequenceRef.current.stage === "highlightDestination"
-        ? 3.6
         : autoCamera
           ? 3.35
           : 1.75;

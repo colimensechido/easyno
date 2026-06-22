@@ -18,7 +18,6 @@ import {
   LogOut,
   Map as MapIcon,
   MessageCircle,
-  Music2,
   PauseCircle,
   PlayCircle,
   PlusCircle,
@@ -26,24 +25,23 @@ import {
   Scale,
   Send,
   ShieldAlert,
-  SkipBack,
-  SkipForward,
   Sparkles,
   TimerReset,
   TrainFront,
   Trophy,
   Users,
-  Volume2,
-  VolumeX,
   Wallet,
   X
 } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 // Lobby rediseñado: pantalla principal inmersiva + flujos Unirse/Crear.
-import { audio, radioTracks } from "../audio";
-import Monopoly3DView from "./monopoly3d/Monopoly3DView";
+import { audio } from "../audio";
+import { useRadio } from "../radio/RadioContext";
 import { Dice } from "./shared";
+
+const loadMonopoly3DView = () => import("./monopoly3d/Monopoly3DView");
+const Monopoly3DView = lazy(loadMonopoly3DView);
 
 const actionAudioMap = {
   tirarDados: null, // se reproduce en la cinemática para sincronizar
@@ -178,6 +176,7 @@ const tokenColorChoices = [];
 const tokenFigureColorChoices = [];
 
 const TOKEN_STORAGE_KEY = "monopoly-custom-tokens-v1";
+const MONOPOLY_GAME_KEY = "MONOPOLY";
 
 function normalizeTokenColor(value) {
   return String(value || "").trim().toLowerCase();
@@ -216,6 +215,48 @@ function resolveTokenStyle(player, customTokens) {
   const bg = custom?.bg ?? palette.bg;
   const ring = custom?.ring ?? palette.ring;
   return { label, icon: "", bg, ring, fg: "#ffffff", shape: "circle", emoji: false };
+}
+
+function buildUniqueTokenStyleMap(players = [], customTokens = {}) {
+  const usedColors = new Set();
+  const map = {};
+
+  (players || []).forEach((player, index) => {
+    if (!player) return;
+
+    const playerId = player.id ?? player.userId;
+    if (!playerId) return;
+
+    const baseStyle = resolveTokenStyle({
+      ...player,
+      colorIndex: player.colorIndex ?? index
+    }, customTokens);
+    const baseColor = normalizeTokenColor(baseStyle.bg);
+
+    if (baseColor && !usedColors.has(baseColor)) {
+      usedColors.add(baseColor);
+      map[playerId] = baseStyle;
+      return;
+    }
+
+    const fallbackPreset = [...tokenColorPresets, ...tokenPalette].find((option) => {
+      const colorKey = normalizeTokenColor(option?.bg);
+      return colorKey && !usedColors.has(colorKey);
+    });
+
+    const nextStyle = fallbackPreset
+      ? { ...baseStyle, bg: fallbackPreset.bg, ring: fallbackPreset.ring || baseStyle.ring }
+      : baseStyle;
+    const nextColor = normalizeTokenColor(nextStyle.bg);
+
+    if (nextColor) {
+      usedColors.add(nextColor);
+    }
+
+    map[playerId] = nextStyle;
+  });
+
+  return map;
 }
 
 const previewBoard = [
@@ -532,23 +573,6 @@ const defaultCardTrade = Object.freeze({
 
 function Money({ amount, className = "" }) {
   return <span className={className}>{moneyFormatter.format(amount || 0)}</span>;
-}
-
-function readStoredNumber(key, fallback) {
-  try {
-    const value = Number(localStorage.getItem(key));
-    return Number.isFinite(value) ? value : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStoredValue(key, value) {
-  try {
-    localStorage.setItem(key, String(value));
-  } catch {
-    // noop
-  }
 }
 
 function auctionMinimumBid(auction) {
@@ -1385,9 +1409,15 @@ function eventToastDelay(event, movementTimeline) {
 }
 
 function eventSoundDelay(event, movementTimeline) {
-  if (!movementTimeline) return 0;
   if (event?.type === "CARD_DRAWN") {
-    return CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + CINEMATIC_TARGET_HIGHLIGHT_MS + movementTimeline.path.length * CINEMATIC_STEP_MS + 320;
+    const movementDelay = movementTimeline
+      ? CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + CINEMATIC_TARGET_HIGHLIGHT_MS + movementTimeline.path.length * CINEMATIC_STEP_MS
+      : 0;
+    return movementDelay + 360;
+  }
+  if (!movementTimeline) return 0;
+  if (event?.type === "PLAYER_SENT_TO_JAIL") {
+    return CINEMATIC_DICE_PHASE_MS + CINEMATIC_DICE_REST_MS + CINEMATIC_TARGET_HIGHLIGHT_MS + movementTimeline.path.length * CINEMATIC_STEP_MS + 180;
   }
   return eventBurstDelay(event, movementTimeline);
 }
@@ -1628,6 +1658,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
   const ownerTokenStyle = owner ? tokenStyles[owner.id] || resolveTokenStyle(owner, {}) : null;
   const isCardSpace = space.type === "CASUALIDAD" || space.type === "ARCA_COMUNAL";
   const isTaxSpace = space.type === "IMPUESTO";
+  const isGoSpace = space.type === "SALIDA";
   const cardDeckName = space.type === "CASUALIDAD" ? "Casualidad" : "Arca comunal";
   const cardDeckCode = space.type === "CASUALIDAD" ? "?" : "!";
   const rentLabel = isTaxSpace ? "" : boardBaseRentLabel(space);
@@ -1660,6 +1691,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
         `side-${cell.side}`,
         owner && "owned",
         cell.corner && "corner",
+        isGoSpace && "go-space",
         isCardSpace && "card-space",
         isTaxSpace && "tax-space",
         space.type === "CASUALIDAD" && "deck-chance",
@@ -1683,7 +1715,13 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
         </div>
 
         <div className="monopoly-space-copy">
-          {isCardSpace ? (
+          {isGoSpace ? (
+            <div className="monopoly-go-space-art" aria-hidden="true">
+              <span className="go-mini-arrow">➜</span>
+              <strong>SALIDA</strong>
+              <em>Cobra $200</em>
+            </div>
+          ) : isCardSpace ? (
             <div className="monopoly-card-space-art" aria-hidden="true">
               <span className="card-mini-corner top">{cardDeckCode}</span>
               <span className="card-mini-corner bottom">{cardDeckCode}</span>
@@ -3068,109 +3106,19 @@ function GameLayout({ children }) {
   return <section className="monopoly-game-layout">{children}</section>;
 }
 
-function MonopolyRadio() {
-  const tracks = radioTracks || [];
-  const audioRef = useRef(null);
-  const [trackIndex, setTrackIndex] = useState(() => {
-    const stored = readStoredNumber("monopoly-radio-track", 0);
-    return tracks.length ? Math.min(Math.max(0, stored), tracks.length - 1) : 0;
-  });
-  const [playing, setPlaying] = useState(false);
-  const [volume, setVolume] = useState(() => Math.min(1, Math.max(0, readStoredNumber("monopoly-radio-volume", 0.34))));
-  const [muted, setMuted] = useState(audio.isMuted());
-  const [expanded, setExpanded] = useState(false);
-  const currentTrack = tracks[trackIndex] || null;
-
-  useEffect(() => audio.subscribe(setMuted), []);
-
-  useEffect(() => {
-    if (!tracks.length) return;
-    writeStoredValue("monopoly-radio-track", trackIndex);
-  }, [trackIndex, tracks.length]);
-
-  useEffect(() => {
-    writeStoredValue("monopoly-radio-volume", volume);
-    if (audioRef.current) {
-      audioRef.current.volume = volume;
-    }
-  }, [volume]);
-
-  useEffect(() => {
-    if (!audioRef.current) return;
-    audioRef.current.muted = muted;
-  }, [muted]);
-
-  useEffect(() => {
-    const node = audioRef.current;
-    if (!node) return;
-    node.volume = volume;
-    node.muted = muted;
-    if (playing) {
-      const playPromise = node.play();
-      if (playPromise && typeof playPromise.catch === "function") {
-        playPromise.catch(() => setPlaying(false));
-      }
-    } else {
-      node.pause();
-    }
-  }, [playing, trackIndex, volume, muted]);
-
-  if (!tracks.length || !currentTrack) return null;
-
-  function moveTrack(direction) {
-    setTrackIndex((current) => (current + direction + tracks.length) % tracks.length);
-  }
+function MonopolyViewLoading({ mode = "3d" }) {
+  const isThreeD = mode === "3d";
 
   return (
-    <section className={cx("monopoly-radio", playing && "is-playing", expanded && "expanded")} aria-label="Radio Monopoly">
-      <audio
-        ref={audioRef}
-        src={currentTrack.url}
-        preload="metadata"
-        onEnded={() => moveTrack(1)}
-      />
-      <div className="monopoly-radio-main">
-        <button
-          type="button"
-          className="monopoly-radio-play"
-          onClick={() => setPlaying((current) => !current)}
-          title={playing ? "Pausar radio" : "Reproducir radio"}
-        >
-          {playing ? <PauseCircle size={20} /> : <PlayCircle size={20} />}
-        </button>
-        <button
-          type="button"
-          className="monopoly-radio-title"
-          onClick={() => setExpanded((current) => !current)}
-          title={currentTrack.title}
-        >
-          <Music2 size={15} />
-          <span>
-            <em>Radio Monopoly</em>
-            <strong>{currentTrack.title}</strong>
-          </span>
-        </button>
+    <section className="monopoly-view-loading" role="status" aria-live="polite">
+      <div className="monopoly-view-loading-mark">
+        {isThreeD ? <Cuboid size={34} /> : <MapIcon size={34} />}
       </div>
-      <div className="monopoly-radio-controls">
-        <button type="button" onClick={() => moveTrack(-1)} title="Cancion anterior">
-          <SkipBack size={15} />
-        </button>
-        <button type="button" onClick={() => moveTrack(1)} title="Siguiente cancion">
-          <SkipForward size={15} />
-        </button>
-        <span className="monopoly-radio-volume" title={muted ? "Audio silenciado" : "Volumen de radio"}>
-          {muted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-          <input
-            type="range"
-            min="0"
-            max="1"
-            step="0.01"
-            value={volume}
-            onChange={(event) => setVolume(Number(event.target.value))}
-            aria-label="Volumen de Radio Monopoly"
-          />
-        </span>
+      <div>
+        <p>{isThreeD ? "Preparando mesa 3D" : "Abriendo tablero legacy"}</p>
+        <span>{isThreeD ? "Cargando escena, camara y tablero." : "Cargando vista clasica 2D."}</span>
       </div>
+      <i aria-hidden="true" />
     </section>
   );
 }
@@ -3238,27 +3186,26 @@ function TopHud({
         </div>
       </div>
 
-      <MonopolyRadio />
-
       <div className="monopoly-hud-actions">
-        <div className="monopoly-hud-view-switch" aria-label="Cambiar vista del tablero">
-          <button
-            type="button"
-            className={cx("monopoly-hud-view-button", boardViewMode === "2d" && "is-active")}
-            onClick={() => onBoardViewModeChange?.("2d")}
-            title="Vista clasica"
-          >
-            <MapIcon size={16} />
-            2D
-          </button>
+        <div className="monopoly-hud-view-switch monopoly-hud-view-switch--3d-first" aria-label="Cambiar vista del tablero">
           <button
             type="button"
             className={cx("monopoly-hud-view-button", boardViewMode === "3d" && "is-active")}
             onClick={() => onBoardViewModeChange?.("3d")}
-            title="Vista 3D"
+            title="Vista 3D principal"
           >
             <Cuboid size={16} />
             3D
+          </button>
+          <button
+            type="button"
+            className={cx("monopoly-hud-view-button monopoly-hud-view-button--legacy", boardViewMode === "2d" && "is-active")}
+            onClick={() => onBoardViewModeChange?.("2d")}
+            title="Vista clasica legacy"
+            aria-label="Vista clasica legacy"
+          >
+            <MapIcon size={16} />
+            <span>Legacy</span>
           </button>
         </div>
         <button
@@ -3468,6 +3415,8 @@ function BoardArea({
     </section>
   );
 }
+
+const LegacyBoardArea = memo(BoardArea);
 
 function ThreeDBoardActionPanel({
   prompt,
@@ -4101,35 +4050,207 @@ function areThreeDTablePanelPropsEqual(previous, next) {
   );
 }
 
-function VictoryCeremony({ state, playersById, currentUserId, onExit }) {
+function VictoryCeremony({ state, playersById, boardById, currentUserId, onExit }) {
   if (!state?.winnerId) return null;
 
   const winner = playersById.get(state.winnerId);
   const isWinner = sameEntityId(state.winnerId, currentUserId);
-  const podium = (state.ranking || []).slice(0, 3);
+  const finalStats = state.finalStats || null;
+  const statRowsById = new Map((finalStats?.players || []).map((row) => [row.playerId, row]));
+  const finalRows = (state.ranking?.length ? state.ranking : finalStats?.players?.length ? finalStats.players : state.players || [])
+    .map((entry, index) => {
+      const playerId = entry.playerId ?? entry.id;
+      const player = playersById.get(playerId) || entry;
+      const statsRow = statRowsById.get(playerId) || {};
+      const properties = player?.properties || [];
+      const propertyValue = properties.reduce((total, property) => (
+        total + (property.price || (property.mortgageValue ? property.mortgageValue * 2 : 0))
+      ), 0);
+      const cash = Number(player?.cash ?? entry.cash ?? 0) || 0;
+      const wealth = Number(entry.wealth ?? player?.wealth ?? cash + propertyValue) || 0;
+      const houses = properties.reduce((total, property) => total + (Number(property.houses) || 0), 0);
+      const hotels = properties.filter((property) => property.hasHotel).length;
+      const mortgaged = properties.filter((property) => property.isMortgaged).length;
+
+      return {
+        id: playerId ?? index,
+        name: entry.name || player?.name || `Jugador ${index + 1}`,
+        cash,
+        wealth,
+        propertyValue,
+        properties: properties.length,
+        houses,
+        hotels,
+        mortgaged,
+        bankrupt: Boolean(player?.bankrupt),
+        moneyReceived: statsRow.moneyReceived || 0,
+        moneyPaid: statsRow.moneyPaid || 0,
+        rentPaid: statsRow.rentPaid || 0,
+        rentReceived: statsRow.rentReceived || 0,
+        cardsDrawn: statsRow.cardsDrawn || 0,
+        jailVisits: statsRow.jailVisits || 0,
+        trades: statsRow.trades || 0
+      };
+    })
+    .sort((left, right) => right.wealth - left.wealth);
+  const podium = finalRows.slice(0, 3);
+  const winnerRow = finalRows.find((row) => sameEntityId(row.id, state.winnerId)) || podium[0] || null;
+  const maxWealth = Math.max(1, ...finalRows.map((row) => Math.max(0, row.wealth)));
+  const totalWealth = finalRows.reduce((total, row) => total + Math.max(0, row.wealth), 0);
+  const totalProperties = finalRows.reduce((total, row) => total + row.properties, 0);
+  const bankruptCount = finalRows.filter((row) => row.bankrupt).length;
+  const turnCount = Number(finalStats?.totals?.turns || state.turn?.turnNumber || 0);
+  const moneyMoved = Number(finalStats?.totals?.moneyMoved || 0);
+  const highlightRows = finalStats?.highlights || [];
+  const timelineRows = (finalStats?.timeline || state.recentEvents || []).slice(-8).reverse();
+  const statCards = [
+    { label: "Turnos", value: turnCount || "--" },
+    { label: "Patrimonio ganador", value: <Money amount={winnerRow?.wealth || 0} /> },
+    { label: "Dinero movido", value: <Money amount={moneyMoved} /> },
+    { label: "Propiedades", value: totalProperties },
+    { label: "Subastas", value: finalStats?.totals?.auctions || 0 },
+    { label: "Tratos", value: finalStats?.totals?.trades || 0 },
+    { label: "Cartas", value: finalStats?.totals?.cardsDrawn || 0 },
+    { label: "Jugadores fuera", value: bankruptCount }
+  ];
 
   return (
     <div className="monopoly-victory-overlay" role="dialog" aria-modal="true" aria-label="Resultado de la partida">
       <section className={cx("monopoly-victory-card", isWinner ? "is-winner" : "is-defeat")}>
-        <div className="monopoly-victory-crown">
-          {isWinner ? <Crown size={42} /> : <Trophy size={42} />}
+        <div className="monopoly-victory-hero">
+          <div className="monopoly-victory-crown">
+            {isWinner ? <Crown size={44} /> : <Trophy size={44} />}
+          </div>
+          <div className="monopoly-victory-title">
+            <p className="monopoly-victory-kicker">{isWinner ? "Victoria total" : "Partida terminada"}</p>
+            <h2>{winner?.name || "Jugador"} domina el tablero</h2>
+            <p className="monopoly-victory-copy">
+              {isWinner
+                ? "Cerraste la mesa con el mejor patrimonio y el control final de la partida."
+                : "Resultado final registrado. Aqui esta el cierre completo de la mesa."}
+            </p>
+          </div>
         </div>
-        <p className="monopoly-victory-kicker">{isWinner ? "Victoria total" : "Partida terminada"}</p>
-        <h2>{winner?.name || "Jugador"} domina el tablero</h2>
-        <p className="monopoly-victory-copy">
-          {isWinner
-            ? "Tus rivales quedaron fuera y el tablero queda bajo tu control."
-            : "La mesa se cerro y el resultado final ya esta registrado."}
-        </p>
 
-        <div className="monopoly-victory-podium">
-          {podium.map((entry, index) => (
-            <article key={entry.playerId} className={cx(index === 0 && "champion")}>
-              <span>{index + 1}</span>
-              <strong>{entry.name}</strong>
-              <Money amount={entry.wealth} />
+        <div className="monopoly-victory-stats">
+          {statCards.map((card) => (
+            <article key={card.label}>
+              <span>{card.label}</span>
+              <strong>{card.value}</strong>
             </article>
           ))}
+        </div>
+
+        <div className="monopoly-victory-grid">
+          <section className="monopoly-victory-panel">
+            <header>
+              <Trophy size={18} />
+              <h3>Podio final</h3>
+            </header>
+            <div className="monopoly-victory-podium">
+              {podium.map((entry, index) => (
+                <article key={entry.id} className={cx(index === 0 && "champion")}>
+                  <span>{index + 1}</span>
+                  <strong>{entry.name}</strong>
+                  <Money amount={entry.wealth} />
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="monopoly-victory-panel">
+            <header>
+              <Wallet size={18} />
+              <h3>Patrimonio</h3>
+            </header>
+            <div className="monopoly-victory-bars">
+              {finalRows.map((row, index) => {
+                const width = `${Math.max(4, Math.round((Math.max(0, row.wealth) / maxWealth) * 100))}%`;
+                const share = totalWealth > 0 ? Math.round((Math.max(0, row.wealth) / totalWealth) * 100) : 0;
+                return (
+                  <article key={row.id}>
+                    <span>
+                      <strong>{index + 1}. {row.name}</strong>
+                      <em>{share}%</em>
+                    </span>
+                    <div className="monopoly-victory-bar-track">
+                      <i style={{ width }} />
+                    </div>
+                    <Money amount={row.wealth} />
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="monopoly-victory-panel monopoly-victory-panel-wide">
+            <header>
+              <Building2 size={18} />
+              <h3>Activos por jugador</h3>
+            </header>
+            <div className="monopoly-victory-assets">
+              {finalRows.map((row) => {
+                const assetTotal = Math.max(1, Math.max(0, row.cash) + Math.max(0, row.propertyValue));
+                const cashWidth = `${Math.round((Math.max(0, row.cash) / assetTotal) * 100)}%`;
+                const propertyWidth = `${Math.max(0, 100 - Math.round((Math.max(0, row.cash) / assetTotal) * 100))}%`;
+                return (
+                  <article key={row.id}>
+                    <div>
+                      <strong>{row.name}</strong>
+                      <span>{row.properties} props · {row.houses} casas · {row.hotels} hoteles · {row.mortgaged} hipotecas</span>
+                    </div>
+                    <div className="monopoly-victory-stack" aria-label={`Activos de ${row.name}`}>
+                      <i className="cash" style={{ width: cashWidth }} />
+                      <i className="property" style={{ width: propertyWidth }} />
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+            <div className="monopoly-victory-legend">
+              <span><i className="cash" /> Efectivo</span>
+              <span><i className="property" /> Propiedades</span>
+            </div>
+          </section>
+
+          <section className="monopoly-victory-panel">
+            <header>
+              <Sparkles size={18} />
+              <h3>Momentos clave</h3>
+            </header>
+            <div className="monopoly-victory-highlights">
+              {highlightRows.length ? highlightRows.map((item) => (
+                <article key={`${item.type}-${item.playerId || item.label}`}>
+                  <span>{item.label}</span>
+                  <strong>{item.playerName || "Mesa"}</strong>
+                  <em>{item.detail || (typeof item.value === "number" ? moneyFormatter.format(item.value) : item.value)}</em>
+                </article>
+              )) : (
+                <p className="monopoly-victory-empty">No hubo suficientes eventos guardados para destacar jugadas.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="monopoly-victory-panel">
+            <header>
+              <Receipt size={18} />
+              <h3>Ultimos eventos</h3>
+            </header>
+            <div className="monopoly-victory-timeline">
+              {timelineRows.length ? timelineRows.map((event) => {
+                const summary = describeEvent(event, playersById, boardById);
+                return (
+                  <article key={event.id}>
+                    <span>T{event.turnNumber || "--"}</span>
+                    <strong>{summary.title}</strong>
+                    <em>{summary.body}</em>
+                  </article>
+                );
+              }) : (
+                <p className="monopoly-victory-empty">Sin historial reciente disponible.</p>
+              )}
+            </div>
+          </section>
         </div>
 
         <button type="button" className="monopoly-menu-button primary compact" onClick={onExit}>
@@ -6140,6 +6261,11 @@ function RoomCard({ table, currentUserId, onJoin, customTokens = {} }) {
   const protectedRoom = Boolean(table.isPrivate || table.hasPassword);
   const disabled = (meta.key === "playing" || meta.key === "finished" || meta.full) && !meta.mine;
   const label = meta.mine ? "Volver" : meta.key === "playing" ? "En curso" : meta.full ? "Llena" : "Unirse";
+  const seatedPlayers = table.players || [];
+  const tokenStylesById = buildUniqueTokenStyleMap(
+    seatedPlayers.map((player, index) => ({ ...player, colorIndex: index })),
+    customTokens
+  );
 
   return (
     <article className={cx("monopoly-room-card", `tone-${meta.tone}`)}>
@@ -6165,10 +6291,8 @@ function RoomCard({ table, currentUserId, onJoin, customTokens = {} }) {
         </div>
         <div className="monopoly-room-seats">
           {Array.from({ length: max }, (_, index) => {
-            const player = (table.players || [])[index];
-            const tokenStyle = player
-              ? resolveTokenStyle({ id: player.id, name: player.name, colorIndex: index, token: player.token }, customTokens)
-              : null;
+            const player = seatedPlayers[index];
+            const tokenStyle = player ? tokenStylesById[player.id] : null;
             return (
               <span
                 key={index}
@@ -6440,6 +6564,13 @@ function WaitingRoom({
   const seated = table.playerCount || 0;
   const seats = Array.from({ length: max }, (_, index) => (table.players || [])[index] || null);
   const canStart = seated >= 2;
+  const tokenStylesById = useMemo(
+    () => buildUniqueTokenStyleMap(
+      (table.players || []).map((player, index) => ({ ...player, colorIndex: index })),
+      customTokens
+    ),
+    [customTokens, table.players]
+  );
 
   return (
     <section className="monopoly-lobby">
@@ -6484,9 +6615,7 @@ function WaitingRoom({
 
             <div className="monopoly-waitroom-seats">
               {seats.map((player, index) => {
-                const tokenStyle = player
-                  ? resolveTokenStyle({ id: player.id, name: player.name, colorIndex: index, token: player.token }, customTokens)
-                  : null;
+                const tokenStyle = player ? tokenStylesById[player.id] : null;
                 return (
                 <div key={index} className={cx("monopoly-waitroom-seat", player ? "is-taken" : "is-open")}>
                   <span className="monopoly-waitroom-seat-avatar">
@@ -6534,9 +6663,10 @@ export default function MonopolyGame({
   messages,
   connectionStatus,
   onSendMessage,
-  preferredBoardViewMode = "2d",
+  preferredBoardViewMode = "3d",
   onBoardViewModeChange
 }) {
+  const { loadDefaultStation, setActiveGameKey } = useRadio();
   const [state, setState] = useState(null);
   const [tableMeta, setTableMeta] = useState(null);
   const [tables, setTables] = useState([]);
@@ -6564,7 +6694,7 @@ export default function MonopolyGame({
   const [tokenEditorOpen, setTokenEditorOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState("players");
   const [threeDSelectionVersion, setThreeDSelectionVersion] = useState(0);
-  const [boardViewMode, setBoardViewMode] = useState(preferredBoardViewMode === "3d" ? "3d" : "2d");
+  const [boardViewMode, setBoardViewMode] = useState(preferredBoardViewMode === "2d" ? "2d" : "3d");
   const [cameraAutoFollow, setCameraAutoFollow] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [rankingOpen, setRankingOpen] = useState(false);
@@ -6615,12 +6745,29 @@ export default function MonopolyGame({
   }, [cinematic]);
 
   useEffect(() => {
-    setBoardViewMode(preferredBoardViewMode === "3d" ? "3d" : "2d");
+    setBoardViewMode(preferredBoardViewMode === "2d" ? "2d" : "3d");
   }, [preferredBoardViewMode]);
 
   useEffect(() => {
     boardViewModeRef.current = boardViewMode;
   }, [boardViewMode]);
+
+  useEffect(() => {
+    if (boardViewMode === "3d") {
+      void loadMonopoly3DView();
+    }
+  }, [boardViewMode]);
+
+  useEffect(() => {
+    loadDefaultStation(MONOPOLY_GAME_KEY);
+  }, [loadDefaultStation]);
+
+  useEffect(() => {
+    setActiveGameKey(MONOPOLY_GAME_KEY);
+    return () => {
+      setActiveGameKey("");
+    };
+  }, [setActiveGameKey]);
 
   useEffect(() => {
     if (!world || !token) return undefined;
@@ -6804,6 +6951,17 @@ export default function MonopolyGame({
       })),
     [state?.players]
   );
+  const seatedPlayers = useMemo(
+    () =>
+      (activeTable?.players?.length
+        ? activeTable.players
+        : tableMeta?.seatedPlayers || []
+      ).map((player, index) => ({
+        ...player,
+        colorIndex: index
+      })),
+    [activeTable?.players, tableMeta?.seatedPlayers]
+  );
   const coloredPlayersById = useMemo(() => new Map(boardPlayers.map((player) => [player.id, player])), [boardPlayers]);
   const displayBoardPlayers = useMemo(
     () => boardPlayers.map((player) => ({
@@ -6814,12 +6972,9 @@ export default function MonopolyGame({
   );
 
   const tokenStylesById = useMemo(() => {
-    const map = {};
-    boardPlayers.forEach((player) => {
-      map[player.id] = resolveTokenStyle(player, customTokens);
-    });
-    return map;
+    return buildUniqueTokenStyleMap(boardPlayers, customTokens);
   }, [boardPlayers, customTokens]);
+  const seatedTokenStylesById = useMemo(() => buildUniqueTokenStyleMap(seatedPlayers, customTokens), [seatedPlayers, customTokens]);
 
   const threeDPlayers = useMemo(
     () => displayBoardPlayers.map((player) => {
@@ -6835,30 +6990,23 @@ export default function MonopolyGame({
 
   const myTokenStyle = useMemo(() => {
     const me = boardPlayers.find((player) => sameEntityId(player.id, currentUserId));
-    if (me) return resolveTokenStyle(me, customTokens);
+    if (me) return tokenStylesById[me.id] || resolveTokenStyle(me, customTokens);
+    const seatedMe = seatedPlayers.find((player) => sameEntityId(player.id, currentUserId));
+    if (seatedMe) return seatedTokenStylesById[seatedMe.id] || resolveTokenStyle(seatedMe, customTokens);
     // Fallback for the pre-game lobby (no in-game player yet)
-    const fallbackIndex = boardPlayers.length;
+    const fallbackIndex = seatedPlayers.length || boardPlayers.length;
     return resolveTokenStyle({ id: currentUserId, name: currentUser.username || "Tú", colorIndex: fallbackIndex }, customTokens);
-  }, [boardPlayers, currentUserId, currentUser.username, customTokens]);
+  }, [boardPlayers, currentUserId, currentUser.username, customTokens, seatedPlayers, seatedTokenStylesById, tokenStylesById]);
 
   const reservedTokenColorsForMe = useMemo(() => {
-    const candidates = state?.players?.length
-      ? state.players
-      : activeTable?.players?.length
-        ? activeTable.players
-        : tableMeta?.seatedPlayers || [];
+    const activeStyles = boardPlayers.length ? tokenStylesById : seatedTokenStylesById;
 
-    return candidates
-      .filter((player) => player?.id && !sameEntityId(player.id, currentUserId))
-      .map((player, index) => resolveTokenStyle({
-        id: player.id,
-        name: player.name || player.username,
-        colorIndex: index,
-        token: player.token
-      }, customTokens).bg)
+    return Object.entries(activeStyles)
+      .filter(([playerId]) => !sameEntityId(playerId, currentUserId))
+      .map(([, tokenStyle]) => tokenStyle?.bg)
       .map(normalizeTokenColor)
       .filter(Boolean);
-  }, [activeTable?.players, currentUserId, customTokens, state?.players, tableMeta?.seatedPlayers]);
+  }, [boardPlayers.length, currentUserId, seatedTokenStylesById, tokenStylesById]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -6924,8 +7072,8 @@ export default function MonopolyGame({
       shape: "circle"
     };
 
-    if (boardViewModeRef.current === "3d" && reservedTokenColorsForMe.includes(normalizeTokenColor(normalized.bg))) {
-      setError("Ese color ya esta ocupado en esta mesa 3D. Elige otro color.");
+    if (reservedTokenColorsForMe.includes(normalizeTokenColor(normalized.bg))) {
+      setError("Ese color ya esta ocupado en esta mesa. Elige otro color.");
       return;
     }
 
@@ -7049,6 +7197,17 @@ export default function MonopolyGame({
     setRollingDiceVisual(false);
     setCinematicPhase(null);
   }
+
+  useEffect(() => {
+    const dicePhase = ["cameraFocusDice", "diceRolling", "dice"].includes(cinematic?.phase);
+    if (!rollingDice && !dicePhase) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      stopDiceCinematic();
+    }, 12000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [cinematic?.phase, rollingDice]);
 
   const cameraFocus = useMemo(() => {
     if (!cinematic) return null;
@@ -7304,7 +7463,9 @@ export default function MonopolyGame({
       newEvents.forEach((event) => {
         const soundName =
           event.type === "CARD_DRAWN"
-            ? "card"
+            ? "takecard"
+            : event.type === "PLAYER_SENT_TO_JAIL"
+              ? "prison"
             : ["PLAYER_RECEIVED_MONEY", "PLAYER_PAID", "JAIL_FINE_PAID", "DEBT_PAID"].includes(event.type)
               ? "payevent"
               : "";
@@ -7430,6 +7591,7 @@ export default function MonopolyGame({
   useEffect(() => {
     if (cinematic || rollingDice) return;
     if (!autoEndIsMyTurn || !myActions.includes("terminarTurno")) return;
+    if (hasPendingDoubleReroll(state)) return;
     if (pendingPurchase || pendingCard || pendingTax || pendingDebt || pendingRentClaim || auction) return;
     if (state.turn.phase !== "AWAITING_TURN_END") return;
 
@@ -7521,15 +7683,7 @@ export default function MonopolyGame({
     gameEndHandledRef.current = true;
 
     audio.play("win");
-
-    const timer = window.setTimeout(() => {
-      setActiveTableId("");
-      setTableMeta(null);
-      setState(null);
-      setMenuOpen(false);
-      setChatOpen(false);
-    }, 7000);
-    return () => window.clearTimeout(timer);
+    return undefined;
   }, [state?.winnerId]);
 
   // Audio cuando el cinematic cambia a fase "settle" (la ficha llegó a destino).
@@ -7976,56 +8130,58 @@ export default function MonopolyGame({
 
       <main className="monopoly-game-main">
         {boardViewMode === "3d" ? (
-          <Monopoly3DView
-            currentUser={currentUser}
-            gameState={state}
-            players={threeDPlayers}
-            currentPlayerId={state.currentPlayerId}
-            selectedSpaceId={selectedSpace?.id}
-            onSelectSpaceId={(spaceId) => selectThreeDSpace(spaceId, "board")}
-            rollingDice={rollingDice}
-            diceFaces={diceFaces}
-            cinematic={cinematic}
-            moneyBursts={moneyBursts}
-            pendingCard={visiblePendingCard}
-            selectedSpaceInfo={selectedSpaceInfo3D}
-            cameraFocus={cameraAutoFollow ? cameraFocus : null}
-            cameraAutoFollow={cameraAutoFollow}
-            canRollDice={isMyTurn && myActions.includes("tirarDados") && !rollingDice && !cinematic}
-            canEndTurn={isMyTurn && myActions.includes("terminarTurno") && !rollingDice && !cinematic}
-            onRollDice={() => act("tirarDados")}
-            onEndTurn={() => act("terminarTurno")}
-            onSelectionAction={handleThreeDSelectionAction}
-            tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
-            statusTitle={prompt?.title || prompt?.eyebrow || ""}
-            statusBody={prompt?.body || ""}
-            endTurnLabel={hasPendingDoubleReroll(state) ? "Volver a tirar" : "Cerrar turno"}
-            sidePanel={(
-              <ThreeDTablePanel
-                state={state}
-                players={state.players}
-                currentUserId={currentUserId}
-                currentPlayerId={state.currentPlayerId}
-                tokenStylesById={tokenStylesById}
-                customTokens={customTokens}
-                myPlayer={myPlayer}
-                selectedSpace={selectedSpace}
-                selectionVersion={threeDSelectionVersion}
-                selectedOwner={selectedOwner}
-                selectedVisitors={selectedVisitors}
-                selectedOwnerProperty={selectedOwnerProperty}
-                events={visibleRecentEvents}
-                playersById={playersById}
-                boardById={boardById}
-                onSelectSpace={(spaceId) => selectThreeDSpace(spaceId, "side-panel")}
-                onManage={(action, propertyId) => act(action, { propertyId })}
-                onOpenTrade={() => setTradeOpen(true)}
-                onPrepareTrade={preparePropertyTradeFromSpace}
-              />
-            )}
-          />
+          <Suspense fallback={<MonopolyViewLoading mode="3d" />}>
+            <Monopoly3DView
+              currentUser={currentUser}
+              gameState={state}
+              players={threeDPlayers}
+              currentPlayerId={state.currentPlayerId}
+              selectedSpaceId={selectedSpace?.id}
+              onSelectSpaceId={(spaceId) => selectThreeDSpace(spaceId, "board")}
+              rollingDice={rollingDice}
+              diceFaces={diceFaces}
+              cinematic={cinematic}
+              moneyBursts={moneyBursts}
+              pendingCard={visiblePendingCard}
+              selectedSpaceInfo={selectedSpaceInfo3D}
+              cameraFocus={cameraAutoFollow ? cameraFocus : null}
+              cameraAutoFollow={cameraAutoFollow}
+              canRollDice={isMyTurn && myActions.includes("tirarDados") && !rollingDice && !cinematic}
+              canEndTurn={isMyTurn && myActions.includes("terminarTurno") && !rollingDice && !cinematic}
+              onRollDice={() => act("tirarDados")}
+              onEndTurn={() => act("terminarTurno")}
+              onSelectionAction={handleThreeDSelectionAction}
+              tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
+              statusTitle={prompt?.title || prompt?.eyebrow || ""}
+              statusBody={prompt?.body || ""}
+              endTurnLabel={hasPendingDoubleReroll(state) ? "Volver a tirar" : "Cerrar turno"}
+              sidePanel={(
+                <ThreeDTablePanel
+                  state={state}
+                  players={state.players}
+                  currentUserId={currentUserId}
+                  currentPlayerId={state.currentPlayerId}
+                  tokenStylesById={tokenStylesById}
+                  customTokens={customTokens}
+                  myPlayer={myPlayer}
+                  selectedSpace={selectedSpace}
+                  selectionVersion={threeDSelectionVersion}
+                  selectedOwner={selectedOwner}
+                  selectedVisitors={selectedVisitors}
+                  selectedOwnerProperty={selectedOwnerProperty}
+                  events={visibleRecentEvents}
+                  playersById={playersById}
+                  boardById={boardById}
+                  onSelectSpace={(spaceId) => selectThreeDSpace(spaceId, "side-panel")}
+                  onManage={(action, propertyId) => act(action, { propertyId })}
+                  onOpenTrade={() => setTradeOpen(true)}
+                  onPrepareTrade={preparePropertyTradeFromSpace}
+                />
+              )}
+            />
+          </Suspense>
         ) : (
-          <BoardArea
+          <LegacyBoardArea
             board={board}
             selectedSpace={selectedSpace}
             coloredPlayersById={coloredPlayersById}
@@ -8134,6 +8290,7 @@ export default function MonopolyGame({
       <VictoryCeremony
         state={state}
         playersById={playersById}
+        boardById={boardById}
         currentUserId={currentUserId}
         onExit={() => {
           setActiveTableId("");

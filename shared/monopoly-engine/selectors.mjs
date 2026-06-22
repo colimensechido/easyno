@@ -89,6 +89,7 @@ export function buildGameSnapshot(game) {
     ranking: game.rankearJugadores(),
     players: state.players.map((player) => buildPlayerSnapshot(game, player.id)),
     turn: buildTurnSnapshot(game),
-    recentEvents: (state.events || []).slice(-60)
+    finalStats: state.finalStats || null,
+    recentEvents: (state.events || []).slice(-200)
   };
 }

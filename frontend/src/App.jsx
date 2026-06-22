@@ -7,8 +7,12 @@ import AuthPanel from "./components/AuthPanel";
 import BlackjackTable from "./components/BlackjackTable";
 import DishesGame from "./components/DishesGame";
 import MonopolyGame from "./components/MonopolyGame";
+import PlatformRadioPlayer from "./components/PlatformRadioPlayer";
+import { useRadio } from "./radio/RadioContext";
 import WorldSelector from "./components/WorldSelector";
 import WorldSidebar from "./components/WorldSidebar";
+
+const APP_RADIO_GAME_KEY = "MONOPOLY";
 
 const savedSession = () => {
   try {
@@ -19,6 +23,7 @@ const savedSession = () => {
 };
 
 export default function App() {
+  const { loadDefaultStation, pause } = useRadio();
   const [session, setSession] = useState(savedSession);
   const [world, setWorld] = useState(null);
   const [balance, setBalance] = useState(0);
@@ -78,6 +83,18 @@ export default function App() {
       localStorage.removeItem("easyno-session");
     }
   }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      pause();
+      return;
+    }
+
+    loadDefaultStation(APP_RADIO_GAME_KEY, {
+      forcePlay: true,
+      resetPlaybackIntent: true
+    });
+  }, [loadDefaultStation, pause, session]);
 
   useEffect(() => {
     if (!token) {
@@ -317,20 +334,20 @@ export default function App() {
       <header className={`${monopolyView ? "relative app-header-monopoly" : "sticky top-0"} z-30 border-b border-amber-300/20 bg-black/75 backdrop-blur-xl`}>
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/60 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-amber-300/40 to-transparent" />
-        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+        <div className={`${monopolyView ? "max-w-[1800px] gap-2 py-1" : "max-w-7xl gap-3 py-2.5"} mx-auto flex flex-col px-4 lg:flex-row lg:items-center lg:justify-between`}>
           {/* Marca */}
           <div className="flex min-w-0 items-center gap-3">
-            <div className="brand-mark h-11 w-11">
-              <span className="font-display text-2xl font-black leading-none">e</span>
-              <span className="absolute -bottom-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full border border-amber-200/70 bg-zinc-950 text-amber-200">
+            <div className={`brand-mark ${monopolyView ? "h-8 w-8 rounded-xl" : "h-11 w-11"}`}>
+              <span className={`${monopolyView ? "text-xl" : "text-2xl"} font-display font-black leading-none`}>e</span>
+              <span className={`${monopolyView ? "-bottom-0.5 -right-0.5 h-4 w-4" : "-bottom-1.5 -right-1.5 h-5 w-5"} absolute flex items-center justify-center rounded-full border border-amber-200/70 bg-zinc-950 text-amber-200`}>
                 <Spade size={11} fill="currentColor" />
               </span>
             </div>
             <div className="min-w-0">
-              <h1 className="font-display text-xl font-black leading-none tracking-tight">
+              <h1 className={`${monopolyView ? "text-base" : "text-xl"} font-display font-black leading-none tracking-tight`}>
                 <span className="brand-word">easyno</span>
               </h1>
-              <p className="mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/55">
+              <p className={`${monopolyView ? "hidden" : "block"} mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/55`}>
                 {world ? world.name : `Bienvenido, ${session.user.username}`}
               </p>
             </div>
@@ -338,7 +355,7 @@ export default function App() {
 
           {/* Navegación central (segmented) */}
           {world && (
-            <nav className="flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-xl border border-white/10 bg-black/40 p-1 sm:w-auto">
+            <nav className="app-main-nav flex w-full min-w-0 max-w-full items-center gap-1 overflow-x-auto overflow-y-hidden rounded-xl border border-white/10 bg-black/40 p-1 sm:w-auto">
               <button className={`nav-tab ${view === "dishes" ? "is-active" : ""}`} onClick={() => setView("dishes")} title="Lavar platos">
                 <Sparkles size={17} />
                 Trabajo
@@ -347,19 +364,15 @@ export default function App() {
                 <Gamepad2 size={17} />
                 Blackjack
               </button>
-              <button className={`nav-tab ${view === "monopoly" ? "is-active" : ""}`} onClick={() => setView("monopoly")} title="Monopoly">
-                <Coins size={17} />
-                Monopoly
-              </button>
-              <button className={`nav-tab ${view === "monopoly3d" ? "is-active" : ""}`} onClick={() => setView("monopoly3d")} title="Monopoly 3D">
+              <button className={`nav-tab ${view === "monopoly3d" || view === "monopoly" ? "is-active" : ""}`} onClick={() => setView("monopoly3d")} title="Monopoly 3D">
                 <Cuboid size={17} />
-                3D
+                Monopoly
               </button>
             </nav>
           )}
 
           {/* Acciones a la derecha */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:flex-nowrap">
             {world && (
               <div className="hud-pill hud-pill--gold">
                 <span className="coin"><Coins size={12} /></span>
@@ -489,6 +502,7 @@ export default function App() {
           )
         )}
       </section>
+      <PlatformRadioPlayer />
     </main>
   );
 }

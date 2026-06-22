@@ -45,6 +45,10 @@ function isDeckSpace(space) {
   return space?.type === "CASUALIDAD" || space?.type === "ARCA_COMUNAL";
 }
 
+function isGoSpace(space) {
+  return space?.type === "SALIDA";
+}
+
 function deckThemeForSpace(space) {
   if (space?.type === "ARCA_COMUNAL") {
     return {
@@ -109,6 +113,60 @@ function drawDeckTileTexture(context, canvas, space) {
   context.fillText(theme.subtitle, canvas.width / 2, 326);
 }
 
+function drawGoTileTexture(context, canvas, space) {
+  context.fillStyle = "#fff8e9";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#fef3c7");
+  gradient.addColorStop(0.5, "#fbbf24");
+  gradient.addColorStop(1, "#0f766e");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, 92);
+
+  context.strokeStyle = "#0f5f58";
+  context.lineWidth = 16;
+  context.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
+
+  context.fillStyle = "rgba(15, 118, 110, 0.11)";
+  context.beginPath();
+  context.arc(canvas.width * 0.72, canvas.height * 0.5, 148, 0, Math.PI * 2);
+  context.fill();
+
+  context.save();
+  context.translate(canvas.width / 2, 182);
+  context.fillStyle = "#0f766e";
+  context.beginPath();
+  context.moveTo(-148, -32);
+  context.lineTo(64, -32);
+  context.lineTo(64, -82);
+  context.lineTo(178, 0);
+  context.lineTo(64, 82);
+  context.lineTo(64, 32);
+  context.lineTo(-148, 32);
+  context.closePath();
+  context.fill();
+  context.restore();
+
+  context.fillStyle = "#24180d";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = "950 48px Inter, Arial, sans-serif";
+  context.fillText(String(space?.index ?? 0).padStart(2, "0"), 70, 46);
+
+  context.fillStyle = "#fffdf7";
+  context.font = "950 46px Inter, Arial, sans-serif";
+  context.fillText("CASILLA DE", canvas.width / 2, 45);
+
+  context.fillStyle = "#24180d";
+  context.font = "950 76px Inter, Arial, sans-serif";
+  context.fillText("SALIDA", canvas.width / 2, 286);
+
+  context.fillStyle = "#0f5f58";
+  context.font = "950 34px Inter, Arial, sans-serif";
+  context.fillText("PASA Y COBRA $200", canvas.width / 2, 338);
+}
+
 function makeLabelTexture(space, owner = null) {
   const canvas = document.createElement("canvas");
   canvas.width = 768;
@@ -120,6 +178,14 @@ function makeLabelTexture(space, owner = null) {
 
   if (isDeckSpace(space)) {
     drawDeckTileTexture(context, canvas, space);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    return texture;
+  }
+
+  if (isGoSpace(space)) {
+    drawGoTileTexture(context, canvas, space);
     const texture = new THREE.CanvasTexture(canvas);
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 8;
@@ -223,7 +289,7 @@ function createHouseMarker(x, z, { color = "#16a34a", roofColor = "#0f7a35", hot
   door.position.set(0, hotel ? 0.065 : 0.048, hotel ? 0.097 : 0.091);
 
   group.add(walls, roof, door);
-  group.position.set(x, BOARD_3D.tileHeight + 0.045, z);
+  group.position.set(x, BOARD_3D.tileHeight + 0.02, z);
   group.traverse((child) => {
     child.castShadow = true;
     child.userData.spaceIndex = group.userData.spaceIndex;
@@ -267,7 +333,7 @@ function addOwnerMarker(group, space, ownerColor, width, depth) {
       emissiveIntensity: 0.06
     })
   );
-  marker.position.set(0, BOARD_3D.tileHeight + 0.072, depth * 0.48);
+  marker.position.set(0, BOARD_3D.tileHeight + 0.04, depth * 0.48);
   marker.castShadow = true;
   marker.userData.spaceIndex = space.index;
   marker.userData.spaceId = space.id;
@@ -278,13 +344,14 @@ export function createBoardTile3D(space, players = []) {
   const position = boardPositionForIndex(space.index);
   const { width, depth } = tileSizeForSpace(space.index);
   const deckSpace = isDeckSpace(space);
+  const goSpace = isGoSpace(space);
   const ownerIndex = players.findIndex((player) => player.id === space.ownerId);
   const owner = ownerIndex >= 0 ? players[ownerIndex] : null;
   const ownerColor = owner
     ? owner.color || playerColors3D[ownerIndex % playerColors3D.length]
     : null;
   const group = new THREE.Group();
-  group.position.set(position.x, 0, position.z);
+  group.position.set(position.x, -0.02, position.z);
   group.rotation.y = position.rotationY;
   group.userData.spaceIndex = space.index;
   group.userData.spaceId = space.id;
@@ -304,7 +371,7 @@ export function createBoardTile3D(space, players = []) {
   group.add(tile);
   group.userData.baseMesh = tile;
 
-  if (!deckSpace) {
+  if (!deckSpace && !goSpace) {
     const bandGeometry = new THREE.BoxGeometry(width * 0.86, BOARD_3D.tileHeight + 0.035, Math.max(0.14, depth * 0.14));
     const bandMaterial = new THREE.MeshStandardMaterial({
       color: tileTone(space),
@@ -312,7 +379,7 @@ export function createBoardTile3D(space, players = []) {
       metalness: 0.04
     });
     const band = new THREE.Mesh(bandGeometry, bandMaterial);
-    band.position.set(0, BOARD_3D.tileHeight + 0.02, -depth * 0.36);
+    band.position.set(0, BOARD_3D.tileHeight + 0.01, -depth * 0.36);
     band.userData.spaceIndex = space.index;
     band.userData.spaceId = space.id;
     group.add(band);
@@ -320,14 +387,14 @@ export function createBoardTile3D(space, players = []) {
   }
 
   const labelTexture = makeLabelTexture(space, owner ? { name: owner.name, color: ownerColor } : null);
-  const labelGeometry = new THREE.PlaneGeometry(width * (deckSpace ? 0.9 : 0.86), depth * (deckSpace ? 0.72 : 0.56));
+  const labelGeometry = new THREE.PlaneGeometry(width * (deckSpace || goSpace ? 0.9 : 0.86), depth * (deckSpace || goSpace ? 0.72 : 0.56));
   const labelMaterial = new THREE.MeshBasicMaterial({
     map: labelTexture,
     transparent: true
   });
   const label = new THREE.Mesh(labelGeometry, labelMaterial);
   label.rotation.x = -Math.PI / 2;
-  label.position.set(0, BOARD_3D.tileHeight + 0.014, deckSpace ? depth * 0.02 : depth * 0.08);
+  label.position.set(0, BOARD_3D.tileHeight + 0.006, deckSpace || goSpace ? depth * 0.02 : depth * 0.08);
   label.userData.spaceIndex = space.index;
   label.userData.spaceId = space.id;
   group.add(label);

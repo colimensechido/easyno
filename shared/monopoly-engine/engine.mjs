@@ -97,6 +97,12 @@ export class MonopolyGameEngine {
       if (!Array.isArray(this.state.tradeOffers)) {
         this.state.tradeOffers = [];
       }
+      if (!Array.isArray(this.state.events)) {
+        this.state.events = [];
+      }
+      if (!("finalStats" in this.state)) {
+        this.state.finalStats = null;
+      }
       this.options = {
         ...DEFAULT_ENGINE_OPTIONS,
         ...((this.state.meta && this.state.meta.options) || {})
@@ -174,6 +180,7 @@ export class MonopolyGameEngine {
       auction: null,
       winnerId: null,
       endedAt: null,
+      finalStats: null,
       events: []
     };
 
@@ -2284,6 +2291,249 @@ export class MonopolyGameEngine {
     this.state.tradeOffers = [];
 
     this.log("GAME_FINISHED", { winnerId: this.state.winnerId });
+    this.state.finalStats = this.buildFinalStats();
+  }
+
+  buildFinalStats() {
+    const ranking = this.rankearJugadores();
+    const perPlayer = new Map(this.state.players.map((player) => [player.id, {
+      playerId: player.id,
+      name: player.name,
+      cash: player.cash,
+      wealth: this.calcularRiquezaJugador(player.id),
+      properties: player.propertyIds.length,
+      houses: 0,
+      hotels: 0,
+      mortgaged: 0,
+      moneyReceived: 0,
+      moneyPaid: 0,
+      rentReceived: 0,
+      rentPaid: 0,
+      taxesPaid: 0,
+      propertiesBought: 0,
+      auctionWins: 0,
+      trades: 0,
+      cardsDrawn: 0,
+      jailVisits: 0,
+      housesBuilt: 0,
+      hotelsBuilt: 0,
+      mortgages: 0,
+      bankruptcies: 0
+    }]));
+    const totals = {
+      turns: this.state.turn.number || 0,
+      events: this.state.events.length,
+      moneyMoved: 0,
+      rentPaid: 0,
+      taxesPaid: 0,
+      propertiesBought: 0,
+      auctions: 0,
+      trades: 0,
+      cardsDrawn: 0,
+      jailVisits: 0,
+      housesBuilt: 0,
+      hotelsBuilt: 0,
+      mortgages: 0,
+      bankruptcies: 0
+    };
+    const highlights = [];
+
+    const playerName = (playerId) => this.findPlayer(playerId)?.name || "Banco";
+    const propertyName = (propertyId) => this.findSpaceById(propertyId)?.name || "Propiedad";
+    const touchPlayer = (playerId) => perPlayer.get(playerId);
+    const addMoney = (amount) => {
+      const value = Math.max(0, Number(amount) || 0);
+      totals.moneyMoved += value;
+      return value;
+    };
+    const rememberHighlight = (candidate) => {
+      if (!candidate?.value) return;
+      highlights.push(candidate);
+    };
+
+    let biggestPayment = null;
+    let biggestPurchase = null;
+
+    for (const event of this.state.events || []) {
+      const payload = event.payload || {};
+      switch (event.type) {
+        case "PROPERTY_PURCHASED": {
+          const amount = addMoney(payload.price);
+          const player = touchPlayer(payload.playerId);
+          if (player) {
+            player.moneyPaid += amount;
+            player.propertiesBought += 1;
+          }
+          totals.propertiesBought += 1;
+          if (!biggestPurchase || amount > biggestPurchase.value) {
+            biggestPurchase = {
+              type: "biggestPurchase",
+              label: "Compra mas fuerte",
+              value: amount,
+              playerId: payload.playerId,
+              playerName: playerName(payload.playerId),
+              detail: propertyName(payload.propertyId)
+            };
+          }
+          break;
+        }
+        case "AUCTION_FINISHED": {
+          totals.auctions += 1;
+          if (payload.winnerId) {
+            const amount = addMoney(payload.amount);
+            const player = touchPlayer(payload.winnerId);
+            if (player) {
+              player.moneyPaid += amount;
+              player.auctionWins += 1;
+              player.propertiesBought += 1;
+            }
+          }
+          break;
+        }
+        case "PLAYER_RECEIVED_MONEY": {
+          const amount = addMoney(payload.amount);
+          const player = touchPlayer(payload.playerId);
+          if (player) player.moneyReceived += amount;
+          break;
+        }
+        case "PLAYER_PAID":
+        case "DEBT_PAID":
+        case "JAIL_FINE_PAID": {
+          const playerId = payload.playerId || payload.debtorId;
+          const amount = addMoney(payload.amount);
+          const player = touchPlayer(playerId);
+          if (player) player.moneyPaid += amount;
+          if (!biggestPayment || amount > biggestPayment.value) {
+            biggestPayment = {
+              type: "biggestPayment",
+              label: "Pago mas pesado",
+              value: amount,
+              playerId,
+              playerName: playerName(playerId),
+              detail: payload.reason || event.type
+            };
+          }
+          if (payload.reason === "RENTA") {
+            totals.rentPaid += amount;
+            if (player) player.rentPaid += amount;
+            const creditor = touchPlayer(payload.creditorId);
+            if (creditor) creditor.rentReceived += amount;
+          }
+          if (payload.reason === "IMPUESTO") {
+            totals.taxesPaid += amount;
+            if (player) player.taxesPaid += amount;
+          }
+          break;
+        }
+        case "HOUSE_PURCHASED": {
+          totals.housesBuilt += 1;
+          const player = touchPlayer(payload.playerId);
+          if (player) {
+            player.housesBuilt += 1;
+            player.moneyPaid += addMoney(payload.amount);
+          }
+          break;
+        }
+        case "HOTEL_PURCHASED": {
+          totals.hotelsBuilt += 1;
+          const player = touchPlayer(payload.playerId);
+          if (player) {
+            player.hotelsBuilt += 1;
+            player.moneyPaid += addMoney(payload.amount);
+          }
+          break;
+        }
+        case "PROPERTY_MORTGAGED": {
+          totals.mortgages += 1;
+          const player = touchPlayer(payload.playerId);
+          if (player) {
+            player.mortgages += 1;
+            player.moneyReceived += addMoney(payload.amount);
+          }
+          break;
+        }
+        case "PROPERTY_TRADED":
+        case "JAIL_CARD_TRADED":
+        case "TRADE_OFFER_ACCEPTED": {
+          totals.trades += 1;
+          [payload.sellerId, payload.buyerId].forEach((playerId) => {
+            const player = touchPlayer(playerId);
+            if (player) player.trades += 1;
+          });
+          if (payload.price) addMoney(payload.price);
+          break;
+        }
+        case "CARD_DRAWN": {
+          totals.cardsDrawn += 1;
+          const player = touchPlayer(payload.playerId);
+          if (player) player.cardsDrawn += 1;
+          break;
+        }
+        case "PLAYER_SENT_TO_JAIL": {
+          totals.jailVisits += 1;
+          const player = touchPlayer(payload.playerId);
+          if (player) player.jailVisits += 1;
+          break;
+        }
+        case "BANKRUPTCY_RESOLVED": {
+          totals.bankruptcies += 1;
+          const player = touchPlayer(payload.debtorId);
+          if (player) player.bankruptcies += 1;
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    for (const player of this.state.players) {
+      const row = touchPlayer(player.id);
+      if (!row) continue;
+      for (const propertyId of player.propertyIds) {
+        const property = this.findSpaceById(propertyId);
+        row.houses += property.houses || 0;
+        row.hotels += property.hasHotel ? 1 : 0;
+        row.mortgaged += property.isMortgaged ? 1 : 0;
+      }
+    }
+
+    rememberHighlight(biggestPurchase);
+    rememberHighlight(biggestPayment);
+
+    const sortedPlayers = [...perPlayer.values()].sort((left, right) => right.wealth - left.wealth);
+    const propertyLeader = [...perPlayer.values()].sort((left, right) => right.properties - left.properties)[0];
+    if (propertyLeader?.properties) {
+      highlights.push({
+        type: "propertyLeader",
+        label: "Mayor terrateniente",
+        value: propertyLeader.properties,
+        playerId: propertyLeader.playerId,
+        playerName: propertyLeader.name,
+        detail: `${propertyLeader.properties} propiedades`
+      });
+    }
+
+    const builder = [...perPlayer.values()].sort((left, right) => (right.housesBuilt + right.hotelsBuilt) - (left.housesBuilt + left.hotelsBuilt))[0];
+    if (builder && builder.housesBuilt + builder.hotelsBuilt > 0) {
+      highlights.push({
+        type: "builder",
+        label: "Constructor clave",
+        value: builder.housesBuilt + builder.hotelsBuilt,
+        playerId: builder.playerId,
+        playerName: builder.name,
+        detail: `${builder.housesBuilt} casas / ${builder.hotelsBuilt} hoteles`
+      });
+    }
+
+    return {
+      endedAt: this.state.endedAt,
+      winnerId: this.state.winnerId,
+      ranking,
+      totals,
+      players: sortedPlayers,
+      highlights: highlights.slice(0, 6),
+      timeline: (this.state.events || []).slice(-160)
+    };
   }
 
   repartirPropiedadesIniciales() {
@@ -2315,7 +2565,10 @@ export class MonopolyGameEngine {
     this.state.events.push({
       id: createId("event", this.sequence++),
       type,
-      payload
+      payload,
+      turnNumber: this.state.turn?.number || 0,
+      currentPlayerId: this.state.turn?.currentPlayerId || null,
+      createdAt: Date.now()
     });
   }
 }

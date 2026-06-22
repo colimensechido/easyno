@@ -90,7 +90,7 @@ function createDie() {
 
 export function createDice3D() {
   const group = new THREE.Group();
-  group.position.set(0, 0.68, 0);
+  group.position.set(0, 0.54, 0);
 
   const glow = new THREE.Mesh(
     glowGeometry,
@@ -103,7 +103,7 @@ export function createDice3D() {
   );
   glow.material.userData.shared = true;
   glow.rotation.x = -Math.PI / 2;
-  glow.position.y = -0.54;
+  glow.position.y = -0.405;
   group.add(glow);
 
   const left = createDie();
@@ -143,21 +143,21 @@ export function animateDice3D(group, delta, elapsed) {
   const hovered = Boolean(group.userData.hovered);
   const readyToRoll = visualStage === "rollReady";
   const isActive = ["rollReady", "cameraFocusDice", "diceRolling", "diceResult"].includes(visualStage);
-  const heatTarget = hovered ? 1.18 : readyToRoll ? 0.92 : isActive ? 1 : 0.18;
+  const heatTarget = hovered ? 0.8 : readyToRoll ? 0.55 : isActive ? 0.65 : 0;
   const rollTarget = visualStage === "diceRolling" ? 1 : 0;
   const rollDamping = visualStage === "diceResult" ? 8.5 : 3.8;
   group.userData.heat = THREE.MathUtils.lerp(group.userData.heat, heatTarget, Math.min(1, delta * 4.6));
   group.userData.rollEnergy = THREE.MathUtils.lerp(group.userData.rollEnergy, rollTarget, Math.min(1, delta * rollDamping));
-  group.userData.idleLift = Math.sin(elapsed * (readyToRoll ? 4.4 : 1.8)) * (readyToRoll ? 0.045 : 0.015);
-  group.position.y = 0.68 + group.userData.idleLift + group.userData.heat * 0.035;
-  const hoverPulse = hovered ? Math.sin(elapsed * 8) * 0.018 : 0;
-  const readyPulse = readyToRoll ? Math.sin(elapsed * 6.2) * 0.026 : 0;
+  group.userData.idleLift = Math.sin(elapsed * (readyToRoll ? 4.4 : 1.8)) * (readyToRoll ? 0.02 : 0.004);
+  group.position.y = 0.54 + group.userData.idleLift + group.userData.heat * 0.016;
+  const hoverPulse = hovered ? Math.sin(elapsed * 8) * 0.01 : 0;
+  const readyPulse = readyToRoll ? Math.sin(elapsed * 6.2) * 0.016 : 0;
   group.scale.setScalar(1 + group.userData.heat * 0.04 + hoverPulse + readyPulse);
   group.userData.glow.material.opacity = 0.14 + group.userData.heat * 0.28 + (hovered ? 0.16 : 0);
   group.userData.glow.scale.setScalar(1 + group.userData.heat * 0.14 + (hovered ? Math.sin(elapsed * 7) * 0.035 : 0) + (readyToRoll ? Math.sin(elapsed * 5.8) * 0.045 : 0));
 
   group.userData.dice.forEach((die, index) => {
-    const wobble = Math.sin(elapsed * (hovered ? 5.4 : readyToRoll ? 7.2 : 2.8) + index * 0.65) * (hovered ? 0.032 : readyToRoll ? 0.06 : 0.014);
+    const wobble = Math.sin(elapsed * (hovered ? 5.4 : readyToRoll ? 7.2 : 2.8) + index * 0.65) * (hovered ? 0.018 : readyToRoll ? 0.04 : 0.004);
     const shouldSettleFace =
       group.userData.rollEnergy > 0.02 ||
       ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage);

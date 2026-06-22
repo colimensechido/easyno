@@ -77,7 +77,7 @@ export function tileTone(space) {
 
   switch (space.type) {
     case "SALIDA":
-      return "#f4d45d";
+      return "#0f766e";
     case "FERROCARRIL":
       return "#dad5c8";
     case "SERVICIO_PUBLICO":

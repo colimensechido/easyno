@@ -1,0 +1,194 @@
+[
+  {
+    "NOMBRE": "101 SMOOTH JAZZ",
+    "CATEGORIA": "JAZZ",
+    "URL": "http://jking.cdnstream1.com/b22139_128mp3",
+    "DEFAULT": "MONOPOLY"
+  },
+  {
+    "NOMBRE": "0R - PIANO JAZZ LOUNGE",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://0nlineradio.radioho.st/lounge-piano-jazz-bar?ref=radio-browser26",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "100 GREATEST JAZZ LOUNGE BAR",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://cast1.torontocast.com:4640/stream",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "0R - RESTAURANT LOUNGE",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://0nlineradio.radioho.st/lounge-restaurant-lounge?ref=radio-browser26",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "0R - HOTEL LOUNGE",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://0nlineradio.radioho.st/lounge-hotel-lounge?ref=radio-browser26",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "0R - COFFEE LOUNGE",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://0nlineradio.radioho.st/lounge-coffee-bar-lounge?ref=radio-browser26",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "1.FM - Bay Smooth Jazz Radio",
+    "CATEGORIA": "JAZZ",
+    "URL": "http://strm112.1.fm/smoothjazz_mobile_mp3",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": ".977 Smooth Jazz",
+    "CATEGORIA": "JAZZ",
+    "URL": "http://14543.live.streamtheworld.com/977_SMOOJAZZ_SC",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "SmoothJazz.com 64k aac+",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://smoothjazz.cdnstream1.com/2585_64.aac",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "A Fine Jazz Gumbo Radio",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://streaming.smartradio.ch:9502/stream",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "0R - DINNER LOUNGE",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://0nlineradio.radioho.st/lounge-dinner-lounge?ref=radio-browser26",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "#1 Splash Jazz",
+    "CATEGORIA": "JAZZ",
+    "URL": "https://ais-sa2.cdnstream1.com/2346_128.mp3",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "TRAP RADIO TRAP.radio",
+    "CATEGORIA": "TRAP",
+    "URL": "https://trapradio.streamingmedia.it/play",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "badradio 24/7 OG Phonk, Memphis, Houston, Trap & Trill",
+    "CATEGORIA": "TRAP",
+    "URL": "https://s2.radio.co/s2b2b68744/listen",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "__TRAP__ by rautemusik",
+    "CATEGORIA": "TRAP",
+    "URL": "https://trap-high.rautemusik.fm/?ref=radiobrowser",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "Australian Digital Radio Network - Trap",
+    "CATEGORIA": "TRAP",
+    "URL": "http://abm22.com.au:8000/CONTAINER48",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "Technolovers TRAP",
+    "CATEGORIA": "TRAP",
+    "URL": "https://stream.technolovers.fm/trap?ref=radiobrowser",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "Fed's Trap Radio",
+    "CATEGORIA": "TRAP",
+    "URL": "https://backend.fedstrapradio.com:8000/radio.mp3",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "98.8 Kiss FM Trap Beats",
+    "CATEGORIA": "TRAP",
+    "URL": "http://stream.kissfm.de/kissfm-trap/mp3-128",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "DFM Trap",
+    "CATEGORIA": "TRAP",
+    "URL": "https://dfm-dfmtrap.hostingradio.ru/dfmtrap96.aacp",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "# RdMix Classic Rock 70s 80s 90s",
+    "CATEGORIA": "ROCK",
+    "URL": "https://cast1.torontocast.com:4610/stream",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "ROCKANTENNE Alternative",
+    "CATEGORIA": "ROCK",
+    "URL": "https://stream.rockantenne.de/alternative/stream/mp3",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "ESKA ROCK",
+    "CATEGORIA": "ROCK",
+    "URL": "https://ic2.smcdn.pl/5380-1.mp3#ESKA_ROCK",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "Arrow Classic Rock",
+    "CATEGORIA": "ROCK",
+    "URL": "https://stream.player.arrow.nl/arrowcr",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "0N - Classic Rock on Radio",
+    "CATEGORIA": "ROCK",
+    "URL": "https://0n-classicrock.radionetz.de/0n-classicrock.mp3",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "89 A Radio Rock",
+    "CATEGORIA": "ROCK",
+    "URL": "https://playerservices.streamtheworld.com/api/livestream-redirect/RADIO_89FM_ADP.aac?dist=site-89fm",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "OUI FM CLASSIC ROCK",
+    "CATEGORIA": "ROCK",
+    "URL": "https://ouifm3.ice.infomaniak.ch/ouifm3.mp3",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "0R - 80s ROCK",
+    "CATEGORIA": "ROCK",
+    "URL": "https://0nlineradio.radioho.st/0r-80s-rock?ref=radio-browser26",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "Classic Rock 109",
+    "CATEGORIA": "ROCK",
+    "URL": "https://jenny.torontocast.com:2000/stream/ClassicRock109",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "BadRock Hard & Heavy",
+    "CATEGORIA": "ROCK",
+    "URL": "https://play-radio0.jump.bg:7049/live",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "Classic Rock Legends Radio",
+    "CATEGORIA": "ROCK",
+    "URL": "https://puma.streemlion.com:3130/stream",
+    "DEFAULT": null
+  },
+  {
+    "NOMBRE": "ROCK EN ESPAÑOL: Rock de México, España y Argentina",
+    "CATEGORIA": "ROCK",
+    "URL": "https://29309.live.streamtheworld.com:443/ACIR20_S01AAC.aac",
+    "DEFAULT": null
+  }
+]

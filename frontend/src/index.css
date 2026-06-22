@@ -818,6 +818,12 @@
       linear-gradient(145deg, #fff6ef 0%, #f5d1b5 100%);
   }
 
+  .monopoly-space.go-space {
+    background:
+      radial-gradient(circle at 70% 32%, rgba(15, 118, 110, 0.16) 0 22%, transparent 23%),
+      linear-gradient(145deg, #fff8dd 0%, #f7c948 48%, #d6f4e9 100%);
+  }
+
   .monopoly-space.corner {
     padding: 0.34rem;
   }
@@ -897,10 +903,58 @@
     flex: 1;
   }
 
+  .monopoly-space.go-space .monopoly-space-copy,
   .monopoly-space.card-space .monopoly-space-copy,
   .monopoly-space.tax-space .monopoly-space-copy {
     display: grid;
     place-items: center;
+  }
+
+  .monopoly-go-space-art {
+    position: relative;
+    display: grid;
+    width: min(100%, 5.25rem);
+    min-height: clamp(3.1rem, 7.4vmin, 5.5rem);
+    place-items: center;
+    align-content: center;
+    gap: 0.08rem;
+    border: 3px solid #0f766e;
+    border-radius: 13px;
+    background:
+      radial-gradient(circle at 75% 24%, rgba(255,255,255,0.78), transparent 25%),
+      linear-gradient(180deg, #fffbeb 0%, #fef3c7 48%, #ccfbf1 100%);
+    box-shadow: 0 4px 0 rgba(15, 118, 110, 0.22), 0 10px 18px rgba(35,22,12,0.16);
+    transform: rotate(-5deg);
+  }
+
+  .go-mini-arrow {
+    display: grid;
+    width: 2rem;
+    height: 1.25rem;
+    place-items: center;
+    border-radius: 999px;
+    background: #0f766e;
+    color: #fffdf7;
+    font-size: 1.15rem;
+    font-weight: 950;
+    line-height: 1;
+  }
+
+  .monopoly-go-space-art strong {
+    color: #23160c;
+    font-size: clamp(0.86rem, 1.8vmin, 1.25rem);
+    font-weight: 950;
+    line-height: 0.92;
+    text-align: center;
+  }
+
+  .monopoly-go-space-art em {
+    color: #0f5f58;
+    font-size: clamp(0.58rem, 1.15vmin, 0.76rem);
+    font-style: normal;
+    font-weight: 950;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 
   .monopoly-card-space-art {
@@ -1187,6 +1241,8 @@
     min-width: 0;
   }
 
+  .side-left.go-space .monopoly-space-copy,
+  .side-right.go-space .monopoly-space-copy,
   .side-left.card-space .monopoly-space-copy,
   .side-right.card-space .monopoly-space-copy,
   .side-left.tax-space .monopoly-space-copy,
@@ -1195,6 +1251,8 @@
     justify-self: center;
   }
 
+  .side-left .monopoly-go-space-art,
+  .side-right .monopoly-go-space-art,
   .side-left .monopoly-card-space-art,
   .side-right .monopoly-card-space-art,
   .side-left .monopoly-tax-space-art,
@@ -1702,7 +1760,7 @@
     display: grid;
     min-height: 5.6rem;
     place-items: center;
-    gap: 0.45rem;
+    gap: 0.34rem;
     border: 2px solid rgba(35, 22, 12, 0.12);
     border-radius: 16px;
     background: rgba(255, 248, 236, 0.82);
@@ -4172,6 +4230,378 @@
   margin-bottom: 0.45rem;
 }
 
+.platform-radio {
+  position: fixed;
+  left: max(1rem, env(safe-area-inset-left));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 70;
+  width: min(22rem, calc(100vw - 2rem));
+  color: #f8fafc;
+}
+
+.platform-radio.is-minimized {
+  width: auto;
+}
+
+.platform-radio-recommendation {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.7rem);
+  display: grid;
+  gap: 0.18rem;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid rgba(245, 197, 66, 0.32);
+  border-radius: 14px;
+  background: rgba(41, 37, 36, 0.96);
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
+}
+
+.platform-radio-recommendation.inline {
+  position: static;
+  width: 100%;
+}
+
+.platform-radio-recommendation span {
+  color: rgba(254, 243, 199, 0.82);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.platform-radio-recommendation strong {
+  color: #fef3c7;
+  font-size: 0.84rem;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.platform-radio-shell {
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(9, 9, 11, 0.84);
+  padding: 0.35rem;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(18px);
+}
+
+.platform-radio-play,
+.platform-radio-now,
+.platform-radio-collapse,
+.platform-radio-mini-toggle,
+.platform-radio-mini-reco,
+.platform-radio-panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: inherit;
+  transition: transform 160ms ease, background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.platform-radio-play {
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 999px;
+  background: #f5c542;
+  color: #15100a;
+  box-shadow: 0 8px 18px rgba(245, 197, 66, 0.24);
+}
+
+.platform-radio.is-playing .platform-radio-play {
+  background: #22c55e;
+  box-shadow: 0 8px 18px rgba(34, 197, 94, 0.22);
+}
+
+.platform-radio-now {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  width: 100%;
+  border-radius: 999px;
+  padding: 0.38rem 0.55rem 0.38rem 0.35rem;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.platform-radio-now:hover,
+.platform-radio-panel button:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.platform-radio-now svg {
+  flex: none;
+  color: #f5c542;
+}
+
+.platform-radio-collapse {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.platform-radio-now span,
+.platform-radio-panel-head div {
+  min-width: 0;
+}
+
+.platform-radio-now em,
+.platform-radio-now strong,
+.platform-radio-panel-head span,
+.platform-radio-panel-head strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.platform-radio-now em,
+.platform-radio-panel-head span,
+.platform-radio-field span,
+.platform-radio-volume span {
+  color: rgba(226, 232, 240, 0.64);
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.platform-radio-now strong {
+  margin-top: 0.05rem;
+  color: #ffffff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.platform-radio-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 0.55rem);
+  display: none;
+  width: min(22rem, calc(100vw - 2rem));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  background: rgba(15, 23, 42, 0.94);
+  padding: 0.8rem;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+}
+
+.platform-radio.is-expanded .platform-radio-panel {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.platform-radio-panel-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.platform-radio-panel-head strong {
+  margin-top: 0.12rem;
+  font-size: 0.92rem;
+  font-weight: 900;
+}
+
+.platform-radio-panel-head button,
+.platform-radio-actions button {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.platform-radio-panel-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.platform-radio-actions {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.platform-radio-actions button {
+  width: 100%;
+}
+
+.platform-radio-actions button.primary {
+  background: #f5c542;
+  color: #15100a;
+}
+
+.platform-radio-field,
+.platform-radio-volume {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.platform-radio-field span,
+.platform-radio-volume span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.platform-radio-field select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.64);
+  padding: 0.55rem 0.65rem;
+  color: #f8fafc;
+  font-size: 0.82rem;
+  font-weight: 750;
+  outline: 0;
+}
+
+.platform-radio-volume {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.55rem;
+}
+
+.platform-radio-volume span {
+  min-width: 4.4rem;
+}
+
+.platform-radio-volume input {
+  width: 100%;
+  accent-color: #22c55e;
+}
+
+.platform-radio-volume strong {
+  color: #f8fafc;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.platform-radio-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0;
+  border: 1px solid rgba(251, 113, 133, 0.22);
+  border-radius: 12px;
+  background: rgba(127, 29, 29, 0.24);
+  padding: 0.55rem;
+  color: #fecdd3;
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
+.platform-radio-mini {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.platform-radio-mini-toggle {
+  position: absolute;
+  right: -0.1rem;
+  bottom: -0.12rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.96);
+  color: #f8fafc;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.32);
+}
+
+.platform-radio-mini-peek {
+  position: absolute;
+  left: calc(100% + 0.55rem);
+  bottom: 0;
+  display: grid;
+  gap: 0.45rem;
+  min-width: 13rem;
+  max-width: 18rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.platform-radio-mini:hover .platform-radio-mini-peek,
+.platform-radio-mini:focus-within .platform-radio-mini-peek {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.platform-radio-mini-now,
+.platform-radio-mini-reco {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(9, 9, 11, 0.92);
+  padding: 0.68rem 0.8rem;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.35);
+  text-align: left;
+}
+
+.platform-radio-mini-now span,
+.platform-radio-mini-reco {
+  color: rgba(226, 232, 240, 0.72);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.platform-radio-mini-now strong {
+  display: block;
+  margin-top: 0.12rem;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.platform-radio-mini-reco {
+  color: #fef3c7;
+}
+
+@media (max-width: 640px) {
+  .platform-radio {
+    right: max(0.75rem, env(safe-area-inset-right));
+    left: max(0.75rem, env(safe-area-inset-left));
+    bottom: max(0.75rem, env(safe-area-inset-bottom));
+    width: auto;
+  }
+
+  .platform-radio-panel {
+    width: 100%;
+  }
+
+  .platform-radio-recommendation {
+    width: 100%;
+  }
+
+  .platform-radio-mini-peek {
+    left: 0;
+    right: auto;
+    bottom: calc(100% + 0.55rem);
+    min-width: min(15rem, calc(100vw - 1.5rem));
+    max-width: min(18rem, calc(100vw - 1.5rem));
+  }
+}
+
 .monopoly-center-dice-button {
   width: max-content;
   margin-inline: auto;
@@ -4232,13 +4662,25 @@
    ========================================================================== */
 @layer components {
   .app-header-monopoly > div {
-    padding-top: 0.35rem;
-    padding-bottom: 0.35rem;
+    padding-top: 0.22rem;
+    padding-bottom: 0.22rem;
   }
 
-  .app-header-monopoly .h-12 {
-    width: 2.35rem;
-    height: 2.35rem;
+  .app-header-monopoly .brand-mark {
+    width: 2.1rem;
+    height: 2.1rem;
+    border-radius: 0.75rem;
+  }
+
+  .app-header-monopoly .brand-mark > span:first-child {
+    font-size: 1.25rem;
+  }
+
+  .app-header-monopoly .brand-mark > span:last-child {
+    width: 1rem;
+    height: 1rem;
+    right: -0.18rem;
+    bottom: -0.18rem;
   }
 
   .app-header-monopoly h1 {
@@ -4246,21 +4688,32 @@
     line-height: 1.05;
   }
 
-  .app-header-monopoly p {
-    font-size: 0.62rem;
-    letter-spacing: 0.16em;
+  .app-header-monopoly h1 + p {
+    display: none;
   }
 
   .app-header-monopoly .min-h-11,
   .app-header-monopoly button {
-    min-height: 2.35rem;
+    min-height: 2.05rem;
   }
 
   .app-header-monopoly .arcade-button,
   .app-header-monopoly .ghost-button {
-    padding-inline: 0.78rem;
-    padding-block: 0.35rem;
+    padding-inline: 0.64rem;
+    padding-block: 0.24rem;
+    font-size: 0.74rem;
+  }
+
+  .app-header-monopoly .hud-pill {
+    min-height: 2.05rem;
+    padding-inline: 0.72rem;
     font-size: 0.78rem;
+  }
+
+  .app-header-monopoly .nav-tab {
+    min-height: 2.05rem;
+    padding-inline: 0.82rem;
+    font-size: 0.82rem;
   }
 
   .monopoly-game-layout {
@@ -4277,15 +4730,15 @@
     top: 0.75rem;
     z-index: 25;
     display: grid;
-    grid-template-columns: minmax(150px, 0.64fr) minmax(300px, 1.16fr) minmax(180px, 0.58fr) minmax(0, auto);
-    gap: 0.45rem;
+    grid-template-columns: minmax(120px, 0.5fr) minmax(320px, 1.18fr) minmax(0, auto);
+    gap: 0.34rem;
     align-items: center;
     width: 100%;
     max-width: 100%;
     min-width: 0;
     border: 2px solid rgba(205, 181, 145, 0.88);
-    border-radius: 18px;
-    padding: 0.34rem;
+    border-radius: 15px;
+    padding: 0.28rem;
     background:
       linear-gradient(180deg, rgba(255, 252, 244, 0.94), rgba(242, 226, 194, 0.94)),
       repeating-linear-gradient(90deg, rgba(35, 22, 12, 0.025) 0 1px, transparent 1px 8px);
@@ -4297,14 +4750,14 @@
     display: flex;
     min-width: 0;
     align-items: center;
-    gap: 0.65rem;
+    gap: 0.48rem;
   }
 
   .monopoly-hud-logo {
     flex: none;
-    padding: 0.28rem 0.66rem;
-    border-radius: 10px;
-    font-size: 0.82rem;
+    padding: 0.22rem 0.52rem;
+    border-radius: 9px;
+    font-size: 0.72rem;
     transform: rotate(-4deg);
   }
 
@@ -4313,7 +4766,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: #8a5a00;
-    font-size: 0.58rem;
+    font-size: 0.52rem;
     font-weight: 900;
     text-transform: uppercase;
     letter-spacing: 0.14em;
@@ -4324,7 +4777,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     color: #23160c;
-    font-size: clamp(0.98rem, 1.15vw, 1.24rem);
+    font-size: clamp(0.9rem, 1vw, 1.08rem);
     font-weight: 950;
     line-height: 1.1;
     text-transform: uppercase;
@@ -4333,7 +4786,7 @@
   .monopoly-hud-stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(78px, 1fr));
-    gap: 0.32rem;
+    gap: 0.26rem;
     min-width: 0;
   }
 
@@ -4343,8 +4796,8 @@
     align-items: center;
     gap: 0.42rem;
     border: 1px solid rgba(166, 137, 95, 0.42);
-    border-radius: 13px;
-    padding: 0.34rem 0.45rem;
+    border-radius: 11px;
+    padding: 0.26rem 0.38rem;
     background: rgba(255, 248, 236, 0.78);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
   }
@@ -4363,7 +4816,7 @@
   .monopoly-panel-eyebrow {
     display: block;
     color: #7c5d38;
-    font-size: 0.58rem;
+    font-size: 0.52rem;
     font-weight: 900;
     text-transform: uppercase;
     letter-spacing: 0.14em;
@@ -4374,7 +4827,7 @@
     overflow: hidden;
     margin-top: 0.1rem;
     color: #23160c;
-    font-size: 0.8rem;
+    font-size: 0.74rem;
     font-weight: 950;
     text-overflow: ellipsis;
     white-space: normal;
@@ -4385,8 +4838,8 @@
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.34rem;
+    flex-wrap: nowrap;
+    gap: 0.26rem;
     min-width: 0;
   }
 
@@ -4518,12 +4971,12 @@
 
   .monopoly-icon-button {
     display: inline-flex;
-    width: 2.35rem;
-    height: 2.35rem;
+    width: 2.1rem;
+    height: 2.1rem;
     align-items: center;
     justify-content: center;
     border: 2px solid #c6af89;
-    border-radius: 12px;
+    border-radius: 10px;
     background: linear-gradient(180deg, #fff8ec 0%, #f1e3c9 100%);
     color: #23160c;
     transition: transform 160ms ease, border-color 180ms ease, box-shadow 180ms ease;
@@ -4566,6 +5019,73 @@
     grid-template-columns: minmax(0, 1fr);
     gap: 1rem;
     align-items: start;
+  }
+
+  .monopoly-view-loading {
+    min-height: clamp(420px, 68vh, 760px);
+    display: grid;
+    place-items: center;
+    gap: 1rem;
+    border: 1px solid rgba(205, 181, 145, 0.72);
+    border-radius: 18px;
+    background:
+      radial-gradient(circle at 50% 35%, rgba(251, 191, 36, 0.16), transparent 32%),
+      linear-gradient(180deg, rgba(255, 248, 236, 0.96), rgba(235, 250, 243, 0.92));
+    color: #23160c;
+    text-align: center;
+    box-shadow: 0 22px 60px rgba(35, 22, 12, 0.14);
+  }
+
+  .monopoly-view-loading-mark {
+    display: grid;
+    width: 4.75rem;
+    height: 4.75rem;
+    place-items: center;
+    border: 1px solid rgba(15, 118, 110, 0.24);
+    border-radius: 24px;
+    background: #fffdf8;
+    color: #0f766e;
+    box-shadow: 0 16px 34px rgba(15, 118, 110, 0.14);
+  }
+
+  .monopoly-view-loading p {
+    margin: 0;
+    font-size: clamp(1.15rem, 2.4vw, 1.85rem);
+    font-weight: 950;
+    text-transform: uppercase;
+  }
+
+  .monopoly-view-loading span {
+    display: block;
+    margin-top: 0.25rem;
+    color: #6f5a3d;
+    font-size: 0.88rem;
+    font-weight: 800;
+  }
+
+  .monopoly-view-loading > i {
+    position: relative;
+    width: min(260px, 62vw);
+    height: 0.55rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(15, 118, 110, 0.14);
+  }
+
+  .monopoly-view-loading > i::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: -42%;
+    width: 42%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0f766e, #fbbf24);
+    animation: monopolyLoadingSweep 1.15s ease-in-out infinite;
+  }
+
+  @keyframes monopolyLoadingSweep {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(340%); }
   }
 
   .monopoly-board-area {
@@ -5459,26 +5979,29 @@
     z-index: 58;
     display: grid;
     place-items: center;
-    padding: 1rem;
+    overflow-y: auto;
+    padding: clamp(0.75rem, 2vw, 1.4rem);
     background:
-      radial-gradient(circle at 50% 28%, rgba(251, 191, 36, 0.2), transparent 34%),
+      radial-gradient(circle at 50% 18%, rgba(251, 191, 36, 0.24), transparent 30%),
+      radial-gradient(circle at 18% 82%, rgba(15, 118, 110, 0.2), transparent 28%),
       rgba(14, 9, 4, 0.74);
     backdrop-filter: blur(14px);
     animation: modal-in 260ms ease;
   }
 
   .monopoly-victory-card {
-    width: min(92vw, 620px);
+    width: min(96vw, 1180px);
+    max-height: calc(100vh - 2rem);
+    overflow: auto;
     display: grid;
-    justify-items: center;
-    gap: 0.9rem;
+    gap: clamp(0.75rem, 1.5vw, 1rem);
     border: 3px solid #f7e4be;
-    border-radius: 28px;
-    padding: clamp(1.4rem, 4vw, 2.2rem);
-    text-align: center;
+    border-radius: 24px;
+    padding: clamp(1rem, 2.4vw, 1.55rem);
+    text-align: left;
     color: #23160c;
     background:
-      radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.9), transparent 34%),
+      radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.9), transparent 31%),
       linear-gradient(180deg, #fffdf7 0%, #f1dcae 100%);
     box-shadow: 0 34px 100px rgba(0, 0, 0, 0.55), 0 0 70px rgba(251, 191, 36, 0.22);
   }
@@ -5487,47 +6010,123 @@
     border-color: #fbbf24;
   }
 
+  .monopoly-victory-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 1rem;
+  }
+
   .monopoly-victory-crown {
     display: grid;
-    width: 5rem;
-    height: 5rem;
+    width: clamp(4.2rem, 7vw, 6rem);
+    height: clamp(4.2rem, 7vw, 6rem);
     place-items: center;
-    border-radius: 22px;
+    border-radius: 20px;
     background: linear-gradient(135deg, #fde68a 0%, #f59e0b 58%, #b45309 100%);
     color: #3a2105;
     box-shadow: 0 18px 36px rgba(180, 83, 9, 0.28);
   }
 
   .monopoly-victory-kicker {
+    margin: 0;
     color: #b02016;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     font-weight: 950;
     letter-spacing: 0.22em;
     text-transform: uppercase;
   }
 
   .monopoly-victory-card h2 {
-    max-width: 12ch;
+    max-width: 18ch;
+    margin-top: 0.15rem;
     color: #23160c;
-    font-size: clamp(2.1rem, 7vw, 4.2rem);
+    font-size: clamp(1.7rem, 4.6vw, 4.25rem);
     font-weight: 950;
-    line-height: 0.96;
+    line-height: 0.94;
     text-transform: uppercase;
   }
 
   .monopoly-victory-copy {
-    max-width: 34rem;
+    max-width: 46rem;
+    margin-top: 0.45rem;
     color: #6b4b2c;
-    font-size: 1rem;
+    font-size: 0.95rem;
     font-weight: 700;
-    line-height: 1.5;
+    line-height: 1.4;
+  }
+
+  .monopoly-victory-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.55rem;
+  }
+
+  .monopoly-victory-stats article,
+  .monopoly-victory-panel {
+    border: 1px solid rgba(166, 137, 95, 0.4);
+    border-radius: 16px;
+    background: rgba(255, 248, 236, 0.76);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+  }
+
+  .monopoly-victory-stats article {
+    display: grid;
+    gap: 0.18rem;
+    padding: 0.72rem 0.85rem;
+  }
+
+  .monopoly-victory-stats span,
+  .monopoly-victory-panel header h3,
+  .monopoly-victory-assets span,
+  .monopoly-victory-legend span {
+    color: #7c5d38;
+    font-size: 0.66rem;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-victory-stats strong {
+    color: #23160c;
+    font-size: clamp(1rem, 2vw, 1.35rem);
+    font-weight: 950;
+    line-height: 1.05;
+  }
+
+  .monopoly-victory-grid {
+    display: grid;
+    grid-template-columns: minmax(230px, 0.82fr) minmax(320px, 1.18fr);
+    gap: 0.7rem;
+  }
+
+  .monopoly-victory-panel {
+    display: grid;
+    align-content: start;
+    gap: 0.65rem;
+    min-width: 0;
+    padding: 0.85rem;
+  }
+
+  .monopoly-victory-panel-wide {
+    grid-column: 1 / -1;
+  }
+
+  .monopoly-victory-panel header {
+    display: flex;
+    align-items: center;
+    gap: 0.42rem;
+    color: #b02016;
+  }
+
+  .monopoly-victory-panel header h3 {
+    color: #23160c;
   }
 
   .monopoly-victory-podium {
     display: grid;
     width: 100%;
-    gap: 0.55rem;
-    margin-top: 0.25rem;
+    gap: 0.45rem;
   }
 
   .monopoly-victory-podium article {
@@ -5535,9 +6134,9 @@
     grid-template-columns: 2.1rem minmax(0, 1fr) auto;
     align-items: center;
     gap: 0.75rem;
-    border: 2px solid #d8c8ae;
-    border-radius: 16px;
-    padding: 0.65rem 0.8rem;
+    border: 1px solid #d8c8ae;
+    border-radius: 13px;
+    padding: 0.55rem 0.65rem;
     background: rgba(255, 248, 236, 0.82);
     text-align: left;
   }
@@ -5549,10 +6148,10 @@
 
   .monopoly-victory-podium span {
     display: grid;
-    width: 2.1rem;
-    height: 2.1rem;
+    width: 1.95rem;
+    height: 1.95rem;
     place-items: center;
-    border-radius: 10px;
+    border-radius: 9px;
     background: #5b3a24;
     color: #fff3df;
     font-weight: 950;
@@ -5567,7 +6166,7 @@
     white-space: nowrap;
   }
 
-  @media (min-width: 1500px) {
+  @media (min-width: 1880px) {
     .monopoly-table-menu {
       display: flex;
     }
@@ -6229,6 +6828,14 @@
   .hud-pill--muted { color: #a1a1aa; }
 
   /* ----- Pestañas de navegación ----- */
+  .app-main-nav {
+    scrollbar-width: none;
+  }
+
+  .app-main-nav::-webkit-scrollbar {
+    display: none;
+  }
+
   .nav-tab {
     @apply relative inline-flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3.5 text-sm font-bold text-zinc-300 transition;
   }
@@ -6348,6 +6955,7 @@
 @media (prefers-reduced-motion: reduce) {
   .turn-ring, .animate-glow-pulse, .animate-float-soft, .animate-coin-fall,
   .animate-sparkle, .animate-shimmer, .animate-pulse-ring { animation: none !important; }
+  .monopoly-view-loading > i::after { animation: none !important; transform: translateX(170%); }
 }
 
 @layer components {
@@ -6777,6 +7385,207 @@
     white-space: nowrap;
   }
 
+  .monopoly-victory-bars,
+  .monopoly-victory-assets,
+  .monopoly-victory-highlights,
+  .monopoly-victory-timeline {
+    display: grid;
+    gap: 0.55rem;
+  }
+
+  .monopoly-victory-bars article {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.75fr) minmax(140px, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem;
+  }
+
+  .monopoly-victory-bars article > span {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.4rem;
+  }
+
+  .monopoly-victory-bars strong,
+  .monopoly-victory-assets strong {
+    overflow: hidden;
+    color: #23160c;
+    font-size: 0.82rem;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .monopoly-victory-bars em {
+    color: #0f766e;
+    font-size: 0.72rem;
+    font-style: normal;
+    font-weight: 950;
+  }
+
+  .monopoly-victory-bar-track,
+  .monopoly-victory-stack {
+    height: 0.72rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(91, 58, 36, 0.12);
+  }
+
+  .monopoly-victory-bar-track i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #0f766e, #fbbf24);
+  }
+
+  .monopoly-victory-assets article {
+    display: grid;
+    grid-template-columns: minmax(180px, 0.5fr) minmax(220px, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .monopoly-victory-assets article > div:first-child {
+    display: grid;
+    min-width: 0;
+    gap: 0.12rem;
+  }
+
+  .monopoly-victory-stack {
+    display: flex;
+  }
+
+  .monopoly-victory-stack i {
+    min-width: 0.18rem;
+    height: 100%;
+  }
+
+  .monopoly-victory-stack .cash,
+  .monopoly-victory-legend .cash {
+    background: #0f766e;
+  }
+
+  .monopoly-victory-stack .property,
+  .monopoly-victory-legend .property {
+    background: #f59e0b;
+  }
+
+  .monopoly-victory-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .monopoly-victory-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .monopoly-victory-legend i {
+    width: 0.78rem;
+    height: 0.78rem;
+    border-radius: 999px;
+  }
+
+  .monopoly-victory-highlights {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .monopoly-victory-highlights article,
+  .monopoly-victory-timeline article {
+    display: grid;
+    gap: 0.16rem;
+    border: 1px solid rgba(166, 137, 95, 0.28);
+    border-radius: 12px;
+    background: rgba(255, 253, 248, 0.58);
+    padding: 0.58rem 0.65rem;
+  }
+
+  .monopoly-victory-highlights span,
+  .monopoly-victory-timeline span {
+    color: #b02016;
+    font-size: 0.62rem;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .monopoly-victory-highlights strong,
+  .monopoly-victory-timeline strong {
+    overflow: hidden;
+    color: #23160c;
+    font-size: 0.86rem;
+    font-weight: 950;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .monopoly-victory-highlights em,
+  .monopoly-victory-timeline em,
+  .monopoly-victory-empty {
+    color: #6b4b2c;
+    font-size: 0.74rem;
+    font-style: normal;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+
+  .monopoly-victory-timeline article {
+    grid-template-columns: 2.4rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .monopoly-victory-timeline span {
+    display: grid;
+    min-height: 2rem;
+    place-items: center;
+    border-radius: 8px;
+    background: rgba(176, 32, 22, 0.1);
+  }
+
+  .monopoly-victory-timeline em {
+    grid-column: 2;
+  }
+
+  @media (max-width: 860px) {
+    .monopoly-victory-card {
+      max-height: calc(100vh - 1rem);
+      border-radius: 18px;
+    }
+
+    .monopoly-victory-hero,
+    .monopoly-victory-grid,
+    .monopoly-victory-assets article,
+    .monopoly-victory-bars article {
+      grid-template-columns: 1fr;
+    }
+
+    .monopoly-victory-crown {
+      justify-self: start;
+    }
+
+    .monopoly-victory-stats {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .monopoly-victory-bars article {
+      gap: 0.35rem;
+    }
+
+    .monopoly-victory-highlights {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 520px) {
+    .monopoly-victory-stats {
+      grid-template-columns: 1fr;
+    }
+  }
+
   .monopoly-3d-row em,
   .monopoly-3d-asset em,
   .monopoly-3d-panel-head em,
@@ -7157,25 +7966,58 @@
     align-items: center;
     gap: 0.25rem;
     border: 1px solid rgba(205, 181, 145, 0.95);
-    border-radius: 14px;
+    border-radius: 11px;
     background: rgba(255, 248, 236, 0.92);
-    padding: 0.2rem;
+    padding: 0.14rem;
+  }
+
+  .monopoly-hud-view-switch--3d-first {
+    gap: 0.18rem;
+    background: rgba(255, 248, 236, 0.86);
   }
 
   .monopoly-hud-view-button {
     display: inline-flex;
-    min-height: 2.2rem;
+    min-height: 2rem;
     align-items: center;
     justify-content: center;
     gap: 0.4rem;
     border: 0;
-    border-radius: 11px;
+    border-radius: 9px;
     background: transparent;
-    padding: 0.45rem 0.75rem;
+    padding: 0.34rem 0.58rem;
     color: #7c5d38;
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     font-weight: 900;
     transition: background 160ms ease, color 160ms ease, box-shadow 160ms ease;
+  }
+
+  .monopoly-hud-view-button--legacy {
+    min-width: 2.2rem;
+    padding-inline: 0.55rem;
+    color: rgba(124, 93, 56, 0.66);
+    opacity: 0.62;
+  }
+
+  .monopoly-hud-view-button--legacy span {
+    max-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    opacity: 0;
+    transition: max-width 160ms ease, opacity 160ms ease;
+  }
+
+  .monopoly-hud-view-button--legacy:hover,
+  .monopoly-hud-view-button--legacy:focus-visible,
+  .monopoly-hud-view-button--legacy.is-active {
+    opacity: 1;
+  }
+
+  .monopoly-hud-view-button--legacy:hover span,
+  .monopoly-hud-view-button--legacy:focus-visible span,
+  .monopoly-hud-view-button--legacy.is-active span {
+    max-width: 4.5rem;
+    opacity: 1;
   }
 
   .monopoly-hud-view-button.is-active {
@@ -7186,16 +8028,16 @@
 
   .monopoly-hud-camera-button {
     display: inline-flex;
-    min-height: 2.6rem;
+    min-height: 2.08rem;
     align-items: center;
     justify-content: center;
     gap: 0.45rem;
     border: 1px solid rgba(205, 181, 145, 0.95);
-    border-radius: 14px;
+    border-radius: 10px;
     background: rgba(255, 248, 236, 0.92);
-    padding: 0.5rem 0.8rem;
+    padding: 0.34rem 0.58rem;
     color: #7c5d38;
-    font-size: 0.82rem;
+    font-size: 0.76rem;
     font-weight: 950;
     transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, color 160ms ease;
   }

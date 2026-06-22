@@ -544,7 +544,7 @@ function createDeckTexture({ title, mark, color, ink }) {
 
 function createDeckStack({ deck, title, mark, color, ink, x, z, rotation = 0 }) {
   const group = new THREE.Group();
-  group.position.set(x, 0.15, z);
+  group.position.set(x, 0.105, z);
   group.rotation.y = rotation;
   group.userData.deck = deck;
   group.userData.baseY = group.position.y;
@@ -575,7 +575,7 @@ function createDeckStack({ deck, title, mark, color, ink, x, z, rotation = 0 }) 
     new THREE.BoxGeometry(1.55, 0.035, 2.15),
     [sideMaterial, sideMaterial, material.clone(), sideMaterial, sideMaterial, sideMaterial]
   );
-  drawCard.position.y = 0.22;
+  drawCard.position.y = 0.17;
   drawCard.visible = false;
   drawCard.castShadow = true;
   drawCard.userData.isDrawCard = true;
@@ -826,7 +826,7 @@ export function syncSelectionBillboard(model, info = null) {
   }
 
   billboard.visible = true;
-  billboard.position.set(tileGroup.position.x, 0.12, tileGroup.position.z);
+  billboard.position.set(tileGroup.position.x, 0.08, tileGroup.position.z);
   billboard.userData.baseY = tileGroup.position.y || 0;
 }
 
@@ -880,19 +880,19 @@ export function animateBoard3D(model, delta, elapsed, camera = null) {
   for (const [deckName, deckGroup] of model.cardDecks.entries()) {
     const active = deckName === model.activeCardDeck;
     const drawCard = deckGroup.userData.drawCard;
-    deckGroup.position.y = deckGroup.userData.baseY + Math.sin(elapsed * 1.8 + deckGroup.position.x) * 0.012;
+    deckGroup.position.y = deckGroup.userData.baseY + Math.sin(elapsed * 1.8 + deckGroup.position.x) * 0.004;
     deckGroup.rotation.z = active ? Math.sin(elapsed * 9) * 0.025 : 0;
 
     if (!drawCard) continue;
     drawCard.visible = active;
     if (active) {
       const t = (Math.sin(elapsed * 5.2) + 1) / 2;
-      drawCard.position.y = 0.27 + t * 0.18;
+      drawCard.position.y = 0.2 + t * 0.14;
       drawCard.position.z = -0.12 - t * 0.42;
       drawCard.rotation.x = -0.22 - t * 0.18;
       drawCard.material[2].emissiveIntensity = 0.08 + t * 0.08;
     } else {
-      drawCard.position.set(0, 0.22, 0);
+      drawCard.position.set(0, 0.17, 0);
       drawCard.rotation.set(0, 0, 0);
       drawCard.material[2].emissiveIntensity = 0.02;
     }
@@ -927,7 +927,7 @@ export function markSelectedTile(model, selectedIndex, options = {}) {
       labelMesh.material.opacity = isSelected || isMover || isDestination ? 1 : 0.92;
     }
 
-    tileGroup.position.y = isDestination ? 0.08 : isMover ? 0.05 : 0;
+    tileGroup.position.y = isDestination ? 0.05 : isMover ? 0.03 : -0.02;
   });
 }
 

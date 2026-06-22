@@ -10,29 +10,17 @@ import winUrl from "./files/audio/win.wav";
 import buyPropiedadUrl from "./files/audio/buypropiedad.wav";
 import comprarCasaUrl from "./files/audio/comprarcasa.wav";
 import payEventUrl from "./files/audio/payevent.mp3";
+import prisonUrl from "./files/audio/prison.mp3";
 import rodar1Url from "./files/audio/rodar1.wav";
 import rodar2Url from "./files/audio/rodar2.wav";
 import rodar3Url from "./files/audio/rodar3.wav";
 import selectMenuUrl from "./files/audio/selectmenu.wav";
+import takeCardUrl from "./files/audio/takecard.mp3";
 import tuTurnoUrl from "./files/audio/tuturno.wav";
 import venderUrl from "./files/audio/vender.wav";
 
 const optionalCardSources = import.meta.glob("./files/audio/card.wav", { eager: true, query: "?url", import: "default" });
 const cardUrl = optionalCardSources["./files/audio/card.wav"] || null;
-const radioSources = import.meta.glob("./files/audio/radio_monopoly/*.mp3", { eager: true, query: "?url", import: "default" });
-
-function titleFromPath(path) {
-  const fileName = path.split("/").pop() || "Radio Monopoly";
-  return fileName.replace(/\.mp3$/i, "");
-}
-
-export const radioTracks = Object.entries(radioSources)
-  .map(([path, url]) => ({
-    id: path,
-    title: titleFromPath(path),
-    url
-  }))
-  .sort((left, right) => left.title.localeCompare(right.title, "es"));
 
 const sources = {
   cleandish: cleandishUrl,
@@ -44,11 +32,13 @@ const sources = {
   buypropiedad: buyPropiedadUrl,
   comprarcasa: comprarCasaUrl,
   payevent: payEventUrl,
+  prison: prisonUrl,
   ...(cardUrl ? { card: cardUrl } : {}),
   rodar1: rodar1Url,
   rodar2: rodar2Url,
   rodar3: rodar3Url,
   selectmenu: selectMenuUrl,
+  takecard: takeCardUrl,
   tuturno: tuTurnoUrl,
   vender: venderUrl
 };
@@ -63,11 +53,13 @@ const volumes = {
   buypropiedad: 0.75,
   comprarcasa: 0.75,
   payevent: 0.68,
+  prison: 0.82,
   card: 0.72,
   rodar1: 0.8,
   rodar2: 0.8,
   rodar3: 0.8,
   selectmenu: 0.45,
+  takecard: 0.76,
   tuturno: 0.9,
   vender: 0.75
 };
