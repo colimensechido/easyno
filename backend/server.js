@@ -215,13 +215,11 @@ function sanitizeMonopolyToken(input) {
   const token = input && typeof input === "object" ? input : {};
   const clean = {
     label: String(token.label || "").trim().slice(0, 4).toUpperCase(),
-    icon: String(token.icon || "").trim().slice(0, 32),
+    icon: "",
     bg: /^#[0-9a-fA-F]{6}$/.test(token.bg) ? token.bg : "#d94841",
     ring: /^#[0-9a-fA-F]{6}$/.test(token.ring) ? token.ring : "#7c1510",
-    fg: /^#[0-9a-fA-F]{6}$/.test(token.fg) ? token.fg : "#ffffff",
-    shape: ["circle", "rounded", "square", "diamond", "hexagon", "shield", "star"].includes(token.shape)
-      ? token.shape
-      : "circle"
+    fg: "#ffffff",
+    shape: "circle"
   };
 
   if (!clean.icon && !clean.label) {

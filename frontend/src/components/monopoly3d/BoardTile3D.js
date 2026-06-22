@@ -41,6 +41,74 @@ function wrapText(context, text, maxWidth, maxLines = 2) {
   return visible;
 }
 
+function isDeckSpace(space) {
+  return space?.type === "CASUALIDAD" || space?.type === "ARCA_COMUNAL";
+}
+
+function deckThemeForSpace(space) {
+  if (space?.type === "ARCA_COMUNAL") {
+    return {
+      title: "ARCA",
+      subtitle: "COMUNAL",
+      mark: "!",
+      color: "#78d4c8",
+      ink: "#064e3b",
+      glow: "rgba(15, 118, 110, 0.18)"
+    };
+  }
+
+  return {
+    title: "CASUALIDAD",
+    subtitle: "SORPRESA",
+    mark: "?",
+    color: "#f7c948",
+    ink: "#7c3f00",
+    glow: "rgba(247, 201, 72, 0.24)"
+  };
+}
+
+function drawDeckTileTexture(context, canvas, space) {
+  const theme = deckThemeForSpace(space);
+
+  context.fillStyle = "#fff8e9";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.fillStyle = theme.color;
+  context.globalAlpha = 0.16;
+  context.beginPath();
+  context.arc(canvas.width / 2, canvas.height / 2 - 8, 150, 0, Math.PI * 2);
+  context.fill();
+  context.globalAlpha = 1;
+
+  context.fillStyle = theme.color;
+  context.fillRect(0, 0, canvas.width, 68);
+  context.fillStyle = "rgba(255,255,255,0.35)";
+  context.fillRect(0, 68, canvas.width, 8);
+  context.strokeStyle = theme.ink;
+  context.globalAlpha = 0.28;
+  context.lineWidth = 12;
+  context.strokeRect(6, 6, canvas.width - 12, canvas.height - 12);
+  context.globalAlpha = 1;
+
+  context.fillStyle = theme.ink;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = "950 56px Inter, Arial, sans-serif";
+  context.fillText(String(space?.index ?? 0).padStart(2, "0"), 76, 34);
+
+  context.globalAlpha = 0.82;
+  context.font = "950 138px Inter, Arial, sans-serif";
+  context.fillText(theme.mark, canvas.width / 2, 162);
+  context.globalAlpha = 1;
+
+  context.font = "950 54px Inter, Arial, sans-serif";
+  context.fillText(theme.title, canvas.width / 2, 278);
+
+  context.fillStyle = "#7b5b34";
+  context.font = "900 30px Inter, Arial, sans-serif";
+  context.fillText(theme.subtitle, canvas.width / 2, 326);
+}
+
 function makeLabelTexture(space, owner = null) {
   const canvas = document.createElement("canvas");
   canvas.width = 768;
@@ -49,6 +117,14 @@ function makeLabelTexture(space, owner = null) {
   const title = compactSpaceLabel(space);
   const meta = priceOrTypeLabel(space);
   const tone = tileTone(space);
+
+  if (isDeckSpace(space)) {
+    drawDeckTileTexture(context, canvas, space);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 8;
+    return texture;
+  }
 
   context.fillStyle = "#fff8e9";
   context.fillRect(0, 0, canvas.width, canvas.height);
@@ -201,6 +277,7 @@ function addOwnerMarker(group, space, ownerColor, width, depth) {
 export function createBoardTile3D(space, players = []) {
   const position = boardPositionForIndex(space.index);
   const { width, depth } = tileSizeForSpace(space.index);
+  const deckSpace = isDeckSpace(space);
   const ownerIndex = players.findIndex((player) => player.id === space.ownerId);
   const owner = ownerIndex >= 0 ? players[ownerIndex] : null;
   const ownerColor = owner
@@ -227,28 +304,30 @@ export function createBoardTile3D(space, players = []) {
   group.add(tile);
   group.userData.baseMesh = tile;
 
-  const bandGeometry = new THREE.BoxGeometry(width * 0.86, BOARD_3D.tileHeight + 0.035, Math.max(0.14, depth * 0.14));
-  const bandMaterial = new THREE.MeshStandardMaterial({
-    color: tileTone(space),
-    roughness: 0.54,
-    metalness: 0.04
-  });
-  const band = new THREE.Mesh(bandGeometry, bandMaterial);
-  band.position.set(0, BOARD_3D.tileHeight + 0.02, -depth * 0.36);
-  band.userData.spaceIndex = space.index;
-  band.userData.spaceId = space.id;
-  group.add(band);
-  group.userData.bandMesh = band;
+  if (!deckSpace) {
+    const bandGeometry = new THREE.BoxGeometry(width * 0.86, BOARD_3D.tileHeight + 0.035, Math.max(0.14, depth * 0.14));
+    const bandMaterial = new THREE.MeshStandardMaterial({
+      color: tileTone(space),
+      roughness: 0.54,
+      metalness: 0.04
+    });
+    const band = new THREE.Mesh(bandGeometry, bandMaterial);
+    band.position.set(0, BOARD_3D.tileHeight + 0.02, -depth * 0.36);
+    band.userData.spaceIndex = space.index;
+    band.userData.spaceId = space.id;
+    group.add(band);
+    group.userData.bandMesh = band;
+  }
 
   const labelTexture = makeLabelTexture(space, owner ? { name: owner.name, color: ownerColor } : null);
-  const labelGeometry = new THREE.PlaneGeometry(width * 0.86, depth * 0.56);
+  const labelGeometry = new THREE.PlaneGeometry(width * (deckSpace ? 0.9 : 0.86), depth * (deckSpace ? 0.72 : 0.56));
   const labelMaterial = new THREE.MeshBasicMaterial({
     map: labelTexture,
     transparent: true
   });
   const label = new THREE.Mesh(labelGeometry, labelMaterial);
   label.rotation.x = -Math.PI / 2;
-  label.position.set(0, BOARD_3D.tileHeight + 0.024, depth * 0.08);
+  label.position.set(0, BOARD_3D.tileHeight + 0.014, deckSpace ? depth * 0.02 : depth * 0.08);
   label.userData.spaceIndex = space.index;
   label.userData.spaceId = space.id;
   group.add(label);

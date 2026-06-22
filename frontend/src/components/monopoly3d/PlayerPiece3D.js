@@ -30,6 +30,7 @@ function makeNameSprite(player) {
 
 export function createPlayerPiece3D(player, index = 0, players = []) {
   const color = player.color || playerColors3D[index % playerColors3D.length];
+  const ringColor = player.tokenRing || "#111827";
   const group = new THREE.Group();
   const start = piecePositionForPlayer(player, players);
   group.position.set(start.x, start.y, start.z);
@@ -42,7 +43,7 @@ export function createPlayerPiece3D(player, index = 0, players = []) {
     metalness: 0.2
   });
   const darkMaterial = new THREE.MeshStandardMaterial({
-    color: "#111827",
+    color: ringColor,
     roughness: 0.55,
     metalness: 0.12
   });

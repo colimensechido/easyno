@@ -18,6 +18,7 @@ import {
 import { animateSceneEffects3D, createSceneEffects3D, syncMoneyBursts3D } from "./SceneEffects3D";
 
 const PRE_MOVE_STAGES = new Set(["cameraFocusDice", "diceRolling", "diceResult", "highlightDestination"]);
+const HOME_CAMERA_POSITION = { x: 12.2, y: 15.2, z: 14.4 };
 
 function dampVector3(current, target, lambda, delta) {
   const t = 1 - Math.exp(-lambda * delta);
@@ -143,7 +144,7 @@ export default function Monopoly3DScene({
     sceneRef.current = scene;
 
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 100);
-    camera.position.set(9, 11, 11);
+    camera.position.set(HOME_CAMERA_POSITION.x, HOME_CAMERA_POSITION.y, HOME_CAMERA_POSITION.z);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -156,7 +157,7 @@ export default function Monopoly3DScene({
     controls.enableDamping = true;
     controls.dampingFactor = 0.07;
     controls.minDistance = 8;
-    controls.maxDistance = 28;
+    controls.maxDistance = 32;
     controls.maxPolarAngle = Math.PI * 0.48;
     controls.target.set(0, 0, 0);
 
@@ -292,7 +293,7 @@ export default function Monopoly3DScene({
     let previousFrameTime = performance.now();
     let elapsedTime = 0;
     const desiredTarget = new THREE.Vector3(0, 0, 0);
-    const desiredPosition = new THREE.Vector3(9, 11, 11);
+    const desiredPosition = new THREE.Vector3(HOME_CAMERA_POSITION.x, HOME_CAMERA_POSITION.y, HOME_CAMERA_POSITION.z);
     const diceTarget = new THREE.Vector3(0, 0.45, 0);
     const dicePosition = new THREE.Vector3(5.8, 8.2, 6.7);
     let frameId = 0;
@@ -439,7 +440,7 @@ export default function Monopoly3DScene({
         desiredPosition.set(focusPosition.x + 8.4, 9.8, focusPosition.z + 8.4);
       } else {
         desiredTarget.set(0, 0, 0);
-        desiredPosition.set(9, 11, 11);
+        desiredPosition.set(HOME_CAMERA_POSITION.x, HOME_CAMERA_POSITION.y, HOME_CAMERA_POSITION.z);
       }
 
       setActiveCardDeck(model, visualState.pendingCard?.deck || null);

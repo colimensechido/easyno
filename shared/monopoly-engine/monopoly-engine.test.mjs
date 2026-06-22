@@ -55,8 +55,9 @@ test("si el jugador no puede comprar una propiedad, se abre subasta y puede qued
 
   game.comprarPropiedad();
   assert.equal(game.state.status, GAME_STATUSES.SUBASTA);
+  assert.equal(game.state.auction.activeBidderId, "player_2");
+  assert.deepEqual(game.state.auction.passedPlayerIds, ["player_1"]);
 
-  game.retirarseDeSubasta({ jugadorId: "player_1" });
   game.retirarseDeSubasta({ jugadorId: "player_2" });
 
   assert.equal(game.findSpaceById("baltic_avenue").ownerId, null);
@@ -77,6 +78,18 @@ test("las subastas exigen al menos 25 por ciento sobre la puja actual", () => {
   assert.equal(game.state.auction.currentBid, 100);
   assert.equal(game.state.auction.minimumBid, 125);
   assert.throws(() => game.hacerOferta({ jugadorId: "player_2", monto: 124 }), /oferta minima/i);
+});
+
+test("las subastas saltan automaticamente a jugadores sin dinero para la siguiente puja", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  game.findPlayer("player_2").cash = 120;
+
+  game.iniciarSubasta({ objetivoId: "baltic_avenue" });
+  game.hacerOferta({ jugadorId: "player_1", monto: 100 });
+
+  assert.equal(game.state.auction, null);
+  assert.equal(game.findSpaceById("baltic_avenue").ownerId, "player_1");
+  assert.equal(game.findPlayer("player_1").cash, 1400);
 });
 
 test("tres dobles consecutivos envian al jugador a la carcel", () => {
@@ -198,6 +211,29 @@ test("no se puede construir si una propiedad del grupo esta hipotecada", () => {
   baltic.isMortgaged = true;
 
   assert.throws(() => game.comprarCasa("mediterranean_avenue"), /hipotecadas/i);
+});
+
+test("solo se puede comprar una casa por casilla durante el mismo turno", () => {
+  const game = createGame({ players: ["Ana", "Luis", "Marta"] });
+  const player = game.currentPlayer();
+  const mediterranean = game.findSpaceById("mediterranean_avenue");
+  const baltic = game.findSpaceById("baltic_avenue");
+
+  game.assignPropertyToPlayer(mediterranean, player);
+  game.assignPropertyToPlayer(baltic, player);
+
+  game.comprarCasa("mediterranean_avenue");
+  game.comprarCasa("baltic_avenue");
+
+  assert.deepEqual(game.state.turn.housePurchasesThisTurn, ["mediterranean_avenue", "baltic_avenue"]);
+  assert.throws(() => game.comprarCasa("mediterranean_avenue"), /una casa por casilla/i);
+
+  game.advanceToNextPlayer();
+  game.advanceToNextPlayer();
+  game.advanceToNextPlayer();
+
+  assert.equal(game.currentPlayer().id, player.id);
+  assert.doesNotThrow(() => game.comprarCasa("mediterranean_avenue"));
 });
 
 test("los hoteles requieren 4 casas en juego normal y 3 en juego corto", () => {
@@ -513,7 +549,7 @@ test("en modo con limite de tiempo gana el jugador mas rico cuando se alcanza el
   assert.equal(game.consultarGanador().id, "player_1");
 });
 
-test("el impuesto opcional queda pendiente hasta elegir monto fijo o porcentaje", () => {
+test("el impuesto opcional selecciona automaticamente el cobro fijo cuando es mayor", () => {
   const game = createGame({ players: ["Ana", "Luis"] });
   const player = game.currentPlayer();
 
@@ -521,10 +557,29 @@ test("el impuesto opcional queda pendiente hasta elegir monto fijo o porcentaje"
 
   assert.equal(game.state.pendingTax.fixedAmount, 200);
   assert.ok(game.state.pendingTax.percentAmount > 0);
+  assert.equal(game.state.pendingTax.selectedMode, "FIXED");
+  assert.equal(game.state.pendingTax.selectedAmount, 200);
   assert.equal(game.state.turn.phase, TURN_PHASES.AWAITING_TAX_DECISION);
 
-  game.pagarImpuesto({ opcion: "FIXED" });
+  game.pagarImpuesto();
   assert.equal(player.cash, 1300);
+  assert.equal(game.state.pendingTax, null);
+});
+
+test("el impuesto opcional selecciona automaticamente patrimonio cuando supera al fijo", () => {
+  const game = createGame({ players: ["Ana", "Luis"] });
+  const player = game.currentPlayer();
+  player.cash = 2500;
+
+  game.tirarDados({ dados: [2, 2] });
+
+  assert.equal(game.state.pendingTax.fixedAmount, 200);
+  assert.equal(game.state.pendingTax.percentAmount, 250);
+  assert.equal(game.state.pendingTax.selectedMode, "PERCENT");
+  assert.equal(game.state.pendingTax.selectedAmount, 250);
+
+  game.pagarImpuesto();
+  assert.equal(player.cash, 2250);
   assert.equal(game.state.pendingTax, null);
 });
 

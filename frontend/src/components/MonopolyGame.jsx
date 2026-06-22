@@ -1,22 +1,14 @@
 import {
   AlertTriangle,
-  Bot,
   Building2,
-  Bug,
   Cuboid,
-  Chrome,
-  Code2,
-  Coffee,
   Info,
   Crown,
-  Cpu,
   Dice5,
   DoorOpen,
   Eye,
   EyeOff,
-  Gem,
   Gavel,
-  Github,
   Globe,
   Hammer,
   Landmark,
@@ -37,10 +29,6 @@ import {
   SkipBack,
   SkipForward,
   Sparkles,
-  Pizza,
-  Rocket,
-  Skull,
-  Star,
   TimerReset,
   TrainFront,
   Trophy,
@@ -158,41 +146,7 @@ const tokenPalette = [
   { bg: "#22252f", ring: "#090a0d" }
 ];
 
-const tokenIconMap = {
-  bot: Bot,
-  bug: Bug,
-  chrome: Chrome,
-  code: Code2,
-  coffee: Coffee,
-  cpu: Cpu,
-  dice: Dice5,
-  gem: Gem,
-  github: Github,
-  pizza: Pizza,
-  rocket: Rocket,
-  skull: Skull,
-  star: Star,
-  trophy: Trophy
-};
-
-const tokenIconPresets = [
-  { id: "github", label: "GitHub", copy: "merge lord" },
-  { id: "chrome", label: "Google", copy: "RAM gratis" },
-  { id: "bug", label: "Bug", copy: "feature raro" },
-  { id: "bot", label: "Bot", copy: "modo IA" },
-  { id: "code", label: "Code", copy: "semicolons" },
-  { id: "cpu", label: "CPU", copy: "lag boss" },
-  { id: "coffee", label: "Cafe", copy: "debug fuel" },
-  { id: "pizza", label: "Pizza", copy: "deploy night" },
-  { id: "rocket", label: "Rocket", copy: "to prod" },
-  { id: "skull", label: "Skull", copy: "rip rentas" },
-  { id: "gem", label: "Gem", copy: "premium" },
-  { id: "star", label: "Star", copy: "main char" },
-  { id: "dice", label: "Dice", copy: "RNG" },
-  { id: "trophy", label: "Trophy", copy: "tryhard" }
-];
-
-const tokenShapes = [
+/* const tokenShapes = [
   { id: "circle", label: "Círculo" },
   { id: "rounded", label: "Suave" },
   { id: "square", label: "Cuadro" },
@@ -200,7 +154,7 @@ const tokenShapes = [
   { id: "hexagon", label: "Hexágono" },
   { id: "shield", label: "Escudo" },
   { id: "star", label: "Estrella" }
-];
+]; */
 
 const tokenColorPresets = [
   { bg: "#d94841", ring: "#7c1510" },
@@ -217,8 +171,11 @@ const tokenColorPresets = [
   { bg: "#fef3c7", ring: "#b45309" }
 ];
 
-const tokenColorChoices = [...new Set(tokenColorPresets.flatMap((color) => [color.bg, color.ring]))];
-const tokenFigureColorChoices = ["#ffffff", "#23160c", ...tokenColorChoices.filter((color) => !["#ffffff", "#23160c"].includes(color))];
+const tokenIconMap = {};
+const tokenIconPresets = [];
+const tokenShapes = [];
+const tokenColorChoices = [];
+const tokenFigureColorChoices = [];
 
 const TOKEN_STORAGE_KEY = "monopoly-custom-tokens-v1";
 
@@ -255,14 +212,10 @@ function resolveTokenStyle(player, customTokens) {
   const palette = playerAccent(player.colorIndex ?? 0);
   const playerId = player?.id ?? player?.userId;
   const custom = customTokens?.[playerId] || player?.token;
-  const label = custom?.label ?? initialLetters(player?.name ?? player?.username);
-  const icon = custom?.icon && tokenIconMap[custom.icon] ? custom.icon : "";
+  const label = initialLetters(player?.name ?? player?.username) || custom?.label || "?";
   const bg = custom?.bg ?? palette.bg;
   const ring = custom?.ring ?? palette.ring;
-  const fg = custom?.fg ?? "#ffffff";
-  const shape = custom?.shape ?? "circle";
-  const emoji = isEmojiToken(label);
-  return { label, icon, bg, ring, fg, shape, emoji };
+  return { label, icon: "", bg, ring, fg: "#ffffff", shape: "circle", emoji: false };
 }
 
 const previewBoard = [
@@ -434,6 +387,63 @@ const moneyFormatter = new Intl.NumberFormat("es-MX", {
   maximumFractionDigits: 0
 });
 
+function percentRateLabel(rate) {
+  return `${Math.round((Number(rate) || 0) * 100)}%`;
+}
+
+function boardTaxCardValue(space) {
+  if (!space || space.type !== "IMPUESTO") return "";
+  if (space.taxKind === "OPTIONAL_PERCENT") {
+    return `MAX ${moneyFormatter.format(space.fixedAmount || 0)} / ${percentRateLabel(space.percentRate)}`;
+  }
+  return moneyFormatter.format(space.fixedAmount || 0);
+}
+
+function boardTaxRuleText(space) {
+  if (!space || space.type !== "IMPUESTO") return "";
+  if (space.taxKind === "OPTIONAL_PERCENT") {
+    return `Se cobra automaticamente el mayor entre ${moneyFormatter.format(space.fixedAmount || 0)} y ${percentRateLabel(space.percentRate)} de patrimonio.`;
+  }
+  return `Pago fijo de ${moneyFormatter.format(space.fixedAmount || 0)} al banco.`;
+}
+
+function resolvePendingTaxSelection(pendingTax) {
+  if (!pendingTax) return { amount: 0, mode: "FIXED" };
+
+  const fixedAmount = pendingTax.fixedAmount || 0;
+  const percentAmount = pendingTax.percentAmount || 0;
+
+  if (pendingTax.selectedAmount !== undefined && pendingTax.selectedAmount !== null) {
+    return {
+      amount: pendingTax.selectedAmount,
+      mode: pendingTax.selectedMode || (pendingTax.selectedAmount > fixedAmount ? "PERCENT" : "FIXED")
+    };
+  }
+
+  return percentAmount > fixedAmount
+    ? { amount: percentAmount, mode: "PERCENT" }
+    : { amount: fixedAmount, mode: "FIXED" };
+}
+
+function pendingTaxAppliedLabel(pendingTax) {
+  const selection = resolvePendingTaxSelection(pendingTax);
+  return selection.mode === "PERCENT"
+    ? `Patrimonio ${moneyFormatter.format(selection.amount)}`
+    : `Fijo ${moneyFormatter.format(selection.amount)}`;
+}
+
+function pendingTaxAppliedReason(pendingTax) {
+  const selection = resolvePendingTaxSelection(pendingTax);
+  const fixedAmount = pendingTax?.fixedAmount || 0;
+  const percentAmount = pendingTax?.percentAmount || 0;
+
+  if (selection.mode === "PERCENT") {
+    return `El patrimonio (${moneyFormatter.format(percentAmount)}) supera el fijo (${moneyFormatter.format(fixedAmount)}).`;
+  }
+
+  return `El fijo (${moneyFormatter.format(fixedAmount)}) supera o empata el patrimonio (${moneyFormatter.format(percentAmount)}).`;
+}
+
 const MONOPOLY_3D_DEBUG_KEY = "monopoly3dDebug";
 
 function isMonopoly3DDebugEnabled() {
@@ -600,7 +610,7 @@ function spaceIcon(space) {
     case "SERVICIO_PUBLICO":
       return Lightbulb;
     case "IMPUESTO":
-      return Landmark;
+      return AlertTriangle;
     case "CASUALIDAD":
     case "ARCA_COMUNAL":
       return Receipt;
@@ -699,11 +709,12 @@ function currentPrompt({ state, playersById, currentUserId, pendingPurchaseSpace
   }
 
   if (pendingTax) {
+    const selectedTax = resolvePendingTaxSelection(pendingTax);
     return {
       tone: "warn",
       eyebrow: "Impuesto",
       title: `${currentPlayer?.name || "Jugador"} debe resolver un impuesto`,
-      body: `Puede pagar ${moneyFormatter.format(pendingTax.fixedAmount)} fijo o ${moneyFormatter.format(pendingTax.percentAmount)} por patrimonio.`
+      body: `Se aplicara ${moneyFormatter.format(selectedTax.amount)} automaticamente. ${pendingTaxAppliedReason(pendingTax)}`
     };
   }
 
@@ -790,7 +801,13 @@ const reasonLabel = {
   PAGAR_DINERO: "pago de carta",
   PAGAR_A_CADA_JUGADOR: "pago a la mesa",
   RECIBIR_DE_CADA_JUGADOR: "cobro a la mesa",
-  REPARACIONES: "reparaciones"
+  REPARACIONES: "reparaciones",
+  COMPRA_CASA: "compra de casa",
+  COMPRA_HOTEL: "compra de hotel",
+  VENTA_CASA: "venta de casa",
+  VENTA_HOTEL: "venta de hotel",
+  HIPOTECA: "hipoteca",
+  LEVANTAR_HIPOTECA: "levantar hipoteca"
 };
 
 function eventTone(type) {
@@ -843,13 +860,17 @@ function describeEvent(event, playersById, boardById) {
     case "AUCTION_FINISHED":
       return { title: payload.winnerId ? `${playerName(payload.winnerId)} gana la subasta` : "Subasta finalizada", body: payload.amount ? `Precio final ${moneyFormatter.format(payload.amount)}.` : "Nadie compro la propiedad." };
     case "HOUSE_PURCHASED":
-      return { title: `${playerName(payload.playerId)} construyo una casa`, body: `Sobre ${propertyName(payload.propertyId)}.` };
+      return { title: `${playerName(payload.playerId)} construyo una casa`, body: `Pago ${moneyFormatter.format(payload.amount || 0)} sobre ${propertyName(payload.propertyId)}.` };
     case "HOTEL_PURCHASED":
-      return { title: `${playerName(payload.playerId)} construyo un hotel`, body: `En ${propertyName(payload.propertyId)}.` };
+      return { title: `${playerName(payload.playerId)} construyo un hotel`, body: `Pago ${moneyFormatter.format(payload.amount || 0)} en ${propertyName(payload.propertyId)}.` };
+    case "HOUSE_SOLD":
+      return { title: `${playerName(payload.playerId)} vendio una casa`, body: `Recibio ${moneyFormatter.format(payload.amount || 0)} por ${propertyName(payload.propertyId)}.` };
+    case "HOTEL_SOLD":
+      return { title: `${playerName(payload.playerId)} vendio un hotel`, body: `Recibio ${moneyFormatter.format(payload.amount || 0)} por ${propertyName(payload.propertyId)}.` };
     case "PROPERTY_MORTGAGED":
-      return { title: `${playerName(payload.playerId)} hipoteco ${propertyName(payload.propertyId)}`, body: "La renta queda desactivada hasta levantarla." };
+      return { title: `${playerName(payload.playerId)} hipoteco ${propertyName(payload.propertyId)}`, body: `Recibio ${moneyFormatter.format(payload.amount || 0)}. La renta queda desactivada.` };
     case "MORTGAGE_LIFTED":
-      return { title: `${playerName(payload.playerId)} levanto una hipoteca`, body: `${propertyName(payload.propertyId)} vuelve a producir renta.` };
+      return { title: `${playerName(payload.playerId)} levanto una hipoteca`, body: `Pago ${moneyFormatter.format(payload.liftCost || 0)} y ${propertyName(payload.propertyId)} vuelve a producir renta.` };
     case "PROPERTY_TRADED":
       return { title: `${playerName(payload.sellerId)} transfiere ${propertyName(payload.propertyId)}`, body: `${playerName(payload.buyerId)} paga ${moneyFormatter.format(payload.price || 0)}.` };
     case "JAIL_CARD_TRADED":
@@ -1129,6 +1150,21 @@ function cardFooterCopy(card, deck, playerName = "Jugador") {
         "Resolucion instantanea, que el destino reparta"
       ];
   return pickVariant(seed, variants);
+}
+
+function cardContentDensityClass(card, deck, playerName = "Jugador") {
+  const copy = [
+    cardDeckLabel(deck),
+    cardPreviewLabel(card),
+    cardDisplayTitle(card),
+    cardFlavorCopy(card, deck, playerName),
+    cardRuleCopy(card, deck),
+    cardFooterCopy(card, deck, playerName)
+  ].filter(Boolean).join(" ");
+
+  if (copy.length >= 260) return "copy-xl";
+  if (copy.length >= 190) return "copy-long";
+  return "";
 }
 
 function amountPresets(baseAmount, extras = []) {
@@ -1424,14 +1460,15 @@ function buildModalState({ state, currentUserId, playersById, boardById }) {
   }
 
   if (state.turn.pendingTax) {
+    const selectedTax = resolvePendingTaxSelection(state.turn.pendingTax);
     return {
       type: "tax",
       tone: "warn",
       blocking: false,
       title: `Impuesto para ${currentPlayerName}`,
       body: myTurn
-        ? "Elige como quieres pagar este impuesto."
-        : `${currentPlayerName} debe elegir como pagarlo antes de seguir.`,
+        ? `Se aplicara ${moneyFormatter.format(selectedTax.amount)} automaticamente a este turno.`
+        : `${currentPlayerName} debe pagar ${moneyFormatter.format(selectedTax.amount)} antes de seguir.`,
       tax: state.turn.pendingTax
     };
   }
@@ -1523,21 +1560,17 @@ function ActionButton({ tone = "primary", children, className = "", tooltip = ""
 }
 
 function TokenChip({ tokenStyle, className = "", style = {}, title }) {
-  const Icon = tokenIconMap[tokenStyle.icon];
-
   return (
     <span
       className={cx(
         "monopoly-token",
-        `shape-${tokenStyle.shape}`,
-        Icon && "has-icon",
-        tokenStyle.emoji && "emoji",
+        "shape-circle",
         className
       )}
       style={{ "--token-bg": tokenStyle.bg, "--token-ring": tokenStyle.ring, "--token-fg": tokenStyle.fg || "#ffffff", ...style }}
       title={title}
     >
-      <span className="token-glyph">{Icon ? <Icon size="70%" strokeWidth={2.8} /> : tokenStyle.label}</span>
+      <span className="token-glyph">{tokenStyle.label || "?"}</span>
     </span>
   );
 }
@@ -1588,14 +1621,18 @@ function PlayerStandee({ player, index, isCurrent, isMe, tokenStyle }) {
 function BoardSpace({ space, owner, players, selected, current, onSelect, showTokens = true, cameraTarget = false, tokenStyles = {} }) {
   const cell = boardCell(space.index);
   const Icon = spaceIcon(space);
+  const CardArtIcon = space.type === "CASUALIDAD" ? Sparkles : Landmark;
   const group = colorGroupMeta[space.colorGroup];
   const displayName = boardDisplayName(space);
   const ownerAccent = owner?.colorIndex !== undefined ? playerAccent(owner.colorIndex) : null;
   const ownerTokenStyle = owner ? tokenStyles[owner.id] || resolveTokenStyle(owner, {}) : null;
   const isCardSpace = space.type === "CASUALIDAD" || space.type === "ARCA_COMUNAL";
+  const isTaxSpace = space.type === "IMPUESTO";
   const cardDeckName = space.type === "CASUALIDAD" ? "Casualidad" : "Arca comunal";
   const cardDeckCode = space.type === "CASUALIDAD" ? "?" : "!";
-  const rentLabel = boardBaseRentLabel(space);
+  const rentLabel = isTaxSpace ? "" : boardBaseRentLabel(space);
+  const taxRuleText = isTaxSpace ? boardTaxRuleText(space) : "";
+  const propertyBand = group && !isCardSpace && !isTaxSpace ? group : null;
   const style = {
     gridRowStart: cell.row + 1,
     gridColumnStart: cell.col + 1
@@ -1605,6 +1642,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
     space.name,
     spaceTypeLabel(space),
     space.price ? `Precio ${moneyFormatter.format(space.price)}` : null,
+    isTaxSpace ? taxRuleText : null,
     rentLabel ? `Renta ${rentLabel}` : null,
     owner ? `Dueno: ${owner.name}` : "Sin dueno",
     space.isMortgaged ? "Hipotecada: no cobra renta" : null,
@@ -1623,6 +1661,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
         owner && "owned",
         cell.corner && "corner",
         isCardSpace && "card-space",
+        isTaxSpace && "tax-space",
         space.type === "CASUALIDAD" && "deck-chance",
         space.type === "ARCA_COMUNAL" && "deck-chest",
         selected && "selected",
@@ -1630,9 +1669,10 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
         cameraTarget && "cam-target"
       )}
       data-owner={owner ? "yes" : "no"}
+      data-index={space.index}
       data-side={cell.side}
     >
-      {group && <span className="monopoly-band" style={{ "--group-color": group.color }} />}
+      {propertyBand && <span className="monopoly-band" style={{ "--group-color": propertyBand.color }} />}
       {ownerAccent && <span className="monopoly-owner-mark" style={{ "--owner-color": ownerAccent.bg }} />}
       <div className="monopoly-space-inner">
         <div className="monopoly-space-head">
@@ -1647,9 +1687,21 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
             <div className="monopoly-card-space-art" aria-hidden="true">
               <span className="card-mini-corner top">{cardDeckCode}</span>
               <span className="card-mini-corner bottom">{cardDeckCode}</span>
-              <span className="card-mini-icon"><Receipt size={14} /></span>
+              <span className="card-mini-deck">{cardDeckName}</span>
+              <span className="card-mini-stamp">{space.type === "CASUALIDAD" ? "Efecto sorpresa" : "Fondo comun"}</span>
+              <span className="card-mini-icon"><CardArtIcon size={14} /></span>
               <strong>{displayName}</strong>
-              <em>{cardDeckName}</em>
+              <em>{space.type === "CASUALIDAD" ? "Caos inmediato" : "Carta vecinal"}</em>
+            </div>
+          ) : isTaxSpace ? (
+            <div className="monopoly-tax-space-art" aria-hidden="true">
+              <span className="tax-mini-corner top">$</span>
+              <span className="tax-mini-corner bottom">$</span>
+              <span className="tax-mini-stamp">{space.taxKind === "OPTIONAL_PERCENT" ? "Cobro mayor" : "Banco"}</span>
+              <span className="tax-mini-icon"><AlertTriangle size={14} /></span>
+              <strong>{displayName}</strong>
+              <em>{space.taxKind === "OPTIONAL_PERCENT" ? "Mayor automatico" : "Pago obligatorio"}</em>
+              <span className="monopoly-tax-space-value">{boardTaxCardValue(space)}</span>
             </div>
           ) : (
             <>
@@ -1661,7 +1713,7 @@ function BoardSpace({ space, owner, players, selected, current, onSelect, showTo
           )}
         </div>
 
-        {(space.price || rentLabel || space.houses || space.hasHotel || space.isMortgaged) && (
+        {!isTaxSpace && (space.price || rentLabel || space.houses || space.hasHotel || space.isMortgaged) && (
           <div className="space-footer">
             {space.price ? <span className="monopoly-space-price">P {moneyFormatter.format(space.price)}</span> : <span className="monopoly-space-price">{spaceTypeLabel(space)}</span>}
             {rentLabel ? <span className="monopoly-space-rent">R {rentLabel}</span> : null}
@@ -2416,6 +2468,7 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
   const debtPlayer = modalState.type === "debt" ? playersById.get(modalState.debt.debtorId) : null;
   const debtShortfall = modalState.type === "debt" ? Math.max(0, (modalState.debt.amount || 0) - (debtPlayer?.cash || 0)) : 0;
   const canPayDebt = modalState.type === "debt" && myActions.includes("resolverDeudaPendiente") && debtShortfall === 0;
+  const taxSelection = modalState.type === "tax" ? resolvePendingTaxSelection(modalState.tax) : null;
   const debtRescueLiquidity = modalState.type === "debt"
     ? (debtPlayer?.properties || []).reduce((sum, debtProperty) => sum + estimatePropertyLiquidity(debtProperty), 0)
     : 0;
@@ -2424,6 +2477,7 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
   if (isCardModal) {
     const DeckIcon = cardPreviewIcon(modalState.card, modalState.deck);
     const ruleCopy = cardRuleCopy(modalState.card, modalState.deck);
+    const cardCopyDensity = cardContentDensityClass(modalState.card, modalState.deck, modalState.playerName);
 
     return (
       <div className="monopoly-modal-backdrop card-table-backdrop">
@@ -2434,7 +2488,7 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
             </button>
           )}
           <div className="game-card-reveal game-card-reveal-standalone">
-            <div className={cx("game-card-face real-game-card", cardDeckClass(modalState.deck), modalState.card.effect === "SALIR_LIBRE_CARCEL" && "jail-free")}>
+            <div className={cx("game-card-face real-game-card", cardDeckClass(modalState.deck), cardCopyDensity, modalState.card.effect === "SALIR_LIBRE_CARCEL" && "jail-free")}>
               <span className="game-card-corner top">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
               <span className="game-card-corner bottom">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
               <div className="game-card-topline">
@@ -2502,7 +2556,7 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
         )}
 
         {modalState.type === "tax" && (
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <div className="modal-stat-card">
               <span>Pago fijo</span>
               <Money amount={modalState.tax.fixedAmount} className="modal-stat-value" />
@@ -2510,6 +2564,10 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
             <div className="modal-stat-card">
               <span>Pago por patrimonio</span>
               <Money amount={modalState.tax.percentAmount} className="modal-stat-value" />
+            </div>
+            <div className="modal-stat-card">
+              <span>Cobro aplicado</span>
+              <strong className="modal-stat-value">{pendingTaxAppliedLabel(modalState.tax)}</strong>
             </div>
           </div>
         )}
@@ -2607,8 +2665,9 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
             {(() => {
               const DeckIcon = cardPreviewIcon(modalState.card, modalState.deck);
               const ruleCopy = cardRuleCopy(modalState.card, modalState.deck);
+              const cardCopyDensity = cardContentDensityClass(modalState.card, modalState.deck, modalState.playerName);
               return (
-                <div className={cx("game-card-face", cardDeckClass(modalState.deck), modalState.card.effect === "SALIR_LIBRE_CARCEL" && "jail-free")}>
+                <div className={cx("game-card-face", cardDeckClass(modalState.deck), cardCopyDensity, modalState.card.effect === "SALIR_LIBRE_CARCEL" && "jail-free")}>
                   <span className="game-card-corner top">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
                   <span className="game-card-corner bottom">{modalState.deck === "CASUALIDAD" ? "?" : "!"}</span>
                   <div className="game-card-topline">
@@ -2646,10 +2705,9 @@ function ActionModal({ modalState, myActions, currentUserId, state, playersById,
           )}
 
           {modalState.type === "tax" && myActions.includes("pagarImpuesto") && (
-            <>
-              <ActionButton onClick={() => onAction("pagarImpuesto", { opcion: "FIXED" })}>Pagar fijo</ActionButton>
-              <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "PERCENT" })}>Pagar patrimonio</ActionButton>
-            </>
+            <ActionButton onClick={() => onAction("pagarImpuesto")}>
+              Pagar {taxSelection?.amount ? moneyFormatter.format(taxSelection.amount) : ""}
+            </ActionButton>
           )}
 
           {modalState.type === "debt" && myActions.includes("resolverDeudaPendiente") && (
@@ -2703,7 +2761,7 @@ function TokenCustomizer({
   currentTokenStyle,
   onChange,
   onReset,
-  colorOnly = false,
+  colorOnly = true,
   reservedTokenColors = []
 }) {
   const [draft, setDraft] = useState(() => colorOnly ? buildColorOnlyDraft(currentTokenStyle) : currentTokenStyle);
@@ -2753,15 +2811,90 @@ function TokenCustomizer({
     onClose();
   }
 
+  if (colorOnly) {
+    return (
+      <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+        <div className="monopoly-modal tone-info token-customizer-modal color-only">
+          <div className="token-customizer-head">
+            <div>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Color de ficha</p>
+              <h3 className="mt-1 text-2xl font-black uppercase">Elige tu color</h3>
+              <p className="mt-2 text-sm font-semibold opacity-85">
+                {currentPlayer?.name ? `${currentPlayer.name}, elige el color de tu ficha.` : "Elige el color que usara tu ficha."}
+              </p>
+            </div>
+            <button type="button" className="toast-close token-customizer-close" onClick={onClose} aria-label="Cerrar editor de color">
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="token-customizer-body">
+            <aside className="token-preview-stage">
+              <div className="token-preview-orbit">
+                <TokenChip tokenStyle={draft} className="token-preview-hero monopoly-token-large" />
+              </div>
+              <div className="token-preview-card">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] opacity-75">Vista previa</p>
+                <p className="mt-1 text-xl font-black uppercase">Ficha circular</p>
+                <p className="mt-1 text-xs font-semibold opacity-80">Solo color</p>
+                <div className="token-preview-swatches">
+                  <span style={{ background: draft.bg }} title="Interior" />
+                  <span style={{ background: draft.ring }} title="Exterior" />
+                </div>
+              </div>
+            </aside>
+
+            <section className="token-editor-column">
+              <div className="token-editor-scroll">
+                <div className="token-color-only-card">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Colores disponibles</p>
+                  <div className="token-3d-color-grid mt-3">
+                    {tokenColorPresets.map((preset) => {
+                      const colorKey = normalizeTokenColor(preset.bg);
+                      const selected = normalizeTokenColor(draft.bg) === colorKey;
+                      const unavailable = reservedColorSet.has(colorKey) && !selected;
+                      return (
+                        <button
+                          key={`color-${preset.bg}`}
+                          type="button"
+                          className={cx("token-3d-color-option", selected && "active", unavailable && "unavailable")}
+                          style={{ "--token-bg": preset.bg, "--token-ring": preset.ring }}
+                          disabled={unavailable}
+                          onClick={() => {
+                            if (!unavailable) update(buildColorOnlyDraft({ ...draft, bg: preset.bg, ring: preset.ring }));
+                          }}
+                          aria-label={unavailable ? `Color ${preset.bg} ocupado` : `Usar color ${preset.bg}`}
+                        >
+                          <span className="token-3d-color-dot" />
+                          <span>{unavailable ? "En uso" : selected ? "Actual" : "Libre"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="token-customizer-actions">
+                <ActionButton onClick={applyAndClose}>Guardar color</ActionButton>
+                <ActionButton tone="secondary" onClick={() => { onReset(); onClose(); }}>Restablecer</ActionButton>
+                <ActionButton tone="secondary" onClick={onClose}>Cancelar</ActionButton>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="monopoly-modal tone-info token-customizer-modal">
+      <div className={cx("monopoly-modal tone-info token-customizer-modal", colorOnly && "color-only")}>
         <div className="token-customizer-head">
           <div>
-            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Personalización</p>
-            <h3 className="mt-1 text-2xl font-black uppercase">Tu ficha</h3>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Color de ficha</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">{colorOnly ? "Elige tu color" : "Tu ficha"}</h3>
             <p className="mt-2 text-sm font-semibold opacity-85">
-              {currentPlayer?.name ? `${currentPlayer.name}, elige cómo te ven en la mesa.` : "Elige cómo se verá tu ficha."}
+              {currentPlayer?.name ? `${currentPlayer.name}, elige el color de tu ficha.` : "Elige el color que usara tu ficha."}
             </p>
           </div>
           <button type="button" className="toast-close token-customizer-close" onClick={onClose} aria-label="Cerrar editor de ficha">
@@ -2776,18 +2909,46 @@ function TokenCustomizer({
             </div>
             <div className="token-preview-card">
               <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] opacity-75">Vista previa</p>
-              <p className="mt-1 text-xl font-black uppercase">{tokenIconPresets.find((icon) => icon.id === draft.icon)?.label || draft.label || "?"}</p>
-              <p className="mt-1 text-xs font-semibold opacity-80">Figura: {tokenShapes.find((s) => s.id === draft.shape)?.label || draft.shape}</p>
+              <p className="mt-1 text-xl font-black uppercase">{colorOnly ? "Color unico" : tokenIconPresets.find((icon) => icon.id === draft.icon)?.label || draft.label || "?"}</p>
+              <p className="mt-1 text-xs font-semibold opacity-80">{colorOnly ? "Ficha circular" : `Figura: ${tokenShapes.find((s) => s.id === draft.shape)?.label || draft.shape}`}</p>
               <div className="token-preview-swatches">
                 <span style={{ background: draft.bg }} title="Interior" />
                 <span style={{ background: draft.ring }} title="Exterior" />
-                <span style={{ background: draft.fg || "#ffffff" }} title="Figura" />
               </div>
             </div>
           </aside>
 
           <section className="token-editor-column">
             <div className="token-editor-scroll">
+              {colorOnly && (
+                <div className="token-color-only-card">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Colores disponibles</p>
+                  <div className="token-3d-color-grid mt-3">
+                    {tokenColorPresets.map((preset) => {
+                      const colorKey = normalizeTokenColor(preset.bg);
+                      const selected = normalizeTokenColor(draft.bg) === colorKey;
+                      const unavailable = reservedColorSet.has(colorKey) && !selected;
+                      return (
+                        <button
+                          key={`3d-${preset.bg}`}
+                          type="button"
+                          className={cx("token-3d-color-option", selected && "active", unavailable && "unavailable")}
+                          style={{ "--token-bg": preset.bg, "--token-ring": preset.ring }}
+                          disabled={unavailable}
+                          onClick={() => {
+                            if (unavailable) return;
+                            update(buildColorOnlyDraft({ ...draft, bg: preset.bg, ring: preset.ring }));
+                          }}
+                          aria-label={unavailable ? `Color ${preset.bg} ocupado` : `Usar color ${preset.bg}`}
+                        >
+                          <span className="token-3d-color-dot" />
+                          <span>{unavailable ? "En uso" : selected ? "Actual" : "Libre"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               <div>
                 <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Iniciales de respaldo</p>
                 <input
@@ -2892,7 +3053,7 @@ function TokenCustomizer({
             </div>
 
             <div className="token-customizer-actions">
-              <ActionButton onClick={applyAndClose}>Guardar ficha</ActionButton>
+              <ActionButton onClick={applyAndClose}>{colorOnly ? "Guardar color" : "Guardar ficha"}</ActionButton>
               <ActionButton tone="secondary" onClick={() => { onReset(); onClose(); }}>Restablecer</ActionButton>
               <ActionButton tone="secondary" onClick={onClose}>Cancelar</ActionButton>
             </div>
@@ -3033,26 +3194,20 @@ function TopHud({
   onCloseTable,
   canLeave,
   canSurrender,
-  canCloseTable
+  canCloseTable,
+  canChangeColor = true
 }) {
   return (
     <header className="monopoly-top-hud">
       <div className="monopoly-hud-title">
         <div className="monopoly-logo monopoly-hud-logo">MONOPOLY</div>
         <div className="min-w-0">
-          <p className="monopoly-hud-kicker">{tableName || "Mesa Monopoly"}</p>
+          <p className="monopoly-hud-kicker">Turno de</p>
           <h2>{currentPlayer?.name || "Partida"}</h2>
         </div>
       </div>
 
       <div className="monopoly-hud-stats">
-        <div className="monopoly-hud-pill is-current">
-          <TokenChip tokenStyle={myTokenStyle} className="h-8 w-8 text-xs" />
-          <div>
-            <span>Turno</span>
-            <strong>{currentPlayer?.name || "-"}</strong>
-          </div>
-        </div>
         <div className="monopoly-hud-pill">
           <Wallet size={18} />
           <div>
@@ -3115,7 +3270,13 @@ function TopHud({
           {cameraAutoFollow ? <Eye size={16} /> : <EyeOff size={16} />}
           {cameraAutoFollow ? "Sigue camara" : "Camara libre"}
         </button>
-        <button type="button" className="monopoly-icon-button" onClick={onToken} title="Personalizar ficha">
+        <button
+          type="button"
+          className="monopoly-icon-button"
+          onClick={onToken}
+          disabled={!canChangeColor}
+          title={canChangeColor ? "Cambiar color" : "Color bloqueado despues del turno 10"}
+        >
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
         </button>
         <button type="button" className="monopoly-icon-button" onClick={onRules} title="Reglas">
@@ -3178,6 +3339,7 @@ function BoardArea({
   const locked = rollingDice || Boolean(cinematic);
   const boardById = useMemo(() => new Map((board || []).map((space) => [space.id, space])), [board]);
   const diceCinematicActive = ["cameraFocusDice", "diceRolling", "dice"].includes(cinematic?.phase);
+  const canRollFromDice = isMyTurn && myActions.includes("tirarDados") && !locked;
 
   return (
     <section className="monopoly-board-area" aria-label="Tablero de Monopoly">
@@ -3233,11 +3395,18 @@ function BoardArea({
                   </h2>
                 </div>
 
-                <div className="monopoly-board-dice-lockup">
-                  <div className="monopoly-center-dice" aria-live="polite">
+                <div className={cx("monopoly-board-dice-lockup", canRollFromDice && "is-roll-ready")}>
+                  <button
+                    type="button"
+                    className="monopoly-center-dice monopoly-center-dice-button"
+                    disabled={!canRollFromDice}
+                    onClick={() => onAction("tirarDados")}
+                    title={canRollFromDice ? "Tirar dados" : "Dados"}
+                    aria-label={canRollFromDice ? "Tirar dados" : "Dados"}
+                  >
                     <Dice value={diceFaces[0]} rolling={rollingDice} size={64} />
                     <Dice value={diceFaces[1]} rolling={rollingDice} size={64} />
-                  </div>
+                  </button>
                   <p className="monopoly-center-dice-total">
                     {rollingDice || cinematic
                       ? "Lanzando dados..."
@@ -3542,11 +3711,13 @@ function buildThreeDSpaceSummary(space, owner = null, ownerProperty = null, visi
       };
     case "IMPUESTO":
       return {
-        statusLabel: space.taxKind === "OPTIONAL_PERCENT" ? "Impuesto opcional" : "Impuesto fijo",
+        statusLabel: space.taxKind === "OPTIONAL_PERCENT" ? "Cobro automatico" : "Impuesto fijo",
         description: space.taxKind === "OPTIONAL_PERCENT"
-          ? `Debes elegir entre ${moneyFormatter.format(space.fixedAmount || 0)} fijo o porcentaje de patrimonio.`
+          ? `Se cobra automaticamente el mayor entre ${moneyFormatter.format(space.fixedAmount || 0)} y ${percentRateLabel(space.percentRate)} de patrimonio.`
           : `Pagas ${moneyFormatter.format(space.fixedAmount || 0)} al banco.`,
-        rentPreviewLabel: moneyFormatter.format(space.fixedAmount || 0)
+        rentPreviewLabel: space.taxKind === "OPTIONAL_PERCENT"
+          ? boardTaxCardValue(space)
+          : moneyFormatter.format(space.fixedAmount || 0)
       };
     case "CARCEL_VISITA":
       return {
@@ -3623,6 +3794,31 @@ function threeDBaseRentLabel(property) {
   return "Informacion no disponible";
 }
 
+function mortgageLiftAmount(property) {
+  return (property?.mortgageValue || 0) + Math.ceil((property?.mortgageValue || 0) * 0.1);
+}
+
+function threeDActionMoneyDetail(actionName, property) {
+  switch (actionName) {
+    case "comprarPropiedad":
+      return property?.price ? `-${moneyFormatter.format(property.price)}` : "";
+    case "comprarCasa":
+      return `-${moneyFormatter.format(property?.houseCost || 0)}`;
+    case "comprarHotel":
+      return `-${moneyFormatter.format(property?.hotelCost || property?.houseCost || 0)}`;
+    case "levantarHipoteca":
+      return `-${moneyFormatter.format(mortgageLiftAmount(property))}`;
+    case "hipotecarPropiedad":
+      return `+${moneyFormatter.format(property?.mortgageValue || 0)}`;
+    case "venderCasa":
+      return `+${moneyFormatter.format(Math.floor((property?.houseCost || 0) / 2))}`;
+    case "venderHotel":
+      return `+${moneyFormatter.format(Math.floor((property?.hotelCost || property?.houseCost || 0) / 2))}`;
+    default:
+      return "";
+  }
+}
+
 function threeDBuildLabel(property, statusLabel) {
   if (!property?.price) return statusLabel || "No aplica";
   if (property.hasHotel) return "Hotel";
@@ -3680,7 +3876,7 @@ function buildThreeDSpaceActions({
 
   if (purchaseIsHere && myActions.includes("comprarPropiedad")) {
     actions.push(
-      { label: "Comprar", type: "engine", actionName: "comprarPropiedad", tone: "success" },
+      { label: "Comprar", detail: threeDActionMoneyDetail("comprarPropiedad", property), type: "engine", actionName: "comprarPropiedad", tone: "success" },
       { label: "Subastar", type: "engine", actionName: "rechazarCompra", tone: "danger" }
     );
   }
@@ -3688,7 +3884,13 @@ function buildThreeDSpaceActions({
   if (isOwnedByMe && property?.management) {
     propertyActionOrder.forEach(([actionName, label]) => {
       if (property.management[actionName]?.allowed) {
-        actions.push({ label, type: "engine", actionName, payload: { propertyId: property.id } });
+        actions.push({
+          label,
+          detail: threeDActionMoneyDetail(actionName, property),
+          type: "engine",
+          actionName,
+          payload: { propertyId: property.id }
+        });
       }
     });
   }
@@ -3764,7 +3966,8 @@ const ThreeDTablePanel = memo(function ThreeDTablePanel({
   const tabs = [
     ["players", "Jugadores", Users],
     ["assets", "Activos", Building2],
-    ["events", "Eventos", Receipt]
+    ["events", "Eventos", Receipt],
+    ["ranking", "Ranking", Trophy]
   ];
 
   return (
@@ -3851,6 +4054,25 @@ const ThreeDTablePanel = memo(function ThreeDTablePanel({
                   </article>
                 );
               })
+            )}
+          </div>
+        )}
+
+        {activeTab === "ranking" && (
+          <div className="monopoly-3d-list monopoly-3d-ranking-list">
+            {(state?.ranking || []).length === 0 ? (
+              <p className="monopoly-3d-empty">Ranking no disponible todavia.</p>
+            ) : (
+              (state.ranking || []).map((entry, index) => (
+                <article key={entry.playerId || entry.id || index} className={cx("monopoly-3d-row", index === 0 && "is-current")}>
+                  <span className="monopoly-3d-rank-position">{index + 1}</span>
+                  <span className="monopoly-3d-row-main">
+                    <strong>{entry.name || playersById.get(entry.playerId)?.name || "Jugador"}</strong>
+                    <em>{entry.bankrupt ? "Quiebra" : `${entry.properties ?? playersById.get(entry.playerId)?.properties?.length ?? 0} propiedades`}</em>
+                  </span>
+                  <Money amount={entry.wealth || 0} className="monopoly-3d-money" />
+                </article>
+              ))
             )}
           </div>
         )}
@@ -4005,18 +4227,16 @@ function BoardCenterActions({
   }
 
   if (pendingTax && isMyTurn && myActions.includes("pagarImpuesto")) {
+    const selectedTax = resolvePendingTaxSelection(pendingTax);
     return (
       <div className="monopoly-center-action-zone is-decision">
         <div className="monopoly-board-decision-copy">
           <span>Impuesto</span>
-          <strong>Elige pago</strong>
+          <strong>{pendingTaxAppliedLabel(pendingTax)}</strong>
         </div>
         <div className="monopoly-board-action-row">
-          <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "FIXED" })}>
-            Fijo {moneyFormatter.format(pendingTax.fixedAmount)}
-          </ActionButton>
-          <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "PERCENT" })}>
-            Patrimonio {moneyFormatter.format(pendingTax.percentAmount)}
+          <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto")}>
+            Pagar {moneyFormatter.format(selectedTax.amount)}
           </ActionButton>
         </div>
       </div>
@@ -4190,12 +4410,10 @@ function TurnActionPanel({
         {pendingTax && isMyTurn && myActions.includes("pagarImpuesto") && (
           <div className="monopoly-context-box is-tax">
             <p className="monopoly-panel-eyebrow">Impuesto pendiente</p>
-            <h4>Elige como pagar</h4>
-            <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "FIXED" })}>
-              Pagar fijo - {moneyFormatter.format(pendingTax.fixedAmount)}
-            </ActionButton>
-            <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto", { opcion: "PERCENT" })}>
-              Pagar patrimonio - {moneyFormatter.format(pendingTax.percentAmount)}
+            <h4>{pendingTaxAppliedLabel(pendingTax)}</h4>
+            <p>{pendingTaxAppliedReason(pendingTax)}</p>
+            <ActionButton tone="secondary" onClick={() => onAction("pagarImpuesto")}>
+              Pagar {moneyFormatter.format(resolvePendingTaxSelection(pendingTax).amount)}
             </ActionButton>
           </div>
         )}
@@ -5604,6 +5822,19 @@ function PropertyModal(props) {
   return <ActionModal {...props} />;
 }
 
+function TurnStartBanner({ banner }) {
+  if (!banner) return null;
+
+  return (
+    <div className="monopoly-turn-start-banner" aria-live="assertive">
+      <div>
+        <span>{banner.playerName || "Jugador"}</span>
+        <strong>ES TU TURNO</strong>
+      </div>
+    </div>
+  );
+}
+
 // ============================================================================
 // LOBBY REDISEÑADO
 // Flujo estilo videojuego multijugador:
@@ -5868,9 +6099,9 @@ function LobbyMenu({ world, myTokenStyle, onJoin, onCreate, onHelp, onToken, err
           <span className="monopoly-lobby-world-dot" />
           Mundo · {world.name}
         </div>
-        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Personaliza tu ficha">
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir color">
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
-          <span>Mi ficha</span>
+          <span>Mi color</span>
         </button>
       </div>
 
@@ -6217,9 +6448,9 @@ function WaitingRoom({
           <span className="monopoly-lobby-world-dot waiting" />
           Sala de espera
         </div>
-        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Personaliza tu ficha">
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir color">
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
-          <span>Mi ficha</span>
+          <span>Mi color</span>
         </button>
       </div>
 
@@ -6242,6 +6473,14 @@ function WaitingRoom({
             </div>
 
             <p className="monopoly-waitroom-count">{seated}/{max} jugadores en la sala</p>
+
+            <button type="button" className="monopoly-waitroom-color" onClick={onToken}>
+              <TokenChip tokenStyle={myTokenStyle} className="h-10 w-10 text-sm" />
+              <span>
+                <strong>Elegir color</strong>
+                <em>Antes de iniciar</em>
+              </span>
+            </button>
 
             <div className="monopoly-waitroom-seats">
               {seats.map((player, index) => {
@@ -6333,6 +6572,7 @@ export default function MonopolyGame({
   const [debtManagerOpen, setDebtManagerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [turnBanner, setTurnBanner] = useState(null);
   // Lobby rediseñado: control de modales y configuración de sala.
   const [joinOpen, setJoinOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -6356,6 +6596,7 @@ export default function MonopolyGame({
   const cinematicTimeoutsRef = useRef([]);
   const cardModalRevealTimeoutRef = useRef(null);
   const moneyBurstTimeoutsRef = useRef([]);
+  const turnBannerTimeoutRef = useRef(null);
   // Bloqueo anti doble-clic / reentrada de acciones (robustez de interaccion).
   const actionLockRef = useRef(false);
   const actionLockTimeoutRef = useRef(null);
@@ -6534,6 +6775,7 @@ export default function MonopolyGame({
   const isMyAuctionTurn = sameEntityId(auction?.activeBidderId, currentUserId);
   const canBidAuction = isMyAuctionTurn || myActions.includes("hacerOferta");
   const canPassAuction = isMyAuctionTurn || myActions.includes("retirarseDeSubasta");
+  const canChangeMyColor = !state || Number(state?.turn?.turnNumber || 0) <= 10;
   const activeTable = useMemo(
     () => tables.find((table) => table.id === activeTableId) || null,
     [tables, activeTableId]
@@ -6547,6 +6789,12 @@ export default function MonopolyGame({
       setBidAmount(auctionMinimumBid(auction));
     }
   }, [auction?.id, auction?.currentBid]);
+
+  useEffect(() => {
+    if (!canChangeMyColor) {
+      setTokenEditorOpen(false);
+    }
+  }, [canChangeMyColor]);
 
   const boardPlayers = useMemo(
     () =>
@@ -6573,6 +6821,18 @@ export default function MonopolyGame({
     return map;
   }, [boardPlayers, customTokens]);
 
+  const threeDPlayers = useMemo(
+    () => displayBoardPlayers.map((player) => {
+      const tokenStyle = tokenStylesById[player.id] || resolveTokenStyle(player, customTokens);
+      return {
+        ...player,
+        color: tokenStyle.bg,
+        tokenRing: tokenStyle.ring
+      };
+    }),
+    [customTokens, displayBoardPlayers, tokenStylesById]
+  );
+
   const myTokenStyle = useMemo(() => {
     const me = boardPlayers.find((player) => sameEntityId(player.id, currentUserId));
     if (me) return resolveTokenStyle(me, customTokens);
@@ -6580,6 +6840,25 @@ export default function MonopolyGame({
     const fallbackIndex = boardPlayers.length;
     return resolveTokenStyle({ id: currentUserId, name: currentUser.username || "Tú", colorIndex: fallbackIndex }, customTokens);
   }, [boardPlayers, currentUserId, currentUser.username, customTokens]);
+
+  const reservedTokenColorsForMe = useMemo(() => {
+    const candidates = state?.players?.length
+      ? state.players
+      : activeTable?.players?.length
+        ? activeTable.players
+        : tableMeta?.seatedPlayers || [];
+
+    return candidates
+      .filter((player) => player?.id && !sameEntityId(player.id, currentUserId))
+      .map((player, index) => resolveTokenStyle({
+        id: player.id,
+        name: player.name || player.username,
+        colorIndex: index,
+        token: player.token
+      }, customTokens).bg)
+      .map(normalizeTokenColor)
+      .filter(Boolean);
+  }, [activeTable?.players, currentUserId, customTokens, state?.players, tableMeta?.seatedPlayers]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -6630,14 +6909,25 @@ export default function MonopolyGame({
   }, [tables, tableMeta?.seatedPlayers, state?.players]);
 
   function persistMyToken(next) {
+    if (!canChangeMyColor) {
+      setError("Solo puedes cambiar tu color durante los primeros 10 turnos.");
+      return;
+    }
+
+    const preset = tokenColorPresets.find((option) => normalizeTokenColor(option.bg) === normalizeTokenColor(next.bg));
     const normalized = {
-      label: String(next.label || "").trim().slice(0, 4).toUpperCase(),
-      icon: next.icon || "",
+      label: initialLetters(myPlayer?.name || currentUser.username || "") || String(next.label || "").trim().slice(0, 4).toUpperCase(),
+      icon: "",
       bg: next.bg,
-      ring: next.ring,
-      fg: next.fg || "#ffffff",
-      shape: next.shape
+      ring: preset?.ring || next.ring,
+      fg: "#ffffff",
+      shape: "circle"
     };
+
+    if (boardViewModeRef.current === "3d" && reservedTokenColorsForMe.includes(normalizeTokenColor(normalized.bg))) {
+      setError("Ese color ya esta ocupado en esta mesa 3D. Elige otro color.");
+      return;
+    }
 
     setCustomTokens((prev) => {
       const updated = { ...prev, [currentUserId]: normalized };
@@ -6655,6 +6945,11 @@ export default function MonopolyGame({
   }
 
   function resetMyToken() {
+    if (!canChangeMyColor) {
+      setError("Solo puedes cambiar tu color durante los primeros 10 turnos.");
+      return;
+    }
+
     setCustomTokens((prev) => {
       const updated = { ...prev };
       delete updated[currentUserId];
@@ -6915,6 +7210,7 @@ export default function MonopolyGame({
       if (diceTimeoutRef.current) window.clearTimeout(diceTimeoutRef.current);
       if (heldMonopolyStateTimeoutRef.current) window.clearTimeout(heldMonopolyStateTimeoutRef.current);
       if (cardModalRevealTimeoutRef.current) window.clearTimeout(cardModalRevealTimeoutRef.current);
+      if (turnBannerTimeoutRef.current) window.clearTimeout(turnBannerTimeoutRef.current);
       cinematicTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
       moneyBurstTimeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     };
@@ -7196,6 +7492,14 @@ export default function MonopolyGame({
     lastTurnAudioKeyRef.current = key;
 
     if (sameEntityId(state.currentPlayerId, currentUserId) && !state.winnerId) {
+      setTurnBanner({ key, playerName: currentPlayer?.name || myPlayer?.name || currentUser.username || "Jugador" });
+      if (turnBannerTimeoutRef.current) {
+        window.clearTimeout(turnBannerTimeoutRef.current);
+      }
+      turnBannerTimeoutRef.current = window.setTimeout(() => {
+        setTurnBanner(null);
+        turnBannerTimeoutRef.current = null;
+      }, 1850);
       // Pequeño delay para no superponer otros audios de cierre del turno previo
       const timeoutId = window.setTimeout(() => {
         audio.play("tuturno");
@@ -7203,7 +7507,7 @@ export default function MonopolyGame({
       return () => window.clearTimeout(timeoutId);
     }
     return undefined;
-  }, [state?.currentPlayerId, state?.turn?.turnNumber, currentUserId, state?.winnerId]);
+  }, [currentPlayer?.name, currentUser.username, currentUserId, myPlayer?.name, state?.currentPlayerId, state?.turn?.turnNumber, state?.winnerId]);
 
   // Cuando la partida termina (winnerId aparece): reproducir audio de victoria y
   // volver automáticamente al menú/lobby después de unos segundos.
@@ -7541,6 +7845,8 @@ export default function MonopolyGame({
           currentTokenStyle={myTokenStyle}
           onChange={persistMyToken}
           onReset={resetMyToken}
+          colorOnly
+          reservedTokenColors={reservedTokenColorsForMe}
         />
       </>
     );
@@ -7629,6 +7935,8 @@ export default function MonopolyGame({
 
   return (
     <GameLayout>
+      <TurnStartBanner banner={turnBanner} />
+
       {boardViewMode !== "3d" && (
         <EventToasts toasts={toasts} onDismiss={dismissToast} playersById={playersById} boardById={boardById} />
       )}
@@ -7656,6 +7964,7 @@ export default function MonopolyGame({
         canLeave={tableMeta?.status !== "PLAYING" || state?.status === "FINALIZADO" || Boolean(state?.winnerId)}
         canSurrender={tableMeta?.status === "PLAYING" && state?.status !== "FINALIZADO" && !state?.winnerId && !myPlayer?.bankrupt}
         canCloseTable={isHostAtActiveTable && (tableMeta?.status !== "PLAYING" || state?.status === "FINALIZADO" || Boolean(state?.winnerId))}
+        canChangeColor={canChangeMyColor}
       />
 
       {error && (
@@ -7670,7 +7979,7 @@ export default function MonopolyGame({
           <Monopoly3DView
             currentUser={currentUser}
             gameState={state}
-            players={displayBoardPlayers}
+            players={threeDPlayers}
             currentPlayerId={state.currentPlayerId}
             selectedSpaceId={selectedSpace?.id}
             onSelectSpaceId={(spaceId) => selectThreeDSpace(spaceId, "board")}
@@ -7863,6 +8172,8 @@ export default function MonopolyGame({
         currentTokenStyle={myTokenStyle}
         onChange={persistMyToken}
         onReset={resetMyToken}
+        colorOnly
+        reservedTokenColors={reservedTokenColorsForMe}
       />
 
       {boardViewMode !== "3d" && (rollingDice || cinematic) && (

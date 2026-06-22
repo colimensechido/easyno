@@ -46,6 +46,7 @@ export function buildTurnSnapshot(game) {
     currentPlayerId: state.turn.currentPlayerId,
     phase: state.turn.phase,
     lastRoll: state.turn.lastRoll,
+    housePurchasesThisTurn: Array.isArray(state.turn.housePurchasesThisTurn) ? [...state.turn.housePurchasesThisTurn] : [],
     pendingPurchase: state.pendingPurchase,
     pendingCard: state.pendingCard,
     pendingTax: state.pendingTax,

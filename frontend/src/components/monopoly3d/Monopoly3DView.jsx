@@ -65,7 +65,8 @@ function Monopoly3DSpaceCard({ info, onAction }) {
               className={actionClassName(action)}
               onClick={() => onAction?.(action)}
             >
-              {action.label || "Accion"}
+              <span>{action.label || "Accion"}</span>
+              {action.detail && <small>{action.detail}</small>}
             </button>
           ))
         ) : (

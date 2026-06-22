@@ -160,7 +160,8 @@ export class MonopolyGameEngine {
         lastRoll: null,
         consecutiveDoubles: 0,
         extraTurnEarned: false,
-        noExtraTurnBecauseJail: false
+        noExtraTurnBecauseJail: false,
+        housePurchasesThisTurn: []
       },
       pendingPurchase: null,
       pendingCard: null,
@@ -299,6 +300,10 @@ export class MonopolyGameEngine {
     const target = this.findSpaceById(objetivoId);
     const basePrice = target?.price || meta.basePrice || 0;
     const minimumBid = calculateMinimumAuctionBid(0, basePrice);
+    const passedPlayerIds = activePlayers
+      .filter((player) => player.cash < minimumBid)
+      .map((player) => player.id);
+    const firstBidder = activePlayers.find((player) => !passedPlayerIds.includes(player.id)) || null;
 
     this.state.auction = {
       id: createId("auction", this.sequence++),
@@ -313,15 +318,44 @@ export class MonopolyGameEngine {
       currentBid: 0,
       currentBidderId: null,
       minimumBid,
-      activeBidderId: activePlayers[0].id,
+      activeBidderId: firstBidder?.id || null,
       participantIds: activePlayers.map((player) => player.id),
-      passedPlayerIds: [],
+      passedPlayerIds,
       status: "ACTIVE"
     };
     this.state.status = GAME_STATUSES.SUBASTA;
     this.state.turn.phase = TURN_PHASES.AWAITING_AUCTION;
-    this.log("AUCTION_STARTED", { kind: tipo, assetId: objetivoId, participantIds: activePlayers.map((player) => player.id) });
+    this.log("AUCTION_STARTED", {
+      kind: tipo,
+      assetId: objetivoId,
+      participantIds: activePlayers.map((player) => player.id),
+      skippedPlayerIds: passedPlayerIds
+    });
+
+    if (!firstBidder) {
+      this.finalizeAuction(null);
+    }
+
     return this.getState();
+  }
+
+  canPlayerMeetAuctionMinimum(playerId, auction = this.state.auction) {
+    if (!auction) return false;
+    const player = this.findPlayer(playerId);
+    const minimumBid = auction.minimumBid || calculateMinimumAuctionBid(auction.currentBid, auction.meta?.basePrice || 0);
+    return !player.bankrupt && player.cash >= minimumBid;
+  }
+
+  markUnaffordableAuctionParticipants(auction = this.state.auction) {
+    if (!auction) return;
+
+    auction.participantIds.forEach((playerId) => {
+      if (playerId === auction.currentBidderId) return;
+      if (auction.passedPlayerIds.includes(playerId)) return;
+      if (!this.canPlayerMeetAuctionMinimum(playerId, auction)) {
+        auction.passedPlayerIds.push(playerId);
+      }
+    });
   }
 
   hacerOferta({ jugadorId, monto, now = Date.now() } = {}) {
@@ -472,13 +506,15 @@ export class MonopolyGameEngine {
     return this.getState();
   }
 
-  pagarImpuesto({ opcion = "FIXED", now = Date.now() } = {}) {
+  pagarImpuesto({ now = Date.now() } = {}) {
     this.ensureGameRunning(now);
     const pending = this.state.pendingTax;
     assert(pending, "No hay impuesto pendiente");
     assert(pending.playerId === this.currentPlayer().id, "Solo el jugador actual puede pagar este impuesto");
 
-    const amount = opcion === "PERCENT" ? pending.percentAmount : pending.fixedAmount;
+    const fixedAmount = pending.fixedAmount || 0;
+    const percentAmount = pending.percentAmount || 0;
+    const amount = pending.selectedAmount ?? Math.max(fixedAmount, percentAmount);
     this.state.pendingTax = null;
     this.chargePlayer(this.currentPlayer(), CREDITOR_TYPES.BANK, null, amount, "IMPUESTO");
 
@@ -499,7 +535,8 @@ export class MonopolyGameEngine {
     this.transferCash(player, CREDITOR_TYPES.BANK, property.houseCost, "COMPRA_CASA");
     property.houses += 1;
     this.state.bank.housesAvailable -= 1;
-    this.log("HOUSE_PURCHASED", { playerId: player.id, propertyId: property.id });
+    this.recordHousePurchaseThisTurn(property.id);
+    this.log("HOUSE_PURCHASED", { playerId: player.id, propertyId: property.id, amount: property.houseCost });
     return this.getState();
   }
 
@@ -515,7 +552,7 @@ export class MonopolyGameEngine {
     property.hasHotel = true;
     this.state.bank.housesAvailable += requiredHouses;
     this.state.bank.hotelsAvailable -= 1;
-    this.log("HOTEL_PURCHASED", { playerId: player.id, propertyId: property.id });
+    this.log("HOTEL_PURCHASED", { playerId: player.id, propertyId: property.id, amount: property.hotelCost });
     return this.getState();
   }
 
@@ -528,7 +565,7 @@ export class MonopolyGameEngine {
     property.houses -= 1;
     this.state.bank.housesAvailable += 1;
     this.receiveMoney(player, Math.floor(property.houseCost / 2), "VENTA_CASA");
-    this.log("HOUSE_SOLD", { playerId: player.id, propertyId: property.id });
+    this.log("HOUSE_SOLD", { playerId: player.id, propertyId: property.id, amount: Math.floor(property.houseCost / 2) });
     return this.getState();
   }
 
@@ -544,7 +581,7 @@ export class MonopolyGameEngine {
     this.state.bank.hotelsAvailable += 1;
     this.state.bank.housesAvailable -= requiredHouses;
     this.receiveMoney(player, Math.floor(property.hotelCost / 2), "VENTA_HOTEL");
-    this.log("HOTEL_SOLD", { playerId: player.id, propertyId: property.id });
+    this.log("HOTEL_SOLD", { playerId: player.id, propertyId: property.id, amount: Math.floor(property.hotelCost / 2) });
     return this.getState();
   }
 
@@ -556,7 +593,7 @@ export class MonopolyGameEngine {
     this.validateMortgage(player, property);
     property.isMortgaged = true;
     this.receiveMoney(player, property.mortgageValue, "HIPOTECA");
-    this.log("PROPERTY_MORTGAGED", { playerId: player.id, propertyId: property.id });
+    this.log("PROPERTY_MORTGAGED", { playerId: player.id, propertyId: property.id, amount: property.mortgageValue });
     return this.getState();
   }
 
@@ -1505,10 +1542,14 @@ export class MonopolyGameEngine {
 
   resolveTax(player, taxSpace) {
     if (taxSpace.taxKind === "OPTIONAL_PERCENT") {
+      const fixedAmount = taxSpace.fixedAmount;
+      const percentAmount = Math.ceil(this.calculateEstateForTax(player) * taxSpace.percentRate);
       this.state.pendingTax = {
         playerId: player.id,
-        fixedAmount: taxSpace.fixedAmount,
-        percentAmount: Math.ceil(this.calculateEstateForTax(player) * taxSpace.percentRate)
+        fixedAmount,
+        percentAmount,
+        selectedMode: percentAmount > fixedAmount ? "PERCENT" : "FIXED",
+        selectedAmount: Math.max(fixedAmount, percentAmount)
       };
       this.state.status = GAME_STATUSES.ESPERANDO_ACCION_DEL_JUGADOR;
       this.state.turn.phase = TURN_PHASES.AWAITING_TAX_DECISION;
@@ -1744,15 +1785,24 @@ export class MonopolyGameEngine {
 
   advanceAuctionTurn() {
     const auction = this.state.auction;
+    this.markUnaffordableAuctionParticipants(auction);
+
     const stillIn = auction.participantIds.filter((playerId) => !auction.passedPlayerIds.includes(playerId));
+    const ableToBid = stillIn.filter((playerId) => this.canPlayerMeetAuctionMinimum(playerId, auction));
+    const challengers = ableToBid.filter((playerId) => playerId !== auction.currentBidderId);
 
     if (stillIn.length === 0) {
       this.finalizeAuction(null);
       return;
     }
 
-    if (stillIn.length === 1 && auction.currentBidderId) {
+    if (auction.currentBidderId && challengers.length === 0) {
       this.finalizeAuction(auction.currentBidderId);
+      return;
+    }
+
+    if (!auction.currentBidderId && ableToBid.length === 0) {
+      this.finalizeAuction(null);
       return;
     }
 
@@ -1762,11 +1812,17 @@ export class MonopolyGameEngine {
       cursor = (cursor + 1) % auction.participantIds.length;
       const candidateId = auction.participantIds[cursor];
 
-      if (!auction.passedPlayerIds.includes(candidateId)) {
+      if (!auction.passedPlayerIds.includes(candidateId) && this.canPlayerMeetAuctionMinimum(candidateId, auction)) {
         auction.activeBidderId = candidateId;
         return;
       }
     } while (cursor !== auction.participantIds.indexOf(auction.activeBidderId));
+
+    if (auction.currentBidderId) {
+      this.finalizeAuction(auction.currentBidderId);
+    } else {
+      this.finalizeAuction(null);
+    }
   }
 
   finalizeAuction(winnerId) {
@@ -1862,6 +1918,7 @@ export class MonopolyGameEngine {
     assert(property.ownerId === player.id, "La propiedad no pertenece al jugador actual");
     assert(!property.hasHotel, "No se puede construir una casa sobre un hotel");
     assert(property.houses < this.requiredHousesForHotel(), "La propiedad ya tiene el maximo de casas permitido");
+    assert(!this.houseWasPurchasedThisTurn(property.id), "Solo se puede comprar una casa por casilla en tu turno");
     assert(this.playerOwnsCompleteGroup(player.id, property.colorGroup), "Debes poseer el grupo completo para construir");
     assert(!this.groupSpaces(property.colorGroup).some((space) => space.isMortgaged), "No se puede construir con propiedades hipotecadas en el grupo");
     assert(this.state.bank.housesAvailable > 0, "El banco no tiene casas disponibles");
@@ -1967,6 +2024,25 @@ export class MonopolyGameEngine {
 
     assert(nextValues.every((value) => value >= 0), "La operacion de casas dejaria un valor invalido");
     assert(Math.max(...nextValues) - Math.min(...nextValues) <= 1, "La construccion o venta debe mantenerse uniforme");
+  }
+
+  currentTurnHousePurchases() {
+    if (!Array.isArray(this.state.turn.housePurchasesThisTurn)) {
+      this.state.turn.housePurchasesThisTurn = [];
+    }
+
+    return this.state.turn.housePurchasesThisTurn;
+  }
+
+  houseWasPurchasedThisTurn(propertyId) {
+    return this.currentTurnHousePurchases().includes(propertyId);
+  }
+
+  recordHousePurchaseThisTurn(propertyId) {
+    const purchases = this.currentTurnHousePurchases();
+    if (!purchases.includes(propertyId)) {
+      purchases.push(propertyId);
+    }
   }
 
   calculateMortgageLiftCost(property) {
@@ -2123,6 +2199,7 @@ export class MonopolyGameEngine {
     this.state.turn.consecutiveDoubles = 0;
     this.state.turn.extraTurnEarned = false;
     this.state.turn.noExtraTurnBecauseJail = false;
+    this.state.turn.housePurchasesThisTurn = [];
     this.state.turn.number += 1;
     this.state.status = GAME_STATUSES.JUGANDO;
     this.log("TURN_ADVANCED", { currentPlayerId: this.currentPlayer().id });

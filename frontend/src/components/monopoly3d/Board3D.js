@@ -728,6 +728,13 @@ export function syncBoardTiles(model, board = [], players = []) {
   }
 }
 
+function playerPieceVisualSignature(player, index) {
+  return [
+    player.color || index,
+    player.tokenRing || ""
+  ].join("|");
+}
+
 export function syncPlayerPieces(model, players = []) {
   const liveIds = new Set(players.map((player) => player.id));
 
@@ -741,8 +748,18 @@ export function syncPlayerPieces(model, players = []) {
 
   players.forEach((player, index) => {
     let piece = model.playerPieces.get(player.id);
+    const signature = playerPieceVisualSignature(player, index);
+
+    if (piece && piece.userData.visualSignature !== signature) {
+      model.playerLayer.remove(piece);
+      disposeObject3D(piece);
+      model.playerPieces.delete(player.id);
+      piece = null;
+    }
+
     if (!piece) {
       piece = createPlayerPiece3D(player, index, players);
+      piece.userData.visualSignature = signature;
       model.playerPieces.set(player.id, piece);
       model.playerLayer.add(piece);
     }
