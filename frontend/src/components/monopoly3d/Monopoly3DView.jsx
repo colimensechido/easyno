@@ -1,6 +1,6 @@
 import { Camera, Dice5, Eye, EyeOff, Mouse, MoveRight, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { createClassicBoard } from "../../../../shared/monopoly-engine/data/board-data.mjs";
+import { createClassicBoard } from "@shared/monopoly-engine/data/board-data.mjs";
 import Monopoly3DScene from "./Monopoly3DScene";
 import { createMockPlayers, movePlayerBySteps } from "./board3dUtils";
 

@@ -55,8 +55,8 @@ services:
   # ── Frontend: React (build) servido por nginx + proxy interno a socket.io ─────
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: ./
+      dockerfile: frontend/Dockerfile
     restart: unless-stopped
     expose:
       - "80"

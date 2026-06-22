@@ -1,8 +1,16 @@
+import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
+const sharedDir = path.resolve(__dirname, "..", "shared");
+
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      "@shared": sharedDir,
+    },
+  },
   server: {
     port: 5173,
     proxy: {
