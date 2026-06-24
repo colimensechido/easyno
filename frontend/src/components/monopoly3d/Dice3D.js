@@ -1,9 +1,11 @@
 import * as THREE from "three";
 
 const FACE_ROTATIONS = {
-  1: new THREE.Euler(0, 0, 0),
-  2: new THREE.Euler(0, 0, Math.PI / 2),
-  3: new THREE.Euler(0, 0, -Math.PI / 2),
+  // BoxGeometry material order is +X, -X, +Y, -Y, +Z, -Z.
+  // Rotate the requested material face so its normal points upward.
+  1: new THREE.Euler(0, 0, Math.PI / 2),
+  2: new THREE.Euler(0, 0, -Math.PI / 2),
+  3: new THREE.Euler(0, 0, 0),
   4: new THREE.Euler(Math.PI, 0, 0),
   5: new THREE.Euler(-Math.PI / 2, 0, 0),
   6: new THREE.Euler(Math.PI / 2, 0, 0)

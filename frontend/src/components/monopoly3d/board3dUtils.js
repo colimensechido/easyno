@@ -36,12 +36,12 @@ export function boardPositionForIndex(index, y = BOARD_3D.tileHeight / 2) {
 
   if (index === 0) return { x: track, y, z: track, side: "bottom", corner: true, rotationY: 0 };
   if (index > 0 && index < 10) return { x: track - cornerGap - step * (index - 1), y, z: track, side: "bottom", corner: false, rotationY: 0 };
-  if (index === 10) return { x: -track, y, z: track, side: "left", corner: true, rotationY: Math.PI / 2 };
-  if (index > 10 && index < 20) return { x: -track, y, z: track - cornerGap - step * (index - 11), side: "left", corner: false, rotationY: Math.PI / 2 };
+  if (index === 10) return { x: -track, y, z: track, side: "left", corner: true, rotationY: -Math.PI / 2 };
+  if (index > 10 && index < 20) return { x: -track, y, z: track - cornerGap - step * (index - 11), side: "left", corner: false, rotationY: -Math.PI / 2 };
   if (index === 20) return { x: -track, y, z: -track, side: "top", corner: true, rotationY: Math.PI };
   if (index > 20 && index < 30) return { x: -track + cornerGap + step * (index - 21), y, z: -track, side: "top", corner: false, rotationY: Math.PI };
-  if (index === 30) return { x: track, y, z: -track, side: "right", corner: true, rotationY: -Math.PI / 2 };
-  return { x: track, y, z: -track + cornerGap + step * (index - 31), side: "right", corner: false, rotationY: -Math.PI / 2 };
+  if (index === 30) return { x: track, y, z: -track, side: "right", corner: true, rotationY: Math.PI / 2 };
+  return { x: track, y, z: -track + cornerGap + step * (index - 31), side: "right", corner: false, rotationY: Math.PI / 2 };
 }
 
 export function piecePositionForPlayer(player, players = []) {

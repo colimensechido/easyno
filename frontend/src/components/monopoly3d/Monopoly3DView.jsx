@@ -1,4 +1,4 @@
-import { Dice5, MoveRight, RotateCcw, TimerReset, X } from "lucide-react";
+import { Dice5, MoveRight, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createClassicBoard } from "../../../../shared/monopoly-engine/data/board-data.mjs";
 import Monopoly3DScene from "./Monopoly3DScene";
@@ -94,13 +94,10 @@ export default function Monopoly3DView({
   cameraFocus = null,
   cameraAutoFollow = false,
   canRollDice = false,
-  canEndTurn = false,
   onRollDice,
-  onEndTurn,
   onSelectionAction,
   statusTitle = "",
-  statusBody = "",
-  endTurnLabel = "Cerrar turno"
+  statusBody = ""
 }) {
   const board = useMemo(() => gameState?.board || createClassicBoard(), [gameState?.board]);
   const fallbackPlayers = useMemo(() => createMockPlayers(currentUser), [currentUser?.id, currentUser?.username]);
@@ -219,17 +216,13 @@ export default function Monopoly3DView({
             <p>{stageStatus}</p>
             <span>{stageBody}</span>
           </div>
-          {canEndTurn && (
-            <div className="monopoly-3d-stage-controls">
-              <button
-                type="button"
-                className="monopoly-3d-button is-primary"
-                onClick={onEndTurn}
-                title={endTurnLabel}
-              >
-                <TimerReset size={16} />
-                {endTurnLabel}
-              </button>
+          {canRollDice && !diceRollingVisual && (
+            <div className="monopoly-3d-dice-hint">
+              <Dice5 size={18} />
+              <span>
+                <strong>Tu tirada</strong>
+                Haz click en los dados
+              </span>
             </div>
           )}
           <Monopoly3DScene
@@ -251,12 +244,13 @@ export default function Monopoly3DView({
             onSelectionAction={onSelectionAction}
             cameraAutoFollow={cameraAutoFollow}
           />
+          {sidePanel}
           <Monopoly3DSpaceCard info={selectedSpaceInfo} onAction={onSelectionAction} />
         </div>
       </div>
 
-      <div className="monopoly-3d-bottom-panel">
-        {sidePanel || (
+      {!sidePanel && (
+        <div className="monopoly-3d-bottom-panel">
           <section className="monopoly-3d-info-panel">
             <div className="monopoly-3d-panel-head">
               <span>
@@ -291,8 +285,8 @@ export default function Monopoly3DView({
               </div>
             )}
           </section>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
