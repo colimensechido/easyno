@@ -2119,6 +2119,9 @@ io.on("connection", (socket) => {
         worldId,
         tableId
       });
+      if (state?.table?.seatedPlayers?.some((player) => player.id === socket.user.id)) {
+        socket.join(tableChannel(worldId, tableId));
+      }
       socket.emit("monopoly_state", state);
 
       if (typeof callback === "function") {
@@ -2257,6 +2260,126 @@ io.on("connection", (socket) => {
       if (typeof callback === "function") {
         callback({ ok: false, error: error.message || "No se pudo ejecutar la accion de Monopoly" });
       }
+    }
+  });
+
+  socket.on("monopoly_dice_motion", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+      const motion = payload && payload.motion && typeof payload.motion === "object" ? payload.motion : null;
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId || !tableId || !motion) {
+        if (typeof callback === "function") callback({ ok: false });
+        return;
+      }
+
+      const now = Date.now();
+      const phase = String(motion.phase || "");
+      const sequenceId = String(payload.sequenceId || "").slice(0, 80);
+      if (!["grab", "move", "release", "cancel"].includes(phase) || !sequenceId) {
+        if (typeof callback === "function") callback({ ok: false });
+        return;
+      }
+      if (phase === "move" && now - Number(socket.data.lastMonopolyDiceMotionAt || 0) < 32) {
+        if (typeof callback === "function") callback({ ok: true, throttled: true });
+        return;
+      }
+
+      if (phase === "grab") {
+        const state = await monopolyService.getState({ worldId, tableId });
+        const game = state?.table?.game;
+        const actor = game?.players?.find((player) => String(player.id) === String(socket.user.id));
+        if (
+          !actor ||
+          actor.bankrupt ||
+          String(game.currentPlayerId) !== String(socket.user.id) ||
+          game.turn?.phase !== "AWAITING_ROLL"
+        ) {
+          if (typeof callback === "function") callback({ ok: false });
+          return;
+        }
+        socket.data.monopolyDiceGesture = {
+          worldId,
+          tableId,
+          sequenceId,
+          expiresAt: now + 8000
+        };
+      } else {
+        const gesture = socket.data.monopolyDiceGesture;
+        if (
+          !gesture ||
+          gesture.worldId !== worldId ||
+          gesture.tableId !== tableId ||
+          gesture.sequenceId !== sequenceId ||
+          gesture.expiresAt < now
+        ) {
+          if (typeof callback === "function") callback({ ok: false });
+          return;
+        }
+      }
+
+      const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+      const clamp = (value, min, max, fallback = 0) => Math.min(max, Math.max(min, finite(value, fallback)));
+      const normalizeVector = (value, limit, fallbackY = 0) => ({
+        x: clamp(value?.x, -limit, limit),
+        y: clamp(value?.y, -limit, limit, fallbackY),
+        z: clamp(value?.z, -limit, limit)
+      });
+      let safeMotion;
+      if (phase === "grab" || phase === "move") {
+        safeMotion = {
+          phase,
+          point: {
+            x: clamp(motion.point?.x, -5, 5),
+            y: 1.45,
+            z: clamp(motion.point?.z, -5, 5)
+          }
+        };
+      } else if (phase === "release") {
+        safeMotion = {
+          phase,
+          dice: (Array.isArray(motion.dice) ? motion.dice : []).slice(0, 2).map((die) => ({
+            position: {
+              x: clamp(die?.position?.x, -5, 5),
+              y: clamp(die?.position?.y, 0.55, 4, 1.45),
+              z: clamp(die?.position?.z, -5, 5)
+            },
+            quaternion: {
+              x: clamp(die?.quaternion?.x, -1, 1),
+              y: clamp(die?.quaternion?.y, -1, 1),
+              z: clamp(die?.quaternion?.z, -1, 1),
+              w: clamp(die?.quaternion?.w, -1, 1, 1)
+            },
+            velocity: normalizeVector(die?.velocity, 20),
+            angularVelocity: normalizeVector(die?.angularVelocity, 30)
+          }))
+        };
+        if (safeMotion.dice.length !== 2) {
+          if (typeof callback === "function") callback({ ok: false });
+          return;
+        }
+      } else {
+        safeMotion = { phase: "cancel" };
+      }
+
+      socket.data.lastMonopolyDiceMotionAt = now;
+      socket.join(tableChannel(worldId, tableId));
+      socket.to(tableChannel(worldId, tableId)).emit("monopoly_dice_motion", {
+        worldId,
+        tableId,
+        actorId: socket.user.id,
+        sequenceId,
+        sentAt: now,
+        motion: safeMotion
+      });
+      if (phase === "release" || phase === "cancel") {
+        socket.data.monopolyDiceGesture = null;
+      }
+      if (typeof callback === "function") callback({ ok: true });
+    } catch {
+      // Ephemeral motion must never interrupt the authoritative game flow.
+      if (typeof callback === "function") callback({ ok: false });
     }
   });
 

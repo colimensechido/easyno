@@ -78,6 +78,9 @@ function Monopoly3DSpaceCard({ info, onAction }) {
 }
 
 export default function Monopoly3DView({
+  socket = null,
+  worldId = null,
+  tableId = "",
   currentUser,
   gameState = null,
   players = null,
@@ -95,6 +98,7 @@ export default function Monopoly3DView({
   cameraAutoFollow = false,
   canRollDice = false,
   onRollDice,
+  onDiceMotion,
   onSelectionAction,
   statusTitle = "",
   statusBody = ""
@@ -104,6 +108,7 @@ export default function Monopoly3DView({
   const [mockPlayers, setMockPlayers] = useState(fallbackPlayers);
   const [internalSelectedSpaceId, setInternalSelectedSpaceId] = useState("go");
   const [activePlayerId, setActivePlayerId] = useState("");
+  const [diceGestureActive, setDiceGestureActive] = useState(false);
   const connectedPlayers = players || gameState?.players || [];
   const isConnected = Boolean(connectedPlayers.length);
   const displayPlayers = isConnected ? connectedPlayers : mockPlayers;
@@ -216,16 +221,20 @@ export default function Monopoly3DView({
             <p>{stageStatus}</p>
             <span>{stageBody}</span>
           </div>
-          {canRollDice && !diceRollingVisual && (
+          {canRollDice && !diceRollingVisual && !diceGestureActive && (
             <div className="monopoly-3d-dice-hint">
               <Dice5 size={18} />
               <span>
                 <strong>Tu tirada</strong>
-                Haz click en los dados
+                Arrastra y suelta los dados
               </span>
             </div>
           )}
           <Monopoly3DScene
+            socket={socket}
+            worldId={worldId}
+            tableId={tableId}
+            currentUserId={currentUser?.id}
             board={board}
             players={displayPlayers}
             selectedSpaceIndex={selectedSpace?.index ?? 0}
@@ -241,6 +250,8 @@ export default function Monopoly3DView({
             destinationSpaceIndex={destinationSpace?.index ?? null}
             canRollDice={canRollDice}
             onRollDice={onRollDice}
+            onDiceGestureChange={setDiceGestureActive}
+            onDiceMotion={onDiceMotion}
             onSelectionAction={onSelectionAction}
             cameraAutoFollow={cameraAutoFollow}
           />

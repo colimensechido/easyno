@@ -1,7 +1,17 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { createDice3D, animateDice3D, syncDice3D } from "./Dice3D";
+import {
+  animateDice3D,
+  applyRemoteDiceMotion,
+  beginDiceDrag,
+  cancelDiceDrag,
+  createDice3D,
+  isDiceDragging,
+  releaseDiceDrag,
+  syncDice3D,
+  updateDiceDrag
+} from "./Dice3D";
 import {
   animateBoard3D,
   createBoard3D,
@@ -26,6 +36,10 @@ function dampVector3(current, target, lambda, delta) {
 }
 
 export default function Monopoly3DScene({
+  socket = null,
+  worldId = null,
+  tableId = "",
+  currentUserId = null,
   board,
   players,
   selectedSpaceIndex,
@@ -41,6 +55,8 @@ export default function Monopoly3DScene({
   destinationSpaceIndex = null,
   canRollDice = false,
   onRollDice,
+  onDiceGestureChange,
+  onDiceMotion,
   onSelectionAction,
   cameraAutoFollow = true
 }) {
@@ -53,6 +69,9 @@ export default function Monopoly3DScene({
   const onSelectRef = useRef(onSelectSpace);
   const canRollDiceRef = useRef(canRollDice);
   const onRollDiceRef = useRef(onRollDice);
+  const onDiceGestureChangeRef = useRef(onDiceGestureChange);
+  const onDiceMotionRef = useRef(onDiceMotion);
+  const diceRef = useRef(null);
   const onSelectionActionRef = useRef(onSelectionAction);
   const cameraAutoFollowRef = useRef(cameraAutoFollow);
   const localDiceRollRef = useRef({
@@ -111,6 +130,37 @@ export default function Monopoly3DScene({
   useEffect(() => {
     onRollDiceRef.current = onRollDice;
   }, [onRollDice]);
+
+  useEffect(() => {
+    onDiceGestureChangeRef.current = onDiceGestureChange;
+  }, [onDiceGestureChange]);
+
+  useEffect(() => {
+    onDiceMotionRef.current = onDiceMotion;
+  }, [onDiceMotion]);
+
+  useEffect(() => {
+    if (!socket || !worldId || !tableId) return undefined;
+
+    function handleRemoteDiceMotion(payload) {
+      if (
+        payload?.worldId !== worldId ||
+        payload?.tableId !== tableId ||
+        String(payload?.actorId) === String(currentUserId) ||
+        !diceRef.current
+      ) {
+        return;
+      }
+      applyRemoteDiceMotion(diceRef.current, payload.motion, performance.now());
+    }
+
+    socket.on("monopoly_dice_motion", handleRemoteDiceMotion);
+    return () => socket.off("monopoly_dice_motion", handleRemoteDiceMotion);
+  }, [currentUserId, socket, tableId, worldId]);
+
+  useEffect(() => {
+    if (!canRollDice) onDiceGestureChange?.(false);
+  }, [canRollDice, onDiceGestureChange]);
 
   useEffect(() => {
     onSelectionActionRef.current = onSelectionAction;
@@ -183,6 +233,7 @@ export default function Monopoly3DScene({
     modelRef.current = model;
     scene.add(model.group);
     const dice = createDice3D();
+    diceRef.current = dice;
     scene.add(dice);
     const diceHitObjects = [dice.userData.glow, ...dice.userData.dice].filter(Boolean);
     const effects = createSceneEffects3D();
@@ -190,7 +241,21 @@ export default function Monopoly3DScene({
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    const dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.12);
+    const dragPoint = new THREE.Vector3();
     let hoveredActionMesh = null;
+    let activeDicePointerId = null;
+
+    function updatePointer(event) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(pointer, camera);
+    }
+
+    function pointOnDiceTable() {
+      return raycaster.ray.intersectPlane(dragPlane, dragPoint) ? dragPoint : null;
+    }
 
     function startLocalDiceRoll() {
       const now = performance.now();
@@ -212,10 +277,26 @@ export default function Monopoly3DScene({
     }
 
     function handlePointerDown(event) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      updatePointer(event);
+
+      if (canRollDiceRef.current && !localDiceRollRef.current.active && !dice.userData.physicsActive) {
+        const diceHit = raycaster.intersectObjects(diceHitObjects, false)[0];
+        const tablePoint = diceHit ? pointOnDiceTable() : null;
+        if (diceHit && tablePoint) {
+          event.preventDefault();
+          activeDicePointerId = event.pointerId;
+          renderer.domElement.setPointerCapture?.(event.pointerId);
+          const motion = beginDiceDrag(dice, tablePoint, performance.now());
+          onDiceMotionRef.current?.(motion);
+          onDiceGestureChangeRef.current?.(true);
+          controls.enabled = false;
+          dice.userData.hovered = false;
+          renderer.domElement.style.cursor = "grabbing";
+          return;
+        }
+      }
+
       const panelHit = raycaster.intersectObjects(model.interactiveMeshes, false)
         .find((item) => item.object.userData.selectionPanel);
       const panelZone = resolveSelectionPanelHit(model, panelHit);
@@ -233,15 +314,6 @@ export default function Monopoly3DScene({
         return;
       }
 
-      if (canRollDiceRef.current) {
-        const diceHit = raycaster.intersectObjects(diceHitObjects, false)[0];
-        if (diceHit) {
-          startLocalDiceRoll();
-          window.requestAnimationFrame(() => onRollDiceRef.current?.());
-          return;
-        }
-      }
-
       const intersections = raycaster.intersectObjects(model.tileMeshes, false);
       const hit = intersections.find((item) => item.object.userData.spaceIndex !== undefined);
       if (hit) {
@@ -250,10 +322,19 @@ export default function Monopoly3DScene({
     }
 
     function handlePointerMove(event) {
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(pointer, camera);
+      updatePointer(event);
+
+      if (activeDicePointerId === event.pointerId && isDiceDragging(dice)) {
+        event.preventDefault();
+        const tablePoint = pointOnDiceTable();
+        if (tablePoint) {
+          const motion = updateDiceDrag(dice, tablePoint, performance.now());
+          if (motion) onDiceMotionRef.current?.(motion);
+        }
+        renderer.domElement.style.cursor = "grabbing";
+        return;
+      }
+
       const panelHit = raycaster.intersectObjects(model.interactiveMeshes, false)
         .find((item) => item.object.userData.selectionPanel);
       const panelZone = resolveSelectionPanelHit(model, panelHit);
@@ -277,7 +358,34 @@ export default function Monopoly3DScene({
       renderer.domElement.style.cursor = panelZone || diceHovered ? "pointer" : "";
     }
 
+    function handlePointerUp(event) {
+      if (activeDicePointerId !== event.pointerId || !isDiceDragging(dice)) return;
+      event.preventDefault();
+      renderer.domElement.releasePointerCapture?.(event.pointerId);
+      activeDicePointerId = null;
+      const releaseMotion = releaseDiceDrag(dice, performance.now());
+      renderer.domElement.style.cursor = "";
+      if (releaseMotion) {
+        onDiceMotionRef.current?.(releaseMotion);
+        startLocalDiceRoll();
+        window.requestAnimationFrame(() => onRollDiceRef.current?.());
+      } else {
+        onDiceGestureChangeRef.current?.(false);
+      }
+    }
+
+    function handlePointerCancel(event) {
+      if (activeDicePointerId !== event.pointerId) return;
+      renderer.domElement.releasePointerCapture?.(event.pointerId);
+      activeDicePointerId = null;
+      const motion = cancelDiceDrag(dice);
+      onDiceMotionRef.current?.(motion);
+      onDiceGestureChangeRef.current?.(false);
+      renderer.domElement.style.cursor = "";
+    }
+
     function handlePointerLeave() {
+      if (isDiceDragging(dice)) return;
       setSelectionBillboardHover(model, "");
       dice.userData.hovered = false;
       renderer.domElement.style.cursor = "";
@@ -287,6 +395,8 @@ export default function Monopoly3DScene({
     observer.observe(mount);
     renderer.domElement.addEventListener("pointerdown", handlePointerDown);
     renderer.domElement.addEventListener("pointermove", handlePointerMove);
+    renderer.domElement.addEventListener("pointerup", handlePointerUp);
+    renderer.domElement.addEventListener("pointercancel", handlePointerCancel);
     renderer.domElement.addEventListener("pointerleave", handlePointerLeave);
     resize();
 
@@ -407,8 +517,9 @@ export default function Monopoly3DScene({
       });
       syncMoneyBursts3D(effects, visualState.moneyBursts, model.playerPieces);
 
+      const diceDragging = isDiceDragging(dice);
       const autoCamera = cameraAutoFollowRef.current && (rollingDiceVisual || visualState.cinematic);
-      controls.enabled = !autoCamera;
+      controls.enabled = !autoCamera && !diceDragging;
 
       if (!cameraAutoFollowRef.current) {
         desiredTarget.copy(controls.target);
@@ -459,6 +570,8 @@ export default function Monopoly3DScene({
       observer.disconnect();
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
       renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+      renderer.domElement.removeEventListener("pointerup", handlePointerUp);
+      renderer.domElement.removeEventListener("pointercancel", handlePointerCancel);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
       renderer.domElement.style.cursor = "";
       controls.dispose();
@@ -472,6 +585,7 @@ export default function Monopoly3DScene({
       renderer.forceContextLoss();
       renderer.domElement.remove();
       modelRef.current = null;
+      diceRef.current = null;
       sceneRef.current = null;
     };
   }, []);

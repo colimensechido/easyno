@@ -7057,6 +7057,11 @@ export default function MonopolyGame({
   const turnBannerTimeoutRef = useRef(null);
   // Bloqueo anti doble-clic / reentrada de acciones (robustez de interaccion).
   const actionLockRef = useRef(false);
+  const diceMotionSequenceRef = useRef("");
+  const diceMotionAuthorizedRef = useRef(false);
+  const pendingDiceMoveRef = useRef(null);
+  const pendingDiceTerminalRef = useRef(null);
+  const lastDiceMotionSentAtRef = useRef(0);
   const actionLockTimeoutRef = useRef(null);
   const diceStateHoldUntilRef = useRef(0);
   const heldMonopolyStateTimeoutRef = useRef(null);
@@ -7185,6 +7190,13 @@ export default function MonopolyGame({
       socket.off("monopoly_error", handleMonopolyError);
     };
   }, [socket, world?.id, activeTableId, currentUserId]);
+
+  useEffect(() => {
+    diceMotionSequenceRef.current = "";
+    diceMotionAuthorizedRef.current = false;
+    pendingDiceMoveRef.current = null;
+    pendingDiceTerminalRef.current = null;
+  }, [activeTableId]);
 
   useEffect(() => {
     const timerId = window.setInterval(() => setTick(Date.now()), 1000);
@@ -8206,6 +8218,81 @@ export default function MonopolyGame({
     emitAction();
   }
 
+  function emitDiceMotion(motion) {
+    if (!socket || !activeTableId || !motion) return;
+    const now = performance.now();
+
+    const sendMotion = (payloadMotion, { volatile = false } = {}) => {
+      const payload = {
+        worldId: world.id,
+        tableId: activeTableId,
+        sequenceId: diceMotionSequenceRef.current,
+        motion: payloadMotion
+      };
+      if (volatile && socket.volatile?.emit) {
+        socket.volatile.emit("monopoly_dice_motion", payload);
+      } else {
+        socket.emit("monopoly_dice_motion", payload);
+      }
+    };
+
+    if (motion.phase === "grab") {
+      diceMotionSequenceRef.current = globalThis.crypto?.randomUUID?.() || `${currentUserId}-${Date.now()}`;
+      diceMotionAuthorizedRef.current = false;
+      pendingDiceMoveRef.current = null;
+      pendingDiceTerminalRef.current = null;
+      const payload = {
+        worldId: world.id,
+        tableId: activeTableId,
+        sequenceId: diceMotionSequenceRef.current,
+        motion
+      };
+      socket.emit("monopoly_dice_motion", payload, (response) => {
+        if (!response?.ok || payload.sequenceId !== diceMotionSequenceRef.current) {
+          diceMotionSequenceRef.current = "";
+          diceMotionAuthorizedRef.current = false;
+          pendingDiceMoveRef.current = null;
+          pendingDiceTerminalRef.current = null;
+          return;
+        }
+
+        diceMotionAuthorizedRef.current = true;
+        if (pendingDiceMoveRef.current) {
+          sendMotion(pendingDiceMoveRef.current);
+          pendingDiceMoveRef.current = null;
+        }
+        if (pendingDiceTerminalRef.current) {
+          const terminal = pendingDiceTerminalRef.current;
+          pendingDiceTerminalRef.current = null;
+          sendMotion(terminal);
+          diceMotionSequenceRef.current = "";
+          diceMotionAuthorizedRef.current = false;
+        }
+      });
+      return;
+    }
+    if (!diceMotionSequenceRef.current) return;
+    if (motion.phase === "move" && now - lastDiceMotionSentAtRef.current < 34) return;
+
+    lastDiceMotionSentAtRef.current = now;
+    if (!diceMotionAuthorizedRef.current) {
+      if (motion.phase === "move") {
+        pendingDiceMoveRef.current = motion;
+      } else {
+        pendingDiceTerminalRef.current = motion;
+      }
+      return;
+    }
+
+    sendMotion(motion, { volatile: motion.phase === "move" });
+    if (motion.phase === "release" || motion.phase === "cancel") {
+      diceMotionSequenceRef.current = "";
+      diceMotionAuthorizedRef.current = false;
+      pendingDiceMoveRef.current = null;
+      pendingDiceTerminalRef.current = null;
+    }
+  }
+
   function leaveTable() {
     if (!socket || !activeTableId) return;
     socket.emit("leave_monopoly_table", { worldId: world.id, tableId: activeTableId }, (response) => {
@@ -8470,6 +8557,9 @@ export default function MonopolyGame({
         {boardViewMode === "3d" ? (
           <Suspense fallback={<MonopolyViewLoading mode="3d" />}>
             <Monopoly3DView
+              socket={socket}
+              worldId={world.id}
+              tableId={activeTableId}
               currentUser={currentUser}
               gameState={state}
               players={threeDPlayers}
@@ -8486,6 +8576,7 @@ export default function MonopolyGame({
               cameraAutoFollow={cameraAutoFollow}
               canRollDice={isMyTurn && myActions.includes("tirarDados") && !rollingDice && !cinematic}
               onRollDice={() => act("tirarDados")}
+              onDiceMotion={emitDiceMotion}
               onSelectionAction={handleThreeDSelectionAction}
               tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
               statusTitle={prompt?.title || prompt?.eyebrow || ""}
