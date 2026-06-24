@@ -7059,15 +7059,26 @@ export default function MonopolyGame({
   const actionLockRef = useRef(false);
   const diceMotionSequenceRef = useRef("");
   const diceMotionAuthorizedRef = useRef(false);
-  const pendingDiceMoveRef = useRef(null);
-  const pendingDiceTerminalRef = useRef(null);
-  const lastDiceMotionSentAtRef = useRef(0);
+  const diceMotionFrameRef = useRef(0);
+  const pendingDiceMotionsRef = useRef([]);
+  const lastDiceMotionSentAtRef = useRef({ move: 0, state: 0 });
+  const remoteDiceMotionSinkRef = useRef(null);
+  const bufferedRemoteDiceMotionsRef = useRef([]);
   const actionLockTimeoutRef = useRef(null);
   const diceStateHoldUntilRef = useRef(0);
   const heldMonopolyStateTimeoutRef = useRef(null);
   const [tick, setTick] = useState(Date.now());
   const currentUserId = Number.isFinite(Number(currentUser.id)) ? Number(currentUser.id) : currentUser.id;
   const boardViewModeRef = useRef(boardViewMode);
+  const bindRemoteDiceMotionSink = useMemo(() => (sink) => {
+    remoteDiceMotionSinkRef.current = typeof sink === "function" ? sink : null;
+    if (!remoteDiceMotionSinkRef.current || bufferedRemoteDiceMotionsRef.current.length === 0) {
+      return;
+    }
+
+    const bufferedMotions = bufferedRemoteDiceMotionsRef.current.splice(0);
+    bufferedMotions.forEach((motion) => remoteDiceMotionSinkRef.current?.(motion));
+  }, []);
 
   useEffect(() => {
     rollingDiceRef.current = rollingDice;
@@ -7143,6 +7154,21 @@ export default function MonopolyGame({
         return;
       }
 
+      if (payload.visualOnly && payload.diceMotion) {
+        const diceMotion = payload.diceMotion;
+        if (!sameEntityId(diceMotion.actorId, currentUserId)) {
+          if (remoteDiceMotionSinkRef.current) {
+            remoteDiceMotionSinkRef.current(diceMotion);
+          } else {
+            bufferedRemoteDiceMotionsRef.current.push(diceMotion);
+            if (bufferedRemoteDiceMotionsRef.current.length > 120) {
+              bufferedRemoteDiceMotionsRef.current.splice(0, bufferedRemoteDiceMotionsRef.current.length - 120);
+            }
+          }
+        }
+        return;
+      }
+
       const applyPayload = () => {
         if (payload.tableId && !activeTableId) {
           const shouldAutoOpen = payload.table?.seatedPlayers?.some((player) => sameEntityId(player.id, currentUserId));
@@ -7194,8 +7220,10 @@ export default function MonopolyGame({
   useEffect(() => {
     diceMotionSequenceRef.current = "";
     diceMotionAuthorizedRef.current = false;
-    pendingDiceMoveRef.current = null;
-    pendingDiceTerminalRef.current = null;
+    diceMotionFrameRef.current = 0;
+    pendingDiceMotionsRef.current = [];
+    lastDiceMotionSentAtRef.current = { move: 0, state: 0 };
+    bufferedRemoteDiceMotionsRef.current = [];
   }, [activeTableId]);
 
   useEffect(() => {
@@ -8221,14 +8249,17 @@ export default function MonopolyGame({
   function emitDiceMotion(motion) {
     if (!socket || !activeTableId || !motion) return;
     const now = performance.now();
+    const isTerminal = motion.phase === "settled" || motion.phase === "cancel";
 
     const sendMotion = (payloadMotion, { volatile = false } = {}) => {
       const payload = {
         worldId: world.id,
         tableId: activeTableId,
         sequenceId: diceMotionSequenceRef.current,
+        frame: diceMotionFrameRef.current,
         motion: payloadMotion
       };
+      diceMotionFrameRef.current += 1;
       if (volatile && socket.volatile?.emit) {
         socket.volatile.emit("monopoly_dice_motion", payload);
       } else {
@@ -8239,57 +8270,73 @@ export default function MonopolyGame({
     if (motion.phase === "grab") {
       diceMotionSequenceRef.current = globalThis.crypto?.randomUUID?.() || `${currentUserId}-${Date.now()}`;
       diceMotionAuthorizedRef.current = false;
-      pendingDiceMoveRef.current = null;
-      pendingDiceTerminalRef.current = null;
+      diceMotionFrameRef.current = 1;
+      pendingDiceMotionsRef.current = [];
+      lastDiceMotionSentAtRef.current = { move: 0, state: 0 };
       const payload = {
         worldId: world.id,
         tableId: activeTableId,
         sequenceId: diceMotionSequenceRef.current,
+        frame: 0,
         motion
       };
       socket.emit("monopoly_dice_motion", payload, (response) => {
         if (!response?.ok || payload.sequenceId !== diceMotionSequenceRef.current) {
+          if (!response?.ok && response?.error) {
+            setError(response.error);
+          }
           diceMotionSequenceRef.current = "";
           diceMotionAuthorizedRef.current = false;
-          pendingDiceMoveRef.current = null;
-          pendingDiceTerminalRef.current = null;
+          diceMotionFrameRef.current = 0;
+          pendingDiceMotionsRef.current = [];
           return;
         }
 
         diceMotionAuthorizedRef.current = true;
-        if (pendingDiceMoveRef.current) {
-          sendMotion(pendingDiceMoveRef.current);
-          pendingDiceMoveRef.current = null;
-        }
-        if (pendingDiceTerminalRef.current) {
-          const terminal = pendingDiceTerminalRef.current;
-          pendingDiceTerminalRef.current = null;
-          sendMotion(terminal);
+        const queuedMotions = pendingDiceMotionsRef.current;
+        pendingDiceMotionsRef.current = [];
+        queuedMotions.forEach((queuedMotion) => {
+          sendMotion(queuedMotion);
+        });
+        if (queuedMotions.some((queuedMotion) => queuedMotion.phase === "settled" || queuedMotion.phase === "cancel")) {
           diceMotionSequenceRef.current = "";
           diceMotionAuthorizedRef.current = false;
+          diceMotionFrameRef.current = 0;
         }
       });
       return;
     }
     if (!diceMotionSequenceRef.current) return;
-    if (motion.phase === "move" && now - lastDiceMotionSentAtRef.current < 34) return;
+    const throttleMs = motion.phase === "move" ? 34 : motion.phase === "state" ? 45 : 0;
+    if (throttleMs > 0) {
+      const lastSentAt = lastDiceMotionSentAtRef.current[motion.phase] || 0;
+      if (now - lastSentAt < throttleMs) return;
+      lastDiceMotionSentAtRef.current[motion.phase] = now;
+    }
 
-    lastDiceMotionSentAtRef.current = now;
     if (!diceMotionAuthorizedRef.current) {
-      if (motion.phase === "move") {
-        pendingDiceMoveRef.current = motion;
+      if (motion.phase === "move" || motion.phase === "state") {
+        const existingIndex = pendingDiceMotionsRef.current.findIndex((queuedMotion) => queuedMotion.phase === motion.phase);
+        if (existingIndex >= 0) {
+          pendingDiceMotionsRef.current[existingIndex] = motion;
+        } else {
+          pendingDiceMotionsRef.current.push(motion);
+        }
       } else {
-        pendingDiceTerminalRef.current = motion;
+        if (isTerminal) {
+          pendingDiceMotionsRef.current = pendingDiceMotionsRef.current.filter((queuedMotion) => queuedMotion.phase !== "state");
+        }
+        pendingDiceMotionsRef.current.push(motion);
       }
       return;
     }
 
-    sendMotion(motion, { volatile: motion.phase === "move" });
-    if (motion.phase === "release" || motion.phase === "cancel") {
+    sendMotion(motion);
+    if (isTerminal) {
       diceMotionSequenceRef.current = "";
       diceMotionAuthorizedRef.current = false;
-      pendingDiceMoveRef.current = null;
-      pendingDiceTerminalRef.current = null;
+      diceMotionFrameRef.current = 0;
+      pendingDiceMotionsRef.current = [];
     }
   }
 
@@ -8557,9 +8604,6 @@ export default function MonopolyGame({
         {boardViewMode === "3d" ? (
           <Suspense fallback={<MonopolyViewLoading mode="3d" />}>
             <Monopoly3DView
-              socket={socket}
-              worldId={world.id}
-              tableId={activeTableId}
               currentUser={currentUser}
               gameState={state}
               players={threeDPlayers}
@@ -8568,6 +8612,7 @@ export default function MonopolyGame({
               onSelectSpaceId={(spaceId) => selectThreeDSpace(spaceId, "board")}
               rollingDice={rollingDice}
               diceFaces={diceFaces}
+              onRemoteDiceMotionSink={bindRemoteDiceMotionSink}
               cinematic={cinematic}
               moneyBursts={moneyBursts}
               pendingCard={visiblePendingCard}

@@ -78,9 +78,6 @@ function Monopoly3DSpaceCard({ info, onAction }) {
 }
 
 export default function Monopoly3DView({
-  socket = null,
-  worldId = null,
-  tableId = "",
   currentUser,
   gameState = null,
   players = null,
@@ -90,6 +87,7 @@ export default function Monopoly3DView({
   sidePanel = null,
   rollingDice = false,
   diceFaces = [1, 1],
+  onRemoteDiceMotionSink,
   cinematic = null,
   moneyBursts = [],
   pendingCard = null,
@@ -231,10 +229,6 @@ export default function Monopoly3DView({
             </div>
           )}
           <Monopoly3DScene
-            socket={socket}
-            worldId={worldId}
-            tableId={tableId}
-            currentUserId={currentUser?.id}
             board={board}
             players={displayPlayers}
             selectedSpaceIndex={selectedSpace?.index ?? 0}
@@ -242,6 +236,7 @@ export default function Monopoly3DView({
             currentPlayerId={currentPlayerId}
             rollingDice={rollingDice}
             diceFaces={diceFaces}
+            onRemoteDiceMotionSink={onRemoteDiceMotionSink}
             cinematic={cinematic}
             moneyBursts={moneyBursts}
             pendingCard={pendingCard}

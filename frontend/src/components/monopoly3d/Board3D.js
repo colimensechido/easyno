@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { createBoardTile3D } from "./BoardTile3D";
 import { animatePlayerPiece, createPlayerPiece3D, setPlayerPieceTarget } from "./PlayerPiece3D";
-import { BOARD_3D } from "./board3dUtils";
+import { BOARD_3D, CARD_DECK_OBSTACLES } from "./board3dUtils";
 
 function clampText(text, maxLength) {
   const value = String(text || "");
@@ -619,15 +619,17 @@ export function createBoard3D({ board = [], players = [] }) {
   centerRing.position.y = 0.12;
   group.add(centerRing);
 
+  const chanceObstacle = CARD_DECK_OBSTACLES.find((obstacle) => obstacle.deck === "CASUALIDAD");
+  const chestObstacle = CARD_DECK_OBSTACLES.find((obstacle) => obstacle.deck === "ARCA_COMUNAL");
   const chanceDeck = createDeckStack({
     deck: "CASUALIDAD",
     title: "CASUALIDAD",
     mark: "?",
     color: "#f7c948",
     ink: "#7c3f00",
-    x: -3.35,
-    z: 2.35,
-    rotation: -0.42
+    x: chanceObstacle.x,
+    z: chanceObstacle.z,
+    rotation: chanceObstacle.rotation
   });
   const chestDeck = createDeckStack({
     deck: "ARCA_COMUNAL",
@@ -635,9 +637,9 @@ export function createBoard3D({ board = [], players = [] }) {
     mark: "!",
     color: "#78d4c8",
     ink: "#064e3b",
-    x: 3.35,
-    z: -2.35,
-    rotation: -0.42
+    x: chestObstacle.x,
+    z: chestObstacle.z,
+    rotation: chestObstacle.rotation
   });
   cardDecks.set("CASUALIDAD", chanceDeck);
   cardDecks.set("ARCA_COMUNAL", chestDeck);

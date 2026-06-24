@@ -9,6 +9,27 @@ export const BOARD_3D = {
   centerSize: 10.0
 };
 
+export const CARD_DECK_OBSTACLES = [
+  {
+    deck: "CASUALIDAD",
+    x: -3.35,
+    z: 2.35,
+    width: 1.55,
+    depth: 2.15,
+    rotation: -0.42,
+    topY: 0.27
+  },
+  {
+    deck: "ARCA_COMUNAL",
+    x: 3.35,
+    z: -2.35,
+    width: 1.55,
+    depth: 2.15,
+    rotation: -0.42,
+    topY: 0.27
+  }
+];
+
 export const colorGroupMeta3D = {
   brown: { color: "#7a4b2a", label: "Bolivia" },
   light_blue: { color: "#7cd4e8", label: "Ecuador" },

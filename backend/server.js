@@ -2119,7 +2119,7 @@ io.on("connection", (socket) => {
         worldId,
         tableId
       });
-      if (state?.table?.seatedPlayers?.some((player) => player.id === socket.user.id)) {
+      if (state?.table?.seatedPlayers?.some((player) => String(player.id) === String(socket.user.id))) {
         socket.join(tableChannel(worldId, tableId));
       }
       socket.emit("monopoly_state", state);
@@ -2277,11 +2277,20 @@ io.on("connection", (socket) => {
       const now = Date.now();
       const phase = String(motion.phase || "");
       const sequenceId = String(payload.sequenceId || "").slice(0, 80);
-      if (!["grab", "move", "release", "cancel"].includes(phase) || !sequenceId) {
+      const frame = Number(payload.frame);
+      if (
+        !["grab", "move", "release", "state", "settled", "cancel"].includes(phase) ||
+        !sequenceId ||
+        !Number.isInteger(frame) ||
+        frame < 0
+      ) {
         if (typeof callback === "function") callback({ ok: false });
         return;
       }
-      if (phase === "move" && now - Number(socket.data.lastMonopolyDiceMotionAt || 0) < 32) {
+      if (
+        (phase === "move" || phase === "state") &&
+        now - Number(socket.data.lastMonopolyDiceMotionAt || 0) < 32
+      ) {
         if (typeof callback === "function") callback({ ok: true, throttled: true });
         return;
       }
@@ -2294,16 +2303,24 @@ io.on("connection", (socket) => {
           !actor ||
           actor.bankrupt ||
           String(game.currentPlayerId) !== String(socket.user.id) ||
-          game.turn?.phase !== "AWAITING_ROLL"
+          !Array.isArray(actor.availableActions) ||
+          !actor.availableActions.includes("tirarDados")
         ) {
-          if (typeof callback === "function") callback({ ok: false });
+          if (typeof callback === "function") {
+            callback({
+              ok: false,
+              error: "El servidor no autorizo el gesto de dados para este turno"
+            });
+          }
           return;
         }
         socket.data.monopolyDiceGesture = {
           worldId,
           tableId,
           sequenceId,
-          expiresAt: now + 8000
+          expiresAt: now + 12000,
+          released: false,
+          lastFrame: frame
         };
       } else {
         const gesture = socket.data.monopolyDiceGesture;
@@ -2312,11 +2329,25 @@ io.on("connection", (socket) => {
           gesture.worldId !== worldId ||
           gesture.tableId !== tableId ||
           gesture.sequenceId !== sequenceId ||
-          gesture.expiresAt < now
+          gesture.expiresAt < now ||
+          frame <= Number(gesture.lastFrame)
         ) {
           if (typeof callback === "function") callback({ ok: false });
           return;
         }
+        if (
+          (phase === "move" && gesture.released) ||
+          (phase === "release" && gesture.released) ||
+          ((phase === "state" || phase === "settled") && !gesture.released)
+        ) {
+          if (typeof callback === "function") callback({ ok: false });
+          return;
+        }
+        gesture.lastFrame = frame;
+        if (phase === "release") {
+          gesture.released = true;
+        }
+        gesture.expiresAt = now + 12000;
       }
 
       const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
@@ -2336,9 +2367,10 @@ io.on("connection", (socket) => {
             z: clamp(motion.point?.z, -5, 5)
           }
         };
-      } else if (phase === "release") {
+      } else if (phase === "release" || phase === "state" || phase === "settled") {
         safeMotion = {
           phase,
+          active: phase === "settled" ? false : motion.active !== false,
           dice: (Array.isArray(motion.dice) ? motion.dice : []).slice(0, 2).map((die) => ({
             position: {
               x: clamp(die?.position?.x, -5, 5),
@@ -2352,7 +2384,8 @@ io.on("connection", (socket) => {
               w: clamp(die?.quaternion?.w, -1, 1, 1)
             },
             velocity: normalizeVector(die?.velocity, 20),
-            angularVelocity: normalizeVector(die?.angularVelocity, 30)
+            angularVelocity: normalizeVector(die?.angularVelocity, 30),
+            sleeping: phase === "settled" || Boolean(die?.sleeping)
           }))
         };
         if (safeMotion.dice.length !== 2) {
@@ -2365,15 +2398,23 @@ io.on("connection", (socket) => {
 
       socket.data.lastMonopolyDiceMotionAt = now;
       socket.join(tableChannel(worldId, tableId));
-      socket.to(tableChannel(worldId, tableId)).emit("monopoly_dice_motion", {
+      const diceMotionPayload = {
         worldId,
         tableId,
         actorId: socket.user.id,
         sequenceId,
+        frame,
         sentAt: now,
         motion: safeMotion
+      };
+      io.to(roomName(worldId)).emit("monopoly_dice_motion", diceMotionPayload);
+      io.to(roomName(worldId)).emit("monopoly_state", {
+        worldId,
+        tableId,
+        visualOnly: true,
+        diceMotion: diceMotionPayload
       });
-      if (phase === "release" || phase === "cancel") {
+      if (phase === "settled" || phase === "cancel") {
         socket.data.monopolyDiceGesture = null;
       }
       if (typeof callback === "function") callback({ ok: true });

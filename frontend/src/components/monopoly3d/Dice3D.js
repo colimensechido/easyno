@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { BOARD_3D } from "./board3dUtils";
+import { BOARD_3D, CARD_DECK_OBSTACLES } from "./board3dUtils";
 
 const FACE_ROTATIONS = {
   // BoxGeometry material order is +X, -X, +Y, -Y, +Z, -Z.
@@ -143,6 +143,8 @@ export function createDice3D() {
   };
   group.userData.physicsActive = false;
   group.userData.landed = false;
+  group.userData.remoteMotionActive = false;
+  group.userData.remoteMotionSettled = false;
   group.visible = true;
   return group;
 }
@@ -153,6 +155,30 @@ function clampToTable(value) {
 
 function vectorPayload(vector) {
   return { x: vector.x, y: vector.y, z: vector.z };
+}
+
+function diePayload(die) {
+  return {
+    position: vectorPayload(die.position),
+    quaternion: {
+      x: die.quaternion.x,
+      y: die.quaternion.y,
+      z: die.quaternion.z,
+      w: die.quaternion.w
+    },
+    velocity: vectorPayload(die.userData.velocity),
+    angularVelocity: vectorPayload(die.userData.angularVelocity),
+    sleeping: Boolean(die.userData.sleeping)
+  };
+}
+
+export function captureDiceMotion(group, phase = "state") {
+  if (!group?.userData?.dice) return null;
+  return {
+    phase,
+    active: Boolean(group.userData.physicsActive),
+    dice: group.userData.dice.map(diePayload)
+  };
 }
 
 function pushDragSample(group, point, time) {
@@ -246,17 +272,8 @@ export function releaseDiceDrag(group, time = performance.now()) {
   });
   return {
     phase: "release",
-    dice: group.userData.dice.map((die) => ({
-      position: vectorPayload(die.position),
-      quaternion: {
-        x: die.quaternion.x,
-        y: die.quaternion.y,
-        z: die.quaternion.z,
-        w: die.quaternion.w
-      },
-      velocity: vectorPayload(die.userData.velocity),
-      angularVelocity: vectorPayload(die.userData.angularVelocity)
-    }))
+    active: true,
+    dice: group.userData.dice.map(diePayload)
   };
 }
 
@@ -281,6 +298,8 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
   if (!group || !motion) return;
 
   if (motion.phase === "grab" || motion.phase === "move") {
+    group.userData.remoteMotionActive = true;
+    group.userData.remoteMotionSettled = false;
     const point = new THREE.Vector3(
       safeNumber(motion.point?.x),
       DRAG_HEIGHT,
@@ -295,14 +314,19 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
   }
 
   if (motion.phase === "cancel") {
+    group.userData.remoteMotionActive = false;
+    group.userData.remoteMotionSettled = false;
     cancelDiceDrag(group);
     return;
   }
 
-  if (motion.phase !== "release" || !Array.isArray(motion.dice)) return;
+  if (!["release", "state", "settled"].includes(motion.phase) || !Array.isArray(motion.dice)) return;
 
   group.userData.drag.active = false;
-  group.userData.physicsActive = true;
+  const settled = motion.phase === "settled";
+  group.userData.remoteMotionActive = true;
+  group.userData.remoteMotionSettled = settled;
+  group.userData.physicsActive = settled ? false : motion.active !== false;
   group.userData.landed = true;
   group.userData.dice.forEach((die, index) => {
     const state = motion.dice[index];
@@ -319,9 +343,14 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
     ).normalize();
     applyVector(die.userData.velocity, state.velocity);
     applyVector(die.userData.angularVelocity, state.angularVelocity);
-    die.userData.physicsActive = true;
-    die.userData.sleeping = false;
+    die.userData.physicsActive = !settled && motion.active !== false && !state.sleeping;
+    die.userData.sleeping = settled || Boolean(state.sleeping);
+    if (die.userData.sleeping) {
+      die.userData.velocity.set(0, 0, 0);
+      die.userData.angularVelocity.set(0, 0, 0);
+    }
   });
+  group.userData.physicsActive = group.userData.dice.some((die) => die.userData.physicsActive);
 }
 
 export function syncDice3D(group, { diceFaces = [1, 1], rollingDice = false, cinematicPhase = null, visualStage = "idle" }) {
@@ -332,6 +361,15 @@ export function syncDice3D(group, { diceFaces = [1, 1], rollingDice = false, cin
     const target = FACE_ROTATIONS[diceFaces[index] || 1] || FACE_ROTATIONS[1];
     die.userData.targetQuaternion.setFromEuler(target);
   });
+  if (
+    group.userData.remoteMotionSettled &&
+    visualStage === "idle" &&
+    !rollingDice &&
+    !cinematicPhase
+  ) {
+    group.userData.remoteMotionActive = false;
+    group.userData.remoteMotionSettled = false;
+  }
 }
 
 function animateDraggedDice(group, delta, elapsed) {
@@ -369,12 +407,57 @@ function resolveDieCollision(left, right) {
   right.userData.velocity.add(impulse);
 }
 
-function animatePhysicalDice(group, delta, settleToResult) {
-  let anyActive = false;
+function resolveDeckCollision(die, obstacle) {
+  if (die.position.y - DIE_RADIUS > obstacle.topY + 0.08) return;
 
+  const cos = Math.cos(obstacle.rotation);
+  const sin = Math.sin(obstacle.rotation);
+  const offsetX = die.position.x - obstacle.x;
+  const offsetZ = die.position.z - obstacle.z;
+  const localX = cos * offsetX + sin * offsetZ;
+  const localZ = -sin * offsetX + cos * offsetZ;
+  const limitX = obstacle.width * 0.5 + DIE_RADIUS;
+  const limitZ = obstacle.depth * 0.5 + DIE_RADIUS;
+
+  if (Math.abs(localX) >= limitX || Math.abs(localZ) >= limitZ) return;
+
+  const penetrationX = limitX - Math.abs(localX);
+  const penetrationZ = limitZ - Math.abs(localZ);
+  let normalLocalX = 0;
+  let normalLocalZ = 0;
+
+  if (penetrationX < penetrationZ) {
+    normalLocalX = localX < 0 ? -1 : 1;
+  } else {
+    normalLocalZ = localZ < 0 ? -1 : 1;
+  }
+
+  const normalX = cos * normalLocalX - sin * normalLocalZ;
+  const normalZ = sin * normalLocalX + cos * normalLocalZ;
+  const penetration = Math.min(penetrationX, penetrationZ) + 0.015;
+  die.position.x += normalX * penetration;
+  die.position.z += normalZ * penetration;
+
+  const velocity = die.userData.velocity;
+  const incomingSpeed = velocity.x * normalX + velocity.z * normalZ;
+  if (incomingSpeed < 0) {
+    velocity.x -= 1.62 * incomingSpeed * normalX;
+    velocity.z -= 1.62 * incomingSpeed * normalZ;
+  } else if (Math.hypot(velocity.x, velocity.z) < 0.35) {
+    velocity.x += normalX * 1.4;
+    velocity.z += normalZ * 1.4;
+  }
+
+  if (velocity.y < 0) {
+    velocity.y = Math.max(0.7, Math.abs(velocity.y) * 0.28);
+  }
+  die.userData.angularVelocity.x += normalZ * 1.8;
+  die.userData.angularVelocity.z -= normalX * 1.8;
+}
+
+function animatePhysicalDice(group, delta, settleToResult) {
   group.userData.dice.forEach((die) => {
     if (!die.userData.physicsActive) return;
-    anyActive = true;
     const velocity = die.userData.velocity;
     const angularVelocity = die.userData.angularVelocity;
 
@@ -394,6 +477,8 @@ function animatePhysicalDice(group, delta, settleToResult) {
       velocity.z *= -0.58;
       angularVelocity.x *= -0.82;
     }
+
+    CARD_DECK_OBSTACLES.forEach((obstacle) => resolveDeckCollision(die, obstacle));
 
     if (die.position.y <= DIE_FLOOR_Y) {
       die.position.y = DIE_FLOOR_Y;
@@ -427,7 +512,7 @@ function animatePhysicalDice(group, delta, settleToResult) {
   });
 
   resolveDieCollision(group.userData.dice[0], group.userData.dice[1]);
-  group.userData.physicsActive = anyActive;
+  group.userData.physicsActive = group.userData.dice.some((die) => die.userData.physicsActive);
 }
 
 export function animateDice3D(group, delta, elapsed) {
@@ -437,7 +522,8 @@ export function animateDice3D(group, delta, elapsed) {
   const readyToRoll = visualStage === "rollReady";
   const isActive = dragging || ["rollReady", "cameraFocusDice", "diceRolling", "diceResult"].includes(visualStage);
   const heatTarget = dragging ? 1 : hovered ? 0.8 : readyToRoll ? 0.55 : isActive ? 0.65 : 0;
-  const rollTarget = visualStage === "diceRolling" ? 1 : 0;
+  const remoteMotionActive = Boolean(group.userData.remoteMotionActive);
+  const rollTarget = visualStage === "diceRolling" && !remoteMotionActive ? 1 : 0;
   const rollDamping = visualStage === "diceResult" ? 8.5 : 3.8;
   group.userData.heat = THREE.MathUtils.lerp(group.userData.heat, heatTarget, Math.min(1, delta * 4.6));
   group.userData.rollEnergy = THREE.MathUtils.lerp(group.userData.rollEnergy, rollTarget, Math.min(1, delta * rollDamping));
@@ -464,13 +550,22 @@ export function animateDice3D(group, delta, elapsed) {
     return;
   }
 
+  if (remoteMotionActive) {
+    if (group.userData.remoteMotionSettled && settleToResult) {
+      group.userData.dice.forEach((die) => {
+        die.quaternion.slerp(die.userData.targetQuaternion, Math.min(1, delta * 8.4));
+      });
+    }
+    return;
+  }
+
   group.userData.dice.forEach((die, index) => {
     const wobble = Math.sin(elapsed * (hovered ? 5.4 : readyToRoll ? 7.2 : 2.8) + index * 0.65) * (hovered ? 0.018 : readyToRoll ? 0.04 : 0.004);
     const shouldSettleFace =
       group.userData.rollEnergy > 0.02 ||
       ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage);
 
-    if (visualStage === "diceRolling" && group.userData.rollEnergy > 0.02) {
+    if (!remoteMotionActive && visualStage === "diceRolling" && group.userData.rollEnergy > 0.02) {
       const energy = group.userData.rollEnergy;
       die.rotation.x += (2.2 + index * 0.35 + energy * 4.1) * delta;
       die.rotation.y += (2.5 + index * 0.3 + energy * 4.6) * delta;

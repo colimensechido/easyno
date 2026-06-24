@@ -6,6 +6,7 @@ import {
   applyRemoteDiceMotion,
   beginDiceDrag,
   cancelDiceDrag,
+  captureDiceMotion,
   createDice3D,
   isDiceDragging,
   releaseDiceDrag,
@@ -36,10 +37,6 @@ function dampVector3(current, target, lambda, delta) {
 }
 
 export default function Monopoly3DScene({
-  socket = null,
-  worldId = null,
-  tableId = "",
-  currentUserId = null,
   board,
   players,
   selectedSpaceIndex,
@@ -47,6 +44,7 @@ export default function Monopoly3DScene({
   currentPlayerId = null,
   rollingDice = false,
   diceFaces = [1, 1],
+  onRemoteDiceMotionSink,
   cinematic = null,
   moneyBursts = [],
   pendingCard = null,
@@ -72,6 +70,8 @@ export default function Monopoly3DScene({
   const onDiceGestureChangeRef = useRef(onDiceGestureChange);
   const onDiceMotionRef = useRef(onDiceMotion);
   const diceRef = useRef(null);
+  const remoteDiceMotionRef = useRef({ sequenceId: "", frame: -1 });
+  const remoteDiceMotionQueueRef = useRef([]);
   const onSelectionActionRef = useRef(onSelectionAction);
   const cameraAutoFollowRef = useRef(cameraAutoFollow);
   const localDiceRollRef = useRef({
@@ -140,23 +140,19 @@ export default function Monopoly3DScene({
   }, [onDiceMotion]);
 
   useEffect(() => {
-    if (!socket || !worldId || !tableId) return undefined;
+    if (!onRemoteDiceMotionSink) return undefined;
 
-    function handleRemoteDiceMotion(payload) {
-      if (
-        payload?.worldId !== worldId ||
-        payload?.tableId !== tableId ||
-        String(payload?.actorId) === String(currentUserId) ||
-        !diceRef.current
-      ) {
-        return;
+    const receiveRemoteDiceMotion = (payload) => {
+      if (!payload?.motion) return;
+      remoteDiceMotionQueueRef.current.push(payload);
+      if (remoteDiceMotionQueueRef.current.length > 120) {
+        remoteDiceMotionQueueRef.current.splice(0, remoteDiceMotionQueueRef.current.length - 120);
       }
-      applyRemoteDiceMotion(diceRef.current, payload.motion, performance.now());
-    }
+    };
 
-    socket.on("monopoly_dice_motion", handleRemoteDiceMotion);
-    return () => socket.off("monopoly_dice_motion", handleRemoteDiceMotion);
-  }, [currentUserId, socket, tableId, worldId]);
+    onRemoteDiceMotionSink(receiveRemoteDiceMotion);
+    return () => onRemoteDiceMotionSink(null);
+  }, [onRemoteDiceMotionSink]);
 
   useEffect(() => {
     if (!canRollDice) onDiceGestureChange?.(false);
@@ -245,6 +241,8 @@ export default function Monopoly3DScene({
     const dragPoint = new THREE.Vector3();
     let hoveredActionMesh = null;
     let activeDicePointerId = null;
+    let localDiceSyncActive = false;
+    let lastDiceSyncAt = 0;
 
     function updatePointer(event) {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -285,6 +283,8 @@ export default function Monopoly3DScene({
         const tablePoint = diceHit ? pointOnDiceTable() : null;
         if (diceHit && tablePoint) {
           event.preventDefault();
+          localDiceSyncActive = false;
+          lastDiceSyncAt = 0;
           activeDicePointerId = event.pointerId;
           renderer.domElement.setPointerCapture?.(event.pointerId);
           const motion = beginDiceDrag(dice, tablePoint, performance.now());
@@ -367,6 +367,8 @@ export default function Monopoly3DScene({
       renderer.domElement.style.cursor = "";
       if (releaseMotion) {
         onDiceMotionRef.current?.(releaseMotion);
+        localDiceSyncActive = true;
+        lastDiceSyncAt = performance.now();
         startLocalDiceRoll();
         window.requestAnimationFrame(() => onRollDiceRef.current?.());
       } else {
@@ -379,6 +381,8 @@ export default function Monopoly3DScene({
       renderer.domElement.releasePointerCapture?.(event.pointerId);
       activeDicePointerId = null;
       const motion = cancelDiceDrag(dice);
+      localDiceSyncActive = false;
+      lastDiceSyncAt = 0;
       onDiceMotionRef.current?.(motion);
       onDiceGestureChangeRef.current?.(false);
       renderer.domElement.style.cursor = "";
@@ -426,6 +430,23 @@ export default function Monopoly3DScene({
       const elapsed = elapsedTime;
       const visualState = visualStateRef.current;
       const sequence = sequenceRef.current;
+      const queuedRemoteDiceMotions = remoteDiceMotionQueueRef.current.splice(0);
+      queuedRemoteDiceMotions.forEach((payload) => {
+        const sequenceId = String(payload.sequenceId || "");
+        const remoteMotion = remoteDiceMotionRef.current;
+        const receivedFrame = Number(payload.frame);
+        const packetFrame = Number.isInteger(receivedFrame) && receivedFrame >= 0
+          ? receivedFrame
+          : remoteMotion.frame + 1;
+        if (!sequenceId) return;
+        if (sequenceId !== remoteMotion.sequenceId) {
+          remoteMotion.sequenceId = sequenceId;
+          remoteMotion.frame = -1;
+        }
+        if (packetFrame <= remoteMotion.frame) return;
+        remoteMotion.frame = packetFrame;
+        applyRemoteDiceMotion(dice, payload.motion, now);
+      });
       sequence.stageTime += delta;
       const moverPiece = visualState.cinematic?.playerId ? model.playerPieces.get(visualState.cinematic.playerId) : null;
       const currentPlayer = playersRef.current.find((player) => player.id === visualState.currentPlayerId);
@@ -558,6 +579,17 @@ export default function Monopoly3DScene({
       controls.update();
       animateBoard3D(model, delta, elapsed, camera);
       animateDice3D(dice, delta, elapsed);
+      if (localDiceSyncActive) {
+        if (!dice.userData.physicsActive) {
+          const settledMotion = captureDiceMotion(dice, "settled");
+          if (settledMotion) onDiceMotionRef.current?.(settledMotion);
+          localDiceSyncActive = false;
+        } else if (now - lastDiceSyncAt >= 50) {
+          const stateMotion = captureDiceMotion(dice, "state");
+          if (stateMotion) onDiceMotionRef.current?.(stateMotion);
+          lastDiceSyncAt = now;
+        }
+      }
       animateSceneEffects3D(effects, delta, elapsed, model.playerPieces, camera);
       renderer.render(scene, camera);
       frameId = requestAnimationFrame(render);
