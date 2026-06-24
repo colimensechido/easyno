@@ -388,23 +388,68 @@ function animateDraggedDice(group, delta, elapsed) {
 }
 
 function resolveDieCollision(left, right) {
-  const offset = right.position.clone().sub(left.position);
-  const distance = offset.length();
+  const offsetX = right.position.x - left.position.x;
+  const offsetZ = right.position.z - left.position.z;
+  const horizontalDistance = Math.hypot(offsetX, offsetZ);
+  const verticalDistance = Math.abs(right.position.y - left.position.y);
   const minimumDistance = DIE_RADIUS * 2;
-  if (distance <= 0.001 || distance >= minimumDistance) return;
 
-  const normal = offset.divideScalar(distance);
-  const correction = normal.clone().multiplyScalar((minimumDistance - distance) * 0.5);
-  left.position.sub(correction);
-  right.position.add(correction);
+  if (horizontalDistance >= minimumDistance || verticalDistance >= minimumDistance) return;
 
-  const relativeVelocity = right.userData.velocity.clone().sub(left.userData.velocity);
-  const separatingSpeed = relativeVelocity.dot(normal);
-  if (separatingSpeed >= 0) return;
+  let normalX;
+  let normalZ;
+  if (horizontalDistance > 0.001) {
+    normalX = offsetX / horizontalDistance;
+    normalZ = offsetZ / horizontalDistance;
+  } else {
+    const relativeX = right.userData.velocity.x - left.userData.velocity.x;
+    const relativeZ = right.userData.velocity.z - left.userData.velocity.z;
+    const relativeLength = Math.hypot(relativeX, relativeZ);
+    normalX = relativeLength > 0.001 ? relativeX / relativeLength : 1;
+    normalZ = relativeLength > 0.001 ? relativeZ / relativeLength : 0;
+  }
 
-  const impulse = normal.multiplyScalar(-separatingSpeed * 0.72);
-  left.userData.velocity.sub(impulse);
-  right.userData.velocity.add(impulse);
+  // Always eject sideways so one die can never settle on top of the other.
+  const penetration = minimumDistance - horizontalDistance + 0.018;
+  left.position.x -= normalX * penetration * 0.5;
+  left.position.z -= normalZ * penetration * 0.5;
+  right.position.x += normalX * penetration * 0.5;
+  right.position.z += normalZ * penetration * 0.5;
+  left.position.x = clampToTable(left.position.x);
+  left.position.z = clampToTable(left.position.z);
+  right.position.x = clampToTable(right.position.x);
+  right.position.z = clampToTable(right.position.z);
+
+  const relativeNormalSpeed =
+    (right.userData.velocity.x - left.userData.velocity.x) * normalX +
+    (right.userData.velocity.z - left.userData.velocity.z) * normalZ;
+  const impactSpeed = Math.abs(relativeNormalSpeed);
+
+  if (relativeNormalSpeed < 0) {
+    const impulse = -(1 + 0.68) * relativeNormalSpeed * 0.5;
+    left.userData.velocity.x -= impulse * normalX;
+    left.userData.velocity.z -= impulse * normalZ;
+    right.userData.velocity.x += impulse * normalX;
+    right.userData.velocity.z += impulse * normalZ;
+  } else if (impactSpeed < 0.25) {
+    left.userData.velocity.x -= normalX * 0.75;
+    left.userData.velocity.z -= normalZ * 0.75;
+    right.userData.velocity.x += normalX * 0.75;
+    right.userData.velocity.z += normalZ * 0.75;
+  }
+
+  const bounceLift = Math.min(1.7, 0.55 + impactSpeed * 0.12);
+  left.userData.velocity.y = Math.max(left.userData.velocity.y, bounceLift);
+  right.userData.velocity.y = Math.max(right.userData.velocity.y, bounceLift);
+  left.userData.angularVelocity.x += normalZ * 2.2;
+  left.userData.angularVelocity.z -= normalX * 2.2;
+  right.userData.angularVelocity.x -= normalZ * 2.2;
+  right.userData.angularVelocity.z += normalX * 2.2;
+
+  left.userData.physicsActive = true;
+  right.userData.physicsActive = true;
+  left.userData.sleeping = false;
+  right.userData.sleeping = false;
 }
 
 function resolveDeckCollision(die, obstacle) {
