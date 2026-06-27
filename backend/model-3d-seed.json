@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "defaultColorMode": "TINT",
+  "defaultTintStrength": 0.75,
+  "updatedAt": "2026-06-26T00:00:00.000Z",
+  "assets": [],
+  "settings": [
+    {
+      "productId": "monopoly-token-chicken",
+      "assetKey": "chicken",
+      "fallbackModel": "duck",
+      "fitSize": 1.9,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-dingus-the-cat",
+      "assetKey": "dingus_the_cat",
+      "fallbackModel": "cat",
+      "fitSize": 1.95,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-jigglypuff",
+      "assetKey": "jigglypuff",
+      "fallbackModel": "ghost",
+      "fitSize": 1.75,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-pikachu",
+      "assetKey": "pikachu",
+      "fallbackModel": "robot_dog",
+      "fitSize": 1.9,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-snorlax",
+      "assetKey": "snorlax",
+      "fallbackModel": "astronaut",
+      "fitSize": 1.9,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-tralalero-tralala",
+      "assetKey": "tralalero_tralala",
+      "fallbackModel": "dinosaur",
+      "fitSize": 2.05,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-tung-tung-shakur",
+      "assetKey": "tung_tung_shakur",
+      "fallbackModel": "hat",
+      "fitSize": 2.05,
+      "rotation": [0, 0, 0],
+      "offset": [0, 0, 0],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    }
+  ]
+}

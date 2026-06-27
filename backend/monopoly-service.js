@@ -70,7 +70,15 @@ function loadMonopolyModule() {
   return modulePromise;
 }
 
-function createMonopolyService({ get, run, all, io, roomName }) {
+function createMonopolyService({
+  get,
+  run,
+  all,
+  io,
+  roomName,
+  getEquippedCosmetics = async () => new Map(),
+  onGameFinished = async () => null
+}) {
   const queues = new Map();
   const turnTimers = new Map();
   const finishedCleanupTimers = new Map();
@@ -162,6 +170,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
       isPrivate: Boolean(config.isPrivate),
       password: typeof config.password === "string" ? config.password : "",
       seatedPlayerIds: Array.isArray(config.seatedPlayerIds) ? config.seatedPlayerIds.map(Number).filter(Number.isInteger) : [],
+      eyconRewardEligible: config.eyconRewardEligible !== false,
       createdAt: config.createdAt || row.createdAt
     };
   }
@@ -346,12 +355,14 @@ function createMonopolyService({ get, run, all, io, roomName }) {
     const engine = await loadEngineFromRow(row);
     const { buildGameSnapshot } = await loadMonopolyModule();
     const playersById = await mapPlayersById(worldId, config.seatedPlayerIds);
+    const cosmeticsById = await getEquippedCosmetics(config.seatedPlayerIds);
     const game = engine ? buildGameSnapshot(engine) : null;
 
     if (game?.players) {
       game.players = game.players.map((player) => ({
         ...player,
-        token: playersById.get(player.id)?.token || null
+        token: playersById.get(player.id)?.token || null,
+        cosmetics: cosmeticsById.get(Number(player.id)) || {}
       }));
     }
 
@@ -384,7 +395,8 @@ function createMonopolyService({ get, run, all, io, roomName }) {
             balance: player?.balance ?? gamePlayer?.cash ?? 0,
             bankrupt: Boolean(gamePlayer?.bankrupt),
             inJail: Boolean(gamePlayer?.inJail),
-            token: player?.token || null
+            token: player?.token || null,
+            cosmetics: cosmeticsById.get(Number(playerId)) || {}
           };
         }),
         game
@@ -409,6 +421,20 @@ function createMonopolyService({ get, run, all, io, roomName }) {
       tables: tablesPayload.tables,
       table: statePayload?.table || null
     };
+  }
+
+  async function refreshUserPresentation(userId) {
+    const rows = await all(
+      `SELECT id, world_id AS worldId, config_json AS configJson
+       FROM monopoly_tables
+       WHERE status IN (?, ?)`,
+      [TABLE_STATUS.WAITING, TABLE_STATUS.PLAYING]
+    );
+    const matchingRows = rows.filter((row) => parseConfig(row).seatedPlayerIds.includes(Number(userId)));
+    for (const row of matchingRows) {
+      await emitAll(row.worldId, row.id);
+    }
+    return { refreshedTables: matchingRows.length };
   }
 
   async function assertPlayerCanSeat(worldId, actorId, excludedTableId = null) {
@@ -626,7 +652,20 @@ function createMonopolyService({ get, run, all, io, roomName }) {
           });
 
           await emitAll(freshRow.worldId, freshRow.id);
-          await scheduleTurnTimeoutForRow(freshRow);
+          if (freshRow.status === TABLE_STATUS.FINISHED) {
+            if (parseConfig(freshRow).eyconRewardEligible) {
+              await onGameFinished({
+                tableId: freshRow.id,
+                worldId: freshRow.worldId,
+                state: engine.getState()
+              }).catch((error) => {
+                console.error("No se pudo entregar recompensa EyCon de Monopoly", error);
+              });
+            }
+            scheduleFinishedCleanup(freshRow);
+          } else {
+            await scheduleTurnTimeoutForRow(freshRow);
+          }
         } catch (error) {
           console.error("No se pudo resolver el timeout de turno Monopoly", error);
         }
@@ -710,6 +749,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
   }
 
   return {
+    refreshUserPresentation,
     async listTables(worldId) {
       return buildTablesPayload(worldId);
     },
@@ -757,6 +797,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
           isPrivate: wantsPrivate,
           password: cleanPassword,
           seatedPlayerIds: [actorId],
+          eyconRewardEligible: true,
           createdAt: new Date().toISOString()
         };
 
@@ -903,6 +944,7 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         }
 
         const engine = await loadEngineFromRow(row);
+        config.eyconRewardEligible = false;
         try {
           await forcePlayerBankruptcy(engine, actorId, "SALIDA_DE_PARTIDA");
         } catch (error) {
@@ -1040,6 +1082,15 @@ function createMonopolyService({ get, run, all, io, roomName }) {
         const nextRow = await getTableRow(tableId);
         const response = await emitAll(worldId, tableId);
         if (nextRow?.status === TABLE_STATUS.FINISHED) {
+          if (parseConfig(nextRow).eyconRewardEligible) {
+            await onGameFinished({
+              tableId,
+              worldId,
+              state: engine.getState()
+            }).catch((error) => {
+              console.error("No se pudo entregar recompensa EyCon de Monopoly", error);
+            });
+          }
           scheduleFinishedCleanup(nextRow);
         } else if (nextRow) {
           await scheduleTurnTimeoutForRow(nextRow);

@@ -1,6 +1,7 @@
 const path = require("path");
 const http = require("http");
 const crypto = require("crypto");
+const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
@@ -8,6 +9,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { Server } = require("socket.io");
 const { createMonopolyService } = require("./monopoly-service");
+const { createEyconService } = require("./eycon-service");
 
 const app = express();
 const server = http.createServer(app);
@@ -25,6 +27,23 @@ const AI_TABLE_MIN_BET = 25;
 const AI_TABLE_MAX_BET = 500;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,16}$/;
 const PASSWORD_MIN_LENGTH = 8;
+const ROLE_KEYS = new Set(["user", "admin"]);
+const WORLD_KIND_MAIN = "MAIN";
+const WORLD_KIND_PRIVATE = "PRIVATE";
+const MAIN_WORLD_NAME = "MAIN";
+const MAIN_WORLD_CODE = "MAIN";
+const PRIVATE_ROOM_CODE_LENGTH = 6;
+const PRIVATE_ROOM_CREATE_COST_UNITS = 100;
+const ADMIN_ENV_USER_IDS = String(process.env.ADMIN_USER_IDS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean)
+  .map((value) => Number(value))
+  .filter(Number.isInteger);
+const ADMIN_ENV_USERNAMES = String(process.env.ADMIN_USERNAMES || "")
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
 
 const allowedOrigins = [
   "http://localhost:5173",
@@ -40,19 +59,34 @@ const io = new Server(server, {
 });
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, "database.sqlite");
+const modelUploadsDir = path.join(__dirname, "uploads", "models3d");
 const db = new sqlite3.Database(dbPath);
 const blackjackSessions = new Map();
 const worldPresence = new Map();
 const multiplayerBlackjackTables = new Map();
 const playerOnlyTables = new Map();
-const monopolyService = createMonopolyService({ get, run, all, io, roomName });
+const eyconService = createEyconService({ get, run, all, io, userRoom });
+const monopolyService = createMonopolyService({
+  get,
+  run,
+  all,
+  io,
+  roomName,
+  getEquippedCosmetics: (userIds) => eyconService.getPublicEquipment(userIds, "MONOPOLY"),
+  onGameFinished: ({ tableId, worldId, state }) =>
+    eyconService.awardMonopolyWinner({ tableId, worldId, state })
+});
 
 app.use(
   cors({
     origin: allowedOrigins
   })
 );
-app.use(express.json());
+app.use(express.json({ limit: "12mb" }));
+app.use("/uploads/models3d", express.static(modelUploadsDir, {
+  immutable: true,
+  maxAge: "7d"
+}));
 
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -94,6 +128,7 @@ function all(sql, params = []) {
 }
 
 async function initDatabase() {
+  await fs.promises.mkdir(modelUploadsDir, { recursive: true });
   await run("PRAGMA foreign_keys = ON");
 
   await run(`
@@ -105,6 +140,12 @@ async function initDatabase() {
   `);
 
   await run("ALTER TABLE users ADD COLUMN monopoly_token_json TEXT").catch(() => {});
+  await run("ALTER TABLE users ADD COLUMN active INTEGER NOT NULL DEFAULT 1").catch(() => {});
+  await run("ALTER TABLE users ADD COLUMN created_at TEXT").catch(() => {});
+  await run("ALTER TABLE users ADD COLUMN updated_at TEXT").catch(() => {});
+  await run("ALTER TABLE users ADD COLUMN last_login_at TEXT").catch(() => {});
+  await run("UPDATE users SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP)");
+  await run("UPDATE users SET updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)");
 
   await run(`
     CREATE TABLE IF NOT EXISTS worlds (
@@ -114,6 +155,17 @@ async function initDatabase() {
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+  await run(`ALTER TABLE worlds ADD COLUMN kind TEXT NOT NULL DEFAULT '${WORLD_KIND_PRIVATE}'`).catch(() => {});
+  await run("ALTER TABLE worlds ADD COLUMN room_code TEXT").catch(() => {});
+  await run("ALTER TABLE worlds ADD COLUMN visibility TEXT NOT NULL DEFAULT 'PRIVATE'").catch(() => {});
+  await run("ALTER TABLE worlds ADD COLUMN created_at TEXT").catch(() => {});
+  await run("ALTER TABLE worlds ADD COLUMN updated_at TEXT").catch(() => {});
+  await run("UPDATE worlds SET kind = ? WHERE kind IS NULL OR kind = ''", [WORLD_KIND_PRIVATE]);
+  await run("UPDATE worlds SET visibility = 'PRIVATE' WHERE visibility IS NULL OR visibility = ''");
+  await run("UPDATE worlds SET created_at = COALESCE(created_at, CURRENT_TIMESTAMP)");
+  await run("UPDATE worlds SET updated_at = COALESCE(updated_at, CURRENT_TIMESTAMP)");
+  await run("CREATE UNIQUE INDEX IF NOT EXISTS idx_worlds_room_code ON worlds(room_code) WHERE room_code IS NOT NULL");
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_worlds_main_kind ON worlds(kind) WHERE kind = '${WORLD_KIND_MAIN}'`);
 
   await run(`
     CREATE TABLE IF NOT EXISTS economies (
@@ -155,6 +207,303 @@ async function initDatabase() {
       FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS roles (
+      key TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_roles (
+      user_id INTEGER NOT NULL,
+      role_key TEXT NOT NULL,
+      granted_by INTEGER,
+      source TEXT NOT NULL DEFAULT 'manual',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, role_key),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (role_key) REFERENCES roles(key) ON DELETE CASCADE,
+      FOREIGN KEY (granted_by) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS admin_logs (
+      id TEXT PRIMARY KEY,
+      admin_user_id INTEGER,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL DEFAULT '',
+      target_id TEXT NOT NULL DEFAULT '',
+      target_user_id INTEGER,
+      reason TEXT NOT NULL DEFAULT '',
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS currency_movements (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      world_id INTEGER,
+      currency TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      balance_before INTEGER NOT NULL,
+      balance_after INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      admin_user_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE,
+      FOREIGN KEY (admin_user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS login_logs (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER,
+      username TEXT NOT NULL DEFAULT '',
+      success INTEGER NOT NULL,
+      ip TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      reason TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS site_visits (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER,
+      path TEXT NOT NULL,
+      method TEXT NOT NULL,
+      ip TEXT NOT NULL DEFAULT '',
+      user_agent TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      world_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      username TEXT NOT NULL,
+      text TEXT NOT NULL,
+      hidden INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (world_id) REFERENCES worlds(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await backfillPrivateRoomCodes();
+  await ensureRoleSeeds();
+  await bootstrapAdminRoles();
+  await eyconService.initSchema();
+}
+
+function requestIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "")
+    .split(",")[0]
+    .trim()
+    .slice(0, 80);
+}
+
+function requestUserAgent(req) {
+  return String(req.headers["user-agent"] || "").slice(0, 240);
+}
+
+function normalizeRoleKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function cleanAdminReason(value) {
+  return String(value || "").trim().slice(0, 240);
+}
+
+function normalizeAssetKey(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+}
+
+function safeGlbUploadBuffer(fileBase64) {
+  const raw = String(fileBase64 || "").replace(/^data:[^,]+,/, "");
+  if (!raw) {
+    throw Object.assign(new Error("Archivo GLB requerido"), { status: 400 });
+  }
+  const buffer = Buffer.from(raw, "base64");
+  if (buffer.length < 20 || buffer.length > 10 * 1024 * 1024) {
+    throw Object.assign(new Error("El GLB debe pesar entre 20 bytes y 10 MB"), { status: 400 });
+  }
+  if (buffer.subarray(0, 4).toString("utf8") !== "glTF") {
+    throw Object.assign(new Error("El archivo no parece ser un GLB valido"), { status: 400 });
+  }
+  return buffer;
+}
+
+async function ensureRoleSeeds() {
+  await run(
+    `INSERT OR IGNORE INTO roles (key, label, description) VALUES
+      ('user', 'Usuario', 'Acceso normal a juegos y tienda'),
+      ('admin', 'Administrador', 'Acceso al panel administrativo de plataforma')`
+  );
+  await run(
+    `INSERT OR IGNORE INTO user_roles (user_id, role_key, source)
+     SELECT id, 'user', 'system-default' FROM users`
+  );
+}
+
+async function grantRole(userId, roleKey, { grantedBy = null, source = "manual" } = {}) {
+  const safeRole = normalizeRoleKey(roleKey);
+  if (!ROLE_KEYS.has(safeRole)) {
+    throw Object.assign(new Error("Rol invalido"), { status: 400 });
+  }
+  await run(
+    `INSERT OR IGNORE INTO user_roles (user_id, role_key, granted_by, source)
+     VALUES (?, ?, ?, ?)`,
+    [userId, safeRole, grantedBy, source]
+  );
+}
+
+async function bootstrapAdminRoles() {
+  await ensureRoleSeeds();
+
+  for (const userId of ADMIN_ENV_USER_IDS) {
+    await grantRole(userId, "admin", { source: "env:ADMIN_USER_IDS" }).catch(() => {});
+  }
+
+  for (const username of ADMIN_ENV_USERNAMES) {
+    const user = await get("SELECT id FROM users WHERE username = ?", [username]);
+    if (user) {
+      await grantRole(user.id, "admin", { source: "env:ADMIN_USERNAMES" });
+    }
+  }
+
+  const existingAdmin = await get(
+    `SELECT 1 AS ok FROM user_roles WHERE role_key = 'admin' LIMIT 1`
+  );
+  if (existingAdmin) return;
+
+  const legacyAdmin = await get(
+    `SELECT created_by AS createdBy FROM worlds ORDER BY id ASC LIMIT 1`
+  );
+  if (legacyAdmin?.createdBy) {
+    await grantRole(legacyAdmin.createdBy, "admin", { source: "legacy-first-world-creator" });
+    await writeAdminLog({
+      adminUserId: null,
+      action: "ROLE_BOOTSTRAP",
+      targetType: "user",
+      targetId: String(legacyAdmin.createdBy),
+      targetUserId: legacyAdmin.createdBy,
+      reason: "Migracion inicial desde regla anterior: creador del primer mundo",
+      metadata: { source: "legacy-first-world-creator" }
+    });
+  }
+}
+
+async function getUserRoles(userId) {
+  const rows = await all(
+    `SELECT r.key
+     FROM user_roles ur
+     JOIN roles r ON r.key = ur.role_key
+     WHERE ur.user_id = ?
+     ORDER BY r.key ASC`,
+    [userId]
+  );
+  return rows.map((row) => row.key);
+}
+
+async function loadAuthUser(userId) {
+  const row = await get(
+    `SELECT id, username, active, created_at AS createdAt, last_login_at AS lastLoginAt
+     FROM users
+     WHERE id = ?`,
+    [userId]
+  );
+  if (!row || row.active === 0) return null;
+  const roles = await getUserRoles(row.id);
+  const safeRoles = roles.length ? roles : ["user"];
+  return {
+    id: row.id,
+    username: row.username,
+    active: Boolean(row.active),
+    roles: safeRoles,
+    isAdmin: safeRoles.includes("admin"),
+    createdAt: row.createdAt,
+    lastLoginAt: row.lastLoginAt
+  };
+}
+
+async function writeAdminLog({
+  adminUserId,
+  action,
+  targetType = "",
+  targetId = "",
+  targetUserId = null,
+  reason = "",
+  metadata = {}
+}) {
+  await run(
+    `INSERT INTO admin_logs (
+      id, admin_user_id, action, target_type, target_id, target_user_id,
+      reason, metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      adminUserId || null,
+      String(action || "").slice(0, 80),
+      String(targetType || "").slice(0, 80),
+      String(targetId || "").slice(0, 120),
+      targetUserId || null,
+      cleanAdminReason(reason),
+      JSON.stringify(metadata && typeof metadata === "object" ? metadata : {})
+    ]
+  );
+}
+
+async function recordLoginAttempt(req, { userId = null, username = "", success = false, reason = "" } = {}) {
+  await run(
+    `INSERT INTO login_logs (id, user_id, username, success, ip, user_agent, reason)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      userId || null,
+      String(username || "").slice(0, 80),
+      success ? 1 : 0,
+      requestIp(req),
+      requestUserAgent(req),
+      String(reason || "").slice(0, 160)
+    ]
+  ).catch((error) => console.error("No se pudo guardar login log", error));
+}
+
+async function recordSiteVisit(req, userId = null) {
+  await run(
+    `INSERT INTO site_visits (id, user_id, path, method, ip, user_agent)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      userId || null,
+      String(req.originalUrl || req.path || "").slice(0, 240),
+      String(req.method || "GET").slice(0, 12),
+      requestIp(req),
+      requestUserAgent(req)
+    ]
+  ).catch((error) => console.error("No se pudo guardar visita", error));
 }
 
 function signToken(user) {
@@ -163,7 +512,7 @@ function signToken(user) {
   });
 }
 
-function authRequired(req, res, next) {
+async function authRequired(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : null;
 
@@ -172,10 +521,25 @@ function authRequired(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = await loadAuthUser(payload.id);
+    if (!user) {
+      return res.status(401).json({ error: "Usuario inactivo o no encontrado" });
+    }
+    req.user = user;
+    recordSiteVisit(req, user.id);
     return next();
   } catch (error) {
     return res.status(401).json({ error: "Token invalido o expirado" });
+  }
+}
+
+async function requirePlatformAdmin(userId) {
+  const roles = await getUserRoles(userId);
+  if (!roles.includes("admin")) {
+    const error = new Error("Permisos administrativos requeridos");
+    error.status = 403;
+    throw error;
   }
 }
 
@@ -185,6 +549,173 @@ function normalizeUsername(username) {
 
 function normalizeWorldName(name) {
   return String(name || "").trim().slice(0, 48);
+}
+
+function normalizeRoomCode(code) {
+  return String(code || "")
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 16);
+}
+
+function normalizeWorldSearch(query) {
+  return String(query || "").trim().slice(0, 48);
+}
+
+function publicWorld(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    createdBy: row.createdBy ?? row.created_by,
+    kind: row.kind || WORLD_KIND_PRIVATE,
+    roomCode: row.roomCode ?? row.room_code ?? null,
+    visibility: row.visibility || "PRIVATE",
+    createdAt: row.createdAt ?? row.created_at ?? null,
+    updatedAt: row.updatedAt ?? row.updated_at ?? null,
+    balance: row.balance == null ? null : Number(row.balance),
+    playerCount: Number(row.playerCount ?? row.player_count ?? 0),
+    isLive: Boolean(row.isLive ?? row.is_live ?? false)
+  };
+}
+
+function worldPlayerCount(worldId) {
+  const players = worldPresence.get(Number(worldId));
+  return players ? players.size : 0;
+}
+
+function withWorldPresence(world) {
+  if (!world) return null;
+  const playerCount = worldPlayerCount(world.id);
+  return {
+    ...world,
+    playerCount,
+    isLive: playerCount > 0
+  };
+}
+
+function sortActiveWorlds(first, second) {
+  if (first.kind === WORLD_KIND_MAIN && second.kind !== WORLD_KIND_MAIN) return -1;
+  if (first.kind !== WORLD_KIND_MAIN && second.kind === WORLD_KIND_MAIN) return 1;
+  if (second.playerCount !== first.playerCount) return second.playerCount - first.playerCount;
+  return String(first.name || "").localeCompare(String(second.name || ""), "es");
+}
+
+async function generatePrivateRoomCode() {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const code = crypto
+      .randomBytes(5)
+      .toString("base64url")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, PRIVATE_ROOM_CODE_LENGTH);
+    if (code.length < PRIVATE_ROOM_CODE_LENGTH || code === MAIN_WORLD_CODE) continue;
+    const existing = await get("SELECT id FROM worlds WHERE room_code = ?", [code]);
+    if (!existing) return code;
+  }
+
+  return `R${Date.now().toString(36).toUpperCase().slice(-5)}`;
+}
+
+async function backfillPrivateRoomCodes() {
+  const rows = await all(
+    `SELECT id FROM worlds
+     WHERE (kind IS NULL OR kind != ?)
+       AND (room_code IS NULL OR room_code = '')`,
+    [WORLD_KIND_MAIN]
+  );
+
+  for (const row of rows) {
+    const code = await generatePrivateRoomCode();
+    await run(
+      "UPDATE worlds SET kind = ?, visibility = 'PRIVATE', room_code = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [WORLD_KIND_PRIVATE, code, row.id]
+    );
+  }
+}
+
+async function ensureMainWorld(createdByUserId) {
+  let world = await get(
+    `SELECT
+       id,
+       name,
+       created_by AS createdBy,
+       kind,
+       room_code AS roomCode,
+       visibility,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM worlds
+     WHERE kind = ? OR room_code = ?
+     ORDER BY CASE WHEN kind = ? THEN 0 ELSE 1 END, id ASC
+     LIMIT 1`,
+    [WORLD_KIND_MAIN, MAIN_WORLD_CODE, WORLD_KIND_MAIN]
+  );
+
+  if (world) {
+    await run(
+      `UPDATE worlds
+       SET name = ?, kind = ?, visibility = 'PUBLIC', room_code = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [MAIN_WORLD_NAME, WORLD_KIND_MAIN, MAIN_WORLD_CODE, world.id]
+    );
+    return publicWorld({ ...world, name: MAIN_WORLD_NAME, kind: WORLD_KIND_MAIN, visibility: "PUBLIC", roomCode: MAIN_WORLD_CODE });
+  }
+
+  const result = await run(
+    `INSERT INTO worlds (name, created_by, kind, room_code, visibility, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'PUBLIC', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [MAIN_WORLD_NAME, createdByUserId, WORLD_KIND_MAIN, MAIN_WORLD_CODE]
+  );
+
+  const existingAdmin = await get("SELECT 1 AS ok FROM user_roles WHERE role_key = 'admin' LIMIT 1");
+  if (!existingAdmin) {
+    await grantRole(createdByUserId, "admin", { source: "main-world-bootstrap" });
+    await writeAdminLog({
+      adminUserId: createdByUserId,
+      action: "ROLE_BOOTSTRAP",
+      targetType: "user",
+      targetId: String(createdByUserId),
+      targetUserId: createdByUserId,
+      reason: "Sala MAIN inicial creada sin administrador existente",
+      metadata: { source: "main-world-bootstrap", worldId: result.id }
+    });
+  }
+
+  return publicWorld({
+    id: result.id,
+    name: MAIN_WORLD_NAME,
+    createdBy: createdByUserId,
+    kind: WORLD_KIND_MAIN,
+    roomCode: MAIN_WORLD_CODE,
+    visibility: "PUBLIC",
+    createdAt: null,
+    updatedAt: null,
+    balance: null
+  });
+}
+
+async function loadWorldForUser(worldId, userId) {
+  const row = await get(
+    `SELECT
+       worlds.id,
+       worlds.name,
+       worlds.created_by AS createdBy,
+       worlds.kind,
+       worlds.room_code AS roomCode,
+       worlds.visibility,
+       worlds.created_at AS createdAt,
+       worlds.updated_at AS updatedAt,
+       economies.balance AS balance
+     FROM worlds
+     LEFT JOIN economies
+       ON economies.world_id = worlds.id
+       AND economies.user_id = ?
+     WHERE worlds.id = ?`,
+    [userId, worldId]
+  );
+  return publicWorld(row);
 }
 
 function validateUsername(username) {
@@ -210,6 +741,11 @@ function validatePassword(password) {
 
   return null;
 }
+
+const MONOPOLY_TOKEN_COLORS = [
+  "#d94841", "#2f7ef0", "#20a56d", "#f0bc3f", "#7a58d7", "#22252f",
+  "#ec4899", "#0ea5e9", "#f97316", "#65a30d", "#c026d3", "#fef3c7"
+];
 
 function sanitizeMonopolyToken(input) {
   const token = input && typeof input === "object" ? input : {};
@@ -276,11 +812,22 @@ async function ensureWorldMembership(userId, worldId) {
     throw error;
   }
 
-  const world = await get("SELECT id, name, created_by AS createdBy FROM worlds WHERE id = ?", [
-    worldId
-  ]);
+  const row = await get(
+    `SELECT
+       id,
+       name,
+       created_by AS createdBy,
+       kind,
+       room_code AS roomCode,
+       visibility,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM worlds
+     WHERE id = ?`,
+    [worldId]
+  );
 
-  if (!world) {
+  if (!row) {
     const error = new Error("Mundo no encontrado");
     error.status = 404;
     throw error;
@@ -292,6 +839,7 @@ async function ensureWorldMembership(userId, worldId) {
   );
 
   const economy = await getEconomyOrFail(userId, worldId);
+  const world = publicWorld(row);
   return { world, economy };
 }
 
@@ -457,7 +1005,22 @@ async function settleBlackjackSession(session, outcome) {
 
   const payout = outcome === "win" ? session.bet * 2 : outcome === "push" ? session.bet : 0;
 
-  if (payout > 0) {
+  if (session.currency === "EYCON") {
+    const eyconPayoutUnits = outcome === "win"
+      ? session.eyconBetUnits * 2
+      : outcome === "push"
+        ? session.eyconBetUnits
+        : 0;
+    const settledWager = await eyconService.settleWager({
+      userId: session.userId,
+      wagerId: session.id,
+      payoutUnits: eyconPayoutUnits,
+      gameKey: "BLACKJACK",
+      outcome
+    });
+    session.eyconPayoutUnits = eyconPayoutUnits;
+    session.eyconBalanceUnits = settledWager.balanceUnits;
+  } else if (payout > 0) {
     await run(
       "UPDATE economies SET balance = balance + ? WHERE user_id = ? AND world_id = ?",
       [payout, session.userId, session.worldId]
@@ -467,8 +1030,21 @@ async function settleBlackjackSession(session, outcome) {
   const economy = await getEconomyOrFail(session.userId, session.worldId);
   session.status = "settled";
   session.outcome = outcome;
-  session.payout = payout;
+  session.payout = session.currency === "EYCON" ? 0 : payout;
   session.balance = economy.balance;
+  session.eyconRewardUnits = 0;
+  if (outcome === "win" && session.currency !== "EYCON") {
+    try {
+      const reward = await eyconService.awardBlackjackWin({
+        userId: session.userId,
+        sessionId: session.id,
+        bet: session.bet
+      });
+      session.eyconRewardUnits = Number(reward.rewardUnits || 0);
+    } catch (error) {
+      console.error("No se pudo entregar recompensa EyCon de Blackjack", error);
+    }
+  }
   blackjackSessions.set(session.id, session);
   await broadcastEconomyChange(session.userId, session.worldId, economy.balance);
   return session;
@@ -483,6 +1059,12 @@ function publicBlackjackState(session) {
     outcome: session.outcome || null,
     bet: session.bet,
     payout: session.payout || 0,
+    currency: session.currency || "NORMAL",
+    eyconBetUnits: session.eyconBetUnits || 0,
+    eyconPayoutUnits: session.eyconPayoutUnits || 0,
+    eyconBalanceUnits: session.eyconBalanceUnits || null,
+    eyconRewardUnits: session.eyconRewardUnits || 0,
+    eyconReward: (session.eyconRewardUnits || 0) / eyconService.EYCON_SCALE,
     balance: session.balance,
     playerCards: session.player,
     dealerCards: active ? [session.dealer[0], { hidden: true }] : session.dealer,
@@ -568,6 +1150,7 @@ function publicMultiplayerTable(worldId) {
         status: player.status,
         outcome: player.outcome,
         payout: player.payout,
+        eyconRewardUnits: player.eyconRewardUnits || 0,
         balance: player.balance,
         connected: player.connected !== false
       }))
@@ -732,8 +1315,9 @@ async function startMultiplayerRound(worldId) {
     const player = table.players.get(userId);
     player.cards = [draw(table.deck), draw(table.deck)];
     player.status = hasBlackjack(player.cards) ? "blackjack" : "playing";
-    player.outcome = null;
-    player.payout = 0;
+      player.outcome = null;
+      player.payout = 0;
+      player.eyconRewardUnits = 0;
   }
 
   const firstTurnIndex = table.order.findIndex((userId) => {
@@ -844,6 +1428,21 @@ async function settleMultiplayerTable(worldId) {
   table.message = "Ronda resuelta";
   table.bettingEndsAt = null;
   table.turnEndsAt = null;
+
+  for (const userId of table.order) {
+    const player = table.players.get(userId);
+    if (player?.outcome !== "win") continue;
+    try {
+      const reward = await eyconService.awardBlackjackWin({
+        userId,
+        sessionId: table.roundId,
+        bet: player.bet
+      });
+      player.eyconRewardUnits = Number(reward.rewardUnits || 0);
+    } catch (error) {
+      console.error("No se pudo entregar recompensa EyCon de mesa IA", error);
+    }
+  }
 
   for (const update of updates) {
     io.to(userRoom(update.userId)).emit("balance_update", {
@@ -1429,6 +2028,467 @@ async function leaveCurrentWorld(socket) {
   await emitWorldPresence(previousWorldId);
 }
 
+function normalizeAdminQuery(value) {
+  return String(value || "").trim().toLowerCase().slice(0, 80);
+}
+
+function parseAdminDate(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+}
+
+function parseAdminMetadata(value) {
+  try {
+    return value ? JSON.parse(value) : {};
+  } catch {
+    return {};
+  }
+}
+
+async function countAdmins() {
+  const row = await get(
+    `SELECT COUNT(*) AS count FROM user_roles WHERE role_key = 'admin'`
+  );
+  return Number(row?.count || 0);
+}
+
+async function listAdminUsers(query = "") {
+  const normalizedQuery = normalizeAdminQuery(query);
+  const like = `%${normalizedQuery}%`;
+  const rows = await all(
+    `SELECT
+       u.id,
+       u.username,
+       u.active,
+       u.created_at AS createdAt,
+       u.updated_at AS updatedAt,
+       u.last_login_at AS lastLoginAt,
+       COALESCE(GROUP_CONCAT(DISTINCT ur.role_key), 'user') AS roleKeys,
+       COALESCE(e.normalBalance, 0) AS normalBalance,
+       COALESCE(e.worldCount, 0) AS worldCount,
+       COALESCE(a.balance_units, 0) AS eyconBalanceUnits
+     FROM users u
+     LEFT JOIN user_roles ur ON ur.user_id = u.id
+     LEFT JOIN (
+       SELECT user_id, SUM(balance) AS normalBalance, COUNT(*) AS worldCount
+       FROM economies
+       GROUP BY user_id
+     ) e ON e.user_id = u.id
+     LEFT JOIN eycon_accounts a ON a.user_id = u.id
+     WHERE ? = ''
+        OR LOWER(u.username) LIKE ?
+        OR CAST(u.id AS TEXT) = ?
+     GROUP BY u.id
+     ORDER BY u.id ASC`,
+    [normalizedQuery, like, normalizedQuery]
+  );
+
+  return rows.map((row) => {
+    const roles = String(row.roleKeys || "user")
+      .split(",")
+      .map(normalizeRoleKey)
+      .filter(Boolean);
+    return {
+      id: row.id,
+      username: row.username,
+      active: Boolean(row.active),
+      roles: roles.length ? roles : ["user"],
+      isAdmin: roles.includes("admin"),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      lastLoginAt: row.lastLoginAt,
+      normalBalance: Number(row.normalBalance || 0),
+      worldCount: Number(row.worldCount || 0),
+      eyconBalanceUnits: Number(row.eyconBalanceUnits || 0),
+      eyconBalance: Number(row.eyconBalanceUnits || 0) / eyconService.EYCON_SCALE
+    };
+  });
+}
+
+async function listAdminCurrencyState(query = "") {
+  const users = await listAdminUsers(query);
+  const worlds = await all(
+    `SELECT
+       id,
+       name,
+       created_by AS createdBy,
+       kind,
+       room_code AS roomCode,
+       visibility,
+       created_at AS createdAt,
+       updated_at AS updatedAt
+     FROM worlds
+     ORDER BY kind ASC, id ASC`
+  );
+  const economies = await all(
+    `SELECT e.user_id AS userId, e.world_id AS worldId, e.balance, w.name AS worldName
+     FROM economies e
+     JOIN worlds w ON w.id = e.world_id
+     ORDER BY e.world_id ASC, e.balance DESC`
+  );
+  return { users, worlds, economies };
+}
+
+async function listCurrencyMovements({ limit = 120 } = {}) {
+  return all(
+    `SELECT
+       cm.id,
+       cm.user_id AS userId,
+       u.username AS username,
+       cm.world_id AS worldId,
+       w.name AS worldName,
+       cm.currency,
+       cm.amount,
+       cm.balance_before AS balanceBefore,
+       cm.balance_after AS balanceAfter,
+       cm.reason,
+       cm.admin_user_id AS adminUserId,
+       au.username AS adminUsername,
+       cm.created_at AS createdAt
+     FROM currency_movements cm
+     JOIN users u ON u.id = cm.user_id
+     LEFT JOIN worlds w ON w.id = cm.world_id
+     LEFT JOIN users au ON au.id = cm.admin_user_id
+     ORDER BY cm.created_at DESC
+     LIMIT ?`,
+    [Math.max(1, Math.min(300, Number(limit) || 120))]
+  );
+}
+
+async function writeCurrencyMovement({
+  userId,
+  worldId = null,
+  currency,
+  amount,
+  balanceBefore,
+  balanceAfter,
+  reason,
+  adminUserId
+}) {
+  await run(
+    `INSERT INTO currency_movements (
+      id, user_id, world_id, currency, amount, balance_before,
+      balance_after, reason, admin_user_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      crypto.randomUUID(),
+      userId,
+      worldId,
+      currency,
+      amount,
+      balanceBefore,
+      balanceAfter,
+      reason,
+      adminUserId
+    ]
+  );
+}
+
+async function adjustAdminCurrency({ adminId, userId, currency, worldId, mode, amount, reason }) {
+  const safeUserId = Number(userId);
+  const safeCurrency = String(currency || "").toUpperCase();
+  const safeMode = String(mode || "DELTA").toUpperCase();
+  const safeAmount = Number(amount);
+  const safeReason = cleanAdminReason(reason);
+
+  if (!Number.isInteger(safeUserId)) {
+    throw Object.assign(new Error("Usuario requerido"), { status: 400 });
+  }
+  if (!["NORMAL", "EYCON"].includes(safeCurrency)) {
+    throw Object.assign(new Error("Moneda invalida"), { status: 400 });
+  }
+  if (!["SET", "DELTA"].includes(safeMode)) {
+    throw Object.assign(new Error("Modo de ajuste invalido"), { status: 400 });
+  }
+  if (!Number.isInteger(safeAmount)) {
+    throw Object.assign(new Error("Cantidad invalida"), { status: 400 });
+  }
+  if (!safeReason) {
+    throw Object.assign(new Error("El motivo es obligatorio para auditar el cambio"), { status: 400 });
+  }
+
+  const targetUser = await get("SELECT id, username FROM users WHERE id = ?", [safeUserId]);
+  if (!targetUser) {
+    throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
+  }
+
+  if (safeCurrency === "EYCON") {
+    const account = await eyconService.ensureAccount(safeUserId);
+    const balanceBefore = Number(account.balanceUnits || 0);
+    const delta = safeMode === "SET" ? safeAmount - balanceBefore : safeAmount;
+    if (delta === 0) {
+      throw Object.assign(new Error("El ajuste no cambia el saldo"), { status: 400 });
+    }
+    await eyconService.adminAdjust({
+      adminId,
+      userId: safeUserId,
+      amountUnits: delta,
+      description: safeReason,
+      requestId: crypto.randomUUID()
+    });
+    const nextAccount = await eyconService.ensureAccount(safeUserId);
+    const balanceAfter = Number(nextAccount.balanceUnits || 0);
+    await writeCurrencyMovement({
+      userId: safeUserId,
+      currency: "EYCON",
+      amount: delta,
+      balanceBefore,
+      balanceAfter,
+      reason: safeReason,
+      adminUserId: adminId
+    });
+    await writeAdminLog({
+      adminUserId: adminId,
+      action: "CURRENCY_ADJUST",
+      targetType: "currency",
+      targetId: `EYCON:${safeUserId}`,
+      targetUserId: safeUserId,
+      reason: safeReason,
+      metadata: { currency: "EYCON", mode: safeMode, amount: delta, balanceBefore, balanceAfter }
+    });
+    return { currency: "EYCON", userId: safeUserId, amount: delta, balanceBefore, balanceAfter };
+  }
+
+  const safeWorldId = Number(worldId);
+  if (!Number.isInteger(safeWorldId)) {
+    throw Object.assign(new Error("Mundo requerido para monedas normales"), { status: 400 });
+  }
+  const world = await get("SELECT id FROM worlds WHERE id = ?", [safeWorldId]);
+  if (!world) {
+    throw Object.assign(new Error("Mundo no encontrado"), { status: 404 });
+  }
+
+  await run(
+    "INSERT OR IGNORE INTO economies (user_id, world_id, balance) VALUES (?, ?, ?)",
+    [safeUserId, safeWorldId, STARTING_BALANCE]
+  );
+
+  await run("BEGIN IMMEDIATE");
+  try {
+    const economy = await getEconomyOrFail(safeUserId, safeWorldId);
+    const balanceBefore = Number(economy.balance || 0);
+    const balanceAfter = safeMode === "SET" ? safeAmount : balanceBefore + safeAmount;
+    if (balanceAfter < 0) {
+      throw Object.assign(new Error("El saldo no puede quedar negativo"), { status: 400 });
+    }
+    const delta = balanceAfter - balanceBefore;
+    if (delta === 0) {
+      throw Object.assign(new Error("El ajuste no cambia el saldo"), { status: 400 });
+    }
+    await run(
+      `UPDATE economies SET balance = ? WHERE user_id = ? AND world_id = ?`,
+      [balanceAfter, safeUserId, safeWorldId]
+    );
+    await writeCurrencyMovement({
+      userId: safeUserId,
+      worldId: safeWorldId,
+      currency: "NORMAL",
+      amount: delta,
+      balanceBefore,
+      balanceAfter,
+      reason: safeReason,
+      adminUserId: adminId
+    });
+    await run("COMMIT");
+    await broadcastEconomyChange(safeUserId, safeWorldId, balanceAfter);
+    await writeAdminLog({
+      adminUserId: adminId,
+      action: "CURRENCY_ADJUST",
+      targetType: "currency",
+      targetId: `NORMAL:${safeWorldId}:${safeUserId}`,
+      targetUserId: safeUserId,
+      reason: safeReason,
+      metadata: { currency: "NORMAL", worldId: safeWorldId, mode: safeMode, amount: delta, balanceBefore, balanceAfter }
+    });
+    return { currency: "NORMAL", userId: safeUserId, worldId: safeWorldId, amount: delta, balanceBefore, balanceAfter };
+  } catch (error) {
+    await run("ROLLBACK").catch(() => {});
+    throw error;
+  }
+}
+
+async function listAdminLogs({ limit = 160 } = {}) {
+  const rows = await all(
+    `SELECT
+       l.id,
+       l.admin_user_id AS adminUserId,
+       au.username AS adminUsername,
+       l.action,
+       l.target_type AS targetType,
+       l.target_id AS targetId,
+       l.target_user_id AS targetUserId,
+       tu.username AS targetUsername,
+       l.reason,
+       l.metadata_json AS metadataJson,
+       l.created_at AS createdAt
+     FROM admin_logs l
+     LEFT JOIN users au ON au.id = l.admin_user_id
+     LEFT JOIN users tu ON tu.id = l.target_user_id
+     ORDER BY l.created_at DESC
+     LIMIT ?`,
+    [Math.max(1, Math.min(300, Number(limit) || 160))]
+  );
+  return rows.map((row) => ({ ...row, metadata: parseAdminMetadata(row.metadataJson) }));
+}
+
+function connectedUsersSnapshot() {
+  const connected = new Map();
+  for (const [worldId, players] of worldPresence.entries()) {
+    for (const player of players.values()) {
+      connected.set(player.userId, {
+        userId: player.userId,
+        username: player.username,
+        worldId,
+        socketCount: player.sockets?.size || 0
+      });
+    }
+  }
+  return [...connected.values()];
+}
+
+async function getAdminStats() {
+  const [
+    userCounts,
+    loginCounts,
+    visitCount,
+    visitsByDay,
+    recentVisits,
+    recentLogins
+  ] = await Promise.all([
+    get(
+      `SELECT
+         COUNT(*) AS totalUsers,
+         SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS activeUsers,
+         SUM(CASE WHEN active = 0 THEN 1 ELSE 0 END) AS disabledUsers,
+         SUM(CASE WHEN last_login_at >= datetime('now', '-7 days') THEN 1 ELSE 0 END) AS recentlyActiveUsers
+       FROM users`
+    ),
+    get(
+      `SELECT
+         SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS successfulLogins,
+         SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failedLogins
+       FROM login_logs`
+    ),
+    get(`SELECT COUNT(*) AS totalVisits FROM site_visits`),
+    all(
+      `SELECT date(created_at) AS day, COUNT(*) AS visits
+       FROM site_visits
+       GROUP BY date(created_at)
+       ORDER BY day DESC
+       LIMIT 14`
+    ),
+    all(
+      `SELECT v.user_id AS userId, u.username, v.path, v.method, v.ip, v.user_agent AS userAgent, v.created_at AS createdAt
+       FROM site_visits v
+       LEFT JOIN users u ON u.id = v.user_id
+       ORDER BY v.created_at DESC
+       LIMIT 40`
+    ),
+    all(
+      `SELECT user_id AS userId, username, success, ip, user_agent AS userAgent, reason, created_at AS createdAt
+       FROM login_logs
+       ORDER BY created_at DESC
+       LIMIT 40`
+    )
+  ]);
+
+  const connectedUsers = connectedUsersSnapshot();
+  return {
+    ...userCounts,
+    ...loginCounts,
+    totalVisits: Number(visitCount?.totalVisits || 0),
+    connectedUsers,
+    connectedUserCount: connectedUsers.length,
+    visitsByDay,
+    recentVisits,
+    recentLogins
+  };
+}
+
+async function listChatMessages({ query = "", userId = null, worldId = null, from = "", to = "" } = {}) {
+  const params = [];
+  const clauses = ["m.hidden = 0"];
+  const normalizedQuery = String(query || "").trim().slice(0, 80);
+  if (normalizedQuery) {
+    clauses.push("(LOWER(m.text) LIKE ? OR LOWER(m.username) LIKE ?)");
+    params.push(`%${normalizedQuery.toLowerCase()}%`, `%${normalizedQuery.toLowerCase()}%`);
+  }
+  if (Number.isInteger(Number(userId))) {
+    clauses.push("m.user_id = ?");
+    params.push(Number(userId));
+  }
+  if (Number.isInteger(Number(worldId))) {
+    clauses.push("m.world_id = ?");
+    params.push(Number(worldId));
+  }
+  const safeFrom = parseAdminDate(from);
+  const safeTo = parseAdminDate(to);
+  if (safeFrom) {
+    clauses.push("date(m.created_at) >= date(?)");
+    params.push(safeFrom);
+  }
+  if (safeTo) {
+    clauses.push("date(m.created_at) <= date(?)");
+    params.push(safeTo);
+  }
+  params.push(160);
+  return all(
+    `SELECT
+       m.id,
+       m.world_id AS worldId,
+       w.name AS worldName,
+       m.user_id AS userId,
+       m.username,
+       m.text,
+       m.created_at AS createdAt
+     FROM chat_messages m
+     LEFT JOIN worlds w ON w.id = m.world_id
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY m.created_at DESC
+     LIMIT ?`,
+    params
+  );
+}
+
+async function getAdminStoreAnalysis() {
+  const [overview, model3d] = await Promise.all([
+    eyconService.adminOverview(),
+    eyconService.adminModel3dOverview()
+  ]);
+  const products = overview.products || [];
+  const monopolyTokens = products.filter((product) => product.gameKey === "MONOPOLY" && product.category === "TOKEN");
+  const glbTokens = monopolyTokens.filter((product) => product.metadata?.renderer === "gltf");
+  return {
+    products,
+    model3d,
+    summary: {
+      productCount: products.length,
+      monopolyTokenCount: monopolyTokens.length,
+      glbTokenCount: glbTokens.length,
+      activeProductCount: products.filter((product) => product.active).length,
+      model3dSettingCount: model3d.settings.length,
+      allowedAssetCount: model3d.allowedAssets.length
+    },
+    modelArchitecture: {
+      currentState: [
+        "Los productos EyCon viven en eycon_products con metadata_json.",
+        "Los assets GLB aprobados viven en model_3d_assets; los uploads se sirven desde /uploads/models3d.",
+        "Los ajustes por producto viven en model_3d_settings y se mezclan en la metadata publica.",
+        "El seed versionable vive en backend/model-3d-seed.json; con MODEL_3D_WRITE_SEED=1 se actualiza al guardar desde admin local.",
+        "Escala, offset, rotacion y modo de color se leen desde base de datos cuando el ajuste esta activo.",
+        "Por default las figuras GLB usan modo TINTE al 75%."
+      ],
+      recommendation: [
+        "Sube un .glb en Cargar GLB nuevo para agregarlo a model_3d_assets.",
+        "Elige un producto Monopoly TOKEN y asignale un asset aprobado.",
+        "Usa Tinte 75% como base y ajusta escala, rotacion u offset con la vista previa.",
+        "Guarda con motivo; en localhost activa MODEL_3D_WRITE_SEED=1 para llevar cambios por Git."
+      ]
+    }
+  };
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });
@@ -1446,11 +2506,12 @@ app.post("/api/auth/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await run(
-      "INSERT INTO users (username, password_hash) VALUES (?, ?)",
+      "INSERT INTO users (username, password_hash, active, created_at, updated_at) VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
       [username, passwordHash]
     );
+    await grantRole(result.id, "user", { source: "register" });
 
-    const user = { id: result.id, username };
+    const user = { id: result.id, username, active: true, roles: ["user"], isAdmin: false };
     return res.status(201).json({ user, token: signToken(user) });
   } catch (error) {
     if (error && error.code === "SQLITE_CONSTRAINT") {
@@ -1469,26 +2530,37 @@ app.post("/api/auth/login", async (req, res) => {
     const usernameError = validateUsername(username);
 
     if (usernameError || !password) {
+      await recordLoginAttempt(req, { username, success: false, reason: usernameError || "password_required" });
       return res.status(400).json({ error: usernameError || "La contrasena es requerida" });
     }
 
-    const user = await get("SELECT id, username, password_hash FROM users WHERE username = ?", [
+    const user = await get("SELECT id, username, password_hash, active FROM users WHERE username = ?", [
       username
     ]);
 
     if (!user) {
+      await recordLoginAttempt(req, { username, success: false, reason: "user_not_found" });
       return res.status(401).json({ error: "Credenciales invalidas" });
+    }
+
+    if (user.active === 0) {
+      await recordLoginAttempt(req, { userId: user.id, username, success: false, reason: "inactive_user" });
+      return res.status(403).json({ error: "Usuario desactivado" });
     }
 
     const ok = await bcrypt.compare(password, user.password_hash);
 
     if (!ok) {
+      await recordLoginAttempt(req, { userId: user.id, username, success: false, reason: "bad_password" });
       return res.status(401).json({ error: "Credenciales invalidas" });
     }
 
+    await run("UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [user.id]);
+    await recordLoginAttempt(req, { userId: user.id, username, success: true, reason: "ok" });
+    const authUser = await loadAuthUser(user.id);
     return res.json({
-      user: { id: user.id, username: user.username },
-      token: signToken(user)
+      user: authUser,
+      token: signToken(authUser)
     });
   } catch (error) {
     console.error(error);
@@ -1496,26 +2568,129 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.get("/api/me", authRequired, async (req, res) => {
+  return res.json({ user: req.user });
+});
+
 app.get("/api/worlds", authRequired, async (req, res) => {
   try {
-    const worlds = await all(
+    const mainWorld = await ensureMainWorld(req.user.id);
+    const mainWorldWithBalance = withWorldPresence(await loadWorldForUser(mainWorld.id, req.user.id));
+    const query = normalizeWorldSearch(req.query.q);
+    const normalizedCode = normalizeRoomCode(query);
+
+    const myPrivateWorlds = (await all(
       `
         SELECT
           worlds.id,
           worlds.name,
           worlds.created_by AS createdBy,
+          worlds.kind,
+          worlds.room_code AS roomCode,
+          worlds.visibility,
+          worlds.created_at AS createdAt,
+          worlds.updated_at AS updatedAt,
           economies.balance AS balance
         FROM worlds
         LEFT JOIN economies
           ON economies.world_id = worlds.id
           AND economies.user_id = ?
-        ORDER BY worlds.id ASC
-        LIMIT 1
+        WHERE worlds.kind = ?
+          AND worlds.created_by = ?
+        ORDER BY worlds.updated_at DESC, worlds.id DESC
+        LIMIT 12
       `,
-      [req.user.id]
-    );
+      [req.user.id, WORLD_KIND_PRIVATE, req.user.id]
+    )).map(publicWorld).map(withWorldPresence);
 
-    return res.json({ worlds });
+    let privateWorlds = [];
+    if (query.length >= 2) {
+      privateWorlds = (await all(
+        `
+          SELECT
+            worlds.id,
+            worlds.name,
+            worlds.created_by AS createdBy,
+            worlds.kind,
+            worlds.room_code AS roomCode,
+            worlds.visibility,
+            worlds.created_at AS createdAt,
+            worlds.updated_at AS updatedAt,
+            economies.balance AS balance
+          FROM worlds
+          LEFT JOIN economies
+            ON economies.world_id = worlds.id
+            AND economies.user_id = ?
+          WHERE worlds.kind = ?
+            AND (
+              worlds.room_code = ?
+              OR worlds.room_code LIKE ?
+              OR LOWER(worlds.name) LIKE LOWER(?)
+            )
+          ORDER BY
+            CASE WHEN worlds.room_code = ? THEN 0 ELSE 1 END,
+            worlds.updated_at DESC,
+            worlds.id DESC
+          LIMIT 12
+        `,
+        [
+          req.user.id,
+          WORLD_KIND_PRIVATE,
+          normalizedCode,
+          `${normalizedCode}%`,
+          `%${query}%`,
+          normalizedCode
+        ]
+      )).map(publicWorld).map(withWorldPresence);
+    }
+
+    const activeWorldIds = [...worldPresence.entries()]
+      .filter(([, players]) => players && players.size > 0)
+      .map(([worldId]) => Number(worldId))
+      .filter((worldId) => Number.isInteger(worldId));
+    let activeWorlds = [];
+
+    if (activeWorldIds.length > 0) {
+      const placeholders = activeWorldIds.map(() => "?").join(",");
+      activeWorlds = (await all(
+        `
+          SELECT
+            worlds.id,
+            worlds.name,
+            worlds.created_by AS createdBy,
+            worlds.kind,
+            worlds.room_code AS roomCode,
+            worlds.visibility,
+            worlds.created_at AS createdAt,
+            worlds.updated_at AS updatedAt,
+            economies.balance AS balance
+          FROM worlds
+          LEFT JOIN economies
+            ON economies.world_id = worlds.id
+            AND economies.user_id = ?
+          WHERE worlds.id IN (${placeholders})
+          ORDER BY worlds.updated_at DESC, worlds.id DESC
+        `,
+        [req.user.id, ...activeWorldIds]
+      ))
+        .map(publicWorld)
+        .map(withWorldPresence)
+        .filter((world) => world && world.playerCount > 0)
+        .sort(sortActiveWorlds);
+    }
+
+    const worldsById = new Map();
+    for (const world of [mainWorldWithBalance, ...myPrivateWorlds, ...privateWorlds, ...activeWorlds]) {
+      if (world) worldsById.set(world.id, world);
+    }
+
+    return res.json({
+      mainWorld: mainWorldWithBalance,
+      activeWorlds,
+      myPrivateWorlds,
+      privateWorlds,
+      worlds: [...worldsById.values()]
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "No se pudieron listar los mundos" });
@@ -1527,45 +2702,644 @@ app.post("/api/worlds/create", authRequired, async (req, res) => {
     const name = normalizeWorldName(req.body.name);
 
     if (name.length < 3) {
-      return res.status(400).json({ error: "El nombre del mundo es muy corto" });
+      return res.status(400).json({ error: "El nombre de la sala es muy corto" });
     }
 
-    const existingWorld = await get("SELECT id FROM worlds ORDER BY id ASC LIMIT 1");
-
-    if (existingWorld) {
-      return res.status(409).json({ error: "Ya existe un mundo activo. Solo se permite uno." });
+    await ensureMainWorld(req.user.id);
+    const account = await eyconService.ensureAccount(req.user.id);
+    if (Number(account.balanceUnits || 0) < PRIVATE_ROOM_CREATE_COST_UNITS) {
+      return res.status(400).json({ error: "Necesitas 1.00 EyCon para crear una sala privada" });
     }
 
-    const result = await run("INSERT INTO worlds (name, created_by) VALUES (?, ?)", [
-      name,
-      req.user.id
-    ]);
+    const roomCode = await generatePrivateRoomCode();
+    const result = await run(
+      `INSERT INTO worlds (name, created_by, kind, room_code, visibility, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'PRIVATE', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      [name, req.user.id, WORLD_KIND_PRIVATE, roomCode]
+    );
 
     await run(
       "INSERT INTO economies (user_id, world_id, balance) VALUES (?, ?, ?)",
       [req.user.id, result.id, STARTING_BALANCE]
     );
 
+    let eyconMovement;
+    try {
+      eyconMovement = await eyconService.spend({
+        userId: req.user.id,
+        amountUnits: PRIVATE_ROOM_CREATE_COST_UNITS,
+        movementType: "PRIVATE_ROOM_CREATE",
+        referenceId: String(result.id),
+        description: `Creacion de sala privada ${name}`,
+        idempotencyKey: `private-room-create:${result.id}`
+      });
+    } catch (error) {
+      await run("DELETE FROM worlds WHERE id = ? AND created_by = ?", [result.id, req.user.id]).catch(() => {});
+      throw error;
+    }
+
+    const existingAdmin = await get("SELECT 1 AS ok FROM user_roles WHERE role_key = 'admin' LIMIT 1");
+    if (!existingAdmin) {
+      await grantRole(req.user.id, "admin", { source: "first-world-bootstrap" });
+      await writeAdminLog({
+        adminUserId: req.user.id,
+        action: "ROLE_BOOTSTRAP",
+        targetType: "user",
+        targetId: String(req.user.id),
+        targetUserId: req.user.id,
+        reason: "Primer mundo creado sin administrador existente",
+        metadata: { source: "first-world-bootstrap", worldId: result.id }
+      });
+    }
+
+    const world = await loadWorldForUser(result.id, req.user.id);
     return res.status(201).json({
-      world: { id: result.id, name, createdBy: req.user.id },
-      balance: STARTING_BALANCE
+      world,
+      balance: STARTING_BALANCE,
+      eyconBalanceUnits: eyconMovement.balanceUnits,
+      eyconBalance: eyconMovement.balanceUnits / eyconService.EYCON_SCALE
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ error: "No se pudo crear el mundo" });
+    return res.status(error.status || 500).json({ error: error.status ? error.message : "No se pudo crear la sala privada" });
   }
 });
 
 app.post("/api/worlds/join", authRequired, async (req, res) => {
   try {
-    const worldId = Number(req.body.worldId);
+    await ensureMainWorld(req.user.id);
+    let worldId = Number(req.body.worldId);
+    const roomCode = normalizeRoomCode(req.body.roomCode);
+
+    if (!Number.isInteger(worldId) && roomCode) {
+      const target = await get("SELECT id FROM worlds WHERE room_code = ?", [roomCode]);
+      if (target) {
+        worldId = Number(target.id);
+      } else {
+        const error = new Error("Sala privada no encontrada");
+        error.status = 404;
+        throw error;
+      }
+    }
+
     const { world, economy } = await ensureWorldMembership(req.user.id, worldId);
-    return res.json({ world, balance: economy.balance });
+    const eycon = await eyconService.ensureAccount(req.user.id);
+    return res.json({
+      world,
+      balance: economy.balance,
+      eyconBalanceUnits: eycon.balanceUnits,
+      eyconBalance: eycon.balanceUnits / eyconService.EYCON_SCALE
+    });
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
       error: error.status ? error.message : "No se pudo cargar el mundo"
     });
+  }
+});
+
+app.get("/api/eycon/profile", authRequired, async (req, res) => {
+  try {
+    return res.json(await eyconService.getProfile(req.user.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar EyCon" });
+  }
+});
+
+app.get("/api/eycon/health", (req, res) => {
+  return res.json({
+    ok: true,
+    apiVersion: "eycon-v1",
+    capabilities: {
+      globalStore: true,
+      gameCatalogs: true
+    }
+  });
+});
+
+app.get("/api/eycon/games", authRequired, async (req, res) => {
+  try {
+    return res.json(await eyconService.listGames(req.user.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron cargar los minijuegos" });
+  }
+});
+
+app.get("/api/eycon/catalog", authRequired, async (req, res) => {
+  try {
+    const gameKey = String(req.query.gameKey || "MONOPOLY").toUpperCase();
+    return res.json(await eyconService.listCatalog({ userId: req.user.id, gameKey }));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar la tienda" });
+  }
+});
+
+app.get("/api/eycon/history", authRequired, async (req, res) => {
+  try {
+    const movements = await eyconService.history(req.user.id, req.query.limit);
+    return res.json({ movements });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar el historial EyCon" });
+  }
+});
+
+app.post("/api/eycon/purchase", authRequired, async (req, res) => {
+  try {
+    const productId = String(req.body?.productId || "");
+    if (!productId) return res.status(400).json({ error: "Producto requerido" });
+    return res.json(await eyconService.purchase({ userId: req.user.id, productId }));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo completar la compra" });
+  }
+});
+
+app.post("/api/eycon/equip", authRequired, async (req, res) => {
+  try {
+    const productId = String(req.body?.productId || "");
+    if (!productId) return res.status(400).json({ error: "Producto requerido" });
+    const profile = await eyconService.equip({ userId: req.user.id, productId });
+    await monopolyService.refreshUserPresentation(req.user.id);
+    return res.json(profile);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo equipar el producto" });
+  }
+});
+
+app.post("/api/eycon/unequip", authRequired, async (req, res) => {
+  try {
+    const gameKey = String(req.body?.gameKey || "").toUpperCase();
+    const slotKey = String(req.body?.slotKey || "").toUpperCase();
+    const profile = await eyconService.unequip({
+      userId: req.user.id,
+      gameKey,
+      slotKey
+    });
+    await monopolyService.refreshUserPresentation(req.user.id);
+    return res.json(profile);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo desequipar el personalizable" });
+  }
+});
+
+app.get("/api/admin/overview", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const [users, currencies, movements, logs, stats, store] = await Promise.all([
+      listAdminUsers(req.query.q),
+      listAdminCurrencyState(req.query.q),
+      listCurrencyMovements({ limit: 80 }),
+      listAdminLogs({ limit: 80 }),
+      getAdminStats(),
+      getAdminStoreAnalysis()
+    ]);
+    return res.json({
+      admin: req.user,
+      roles: ["user", "admin"],
+      users,
+      currencies,
+      movements,
+      logs,
+      stats,
+      store
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar administracion" });
+  }
+});
+
+app.get("/api/admin/users", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({ users: await listAdminUsers(req.query.q) });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron cargar usuarios" });
+  }
+});
+
+app.patch("/api/admin/users/:userId", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const targetUserId = Number(req.params.userId);
+    const reason = cleanAdminReason(req.body?.reason);
+    if (!Number.isInteger(targetUserId)) return res.status(400).json({ error: "Usuario invalido" });
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+
+    const target = await get("SELECT id, username, active FROM users WHERE id = ?", [targetUserId]);
+    if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    const updates = [];
+    const params = [];
+    const metadata = { before: { username: target.username, active: Boolean(target.active) } };
+
+    if (req.body?.username !== undefined) {
+      const nextUsername = normalizeUsername(req.body.username);
+      const usernameError = validateUsername(nextUsername);
+      if (usernameError) return res.status(400).json({ error: usernameError });
+      updates.push("username = ?");
+      params.push(nextUsername);
+      metadata.afterUsername = nextUsername;
+    }
+
+    if (req.body?.active !== undefined) {
+      const nextActive = req.body.active ? 1 : 0;
+      if (nextActive === 0) {
+        const roles = await getUserRoles(targetUserId);
+        if (roles.includes("admin") && (await countAdmins()) <= 1) {
+          return res.status(400).json({ error: "No puedes desactivar al ultimo administrador" });
+        }
+        if (Number(targetUserId) === Number(req.user.id)) {
+          return res.status(400).json({ error: "No puedes desactivar tu propia cuenta desde esta sesion" });
+        }
+      }
+      updates.push("active = ?");
+      params.push(nextActive);
+      metadata.afterActive = Boolean(nextActive);
+    }
+
+    if (!updates.length) return res.status(400).json({ error: "No hay cambios para guardar" });
+    updates.push("updated_at = CURRENT_TIMESTAMP");
+    params.push(targetUserId);
+    await run(`UPDATE users SET ${updates.join(", ")} WHERE id = ?`, params);
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "USER_UPDATE",
+      targetType: "user",
+      targetId: String(targetUserId),
+      targetUserId,
+      reason,
+      metadata
+    });
+    return res.json({ users: await listAdminUsers() });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo actualizar usuario" });
+  }
+});
+
+app.post("/api/admin/users/:userId/password", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const targetUserId = Number(req.params.userId);
+    const password = String(req.body?.password || "");
+    const reason = cleanAdminReason(req.body?.reason);
+    if (!Number.isInteger(targetUserId)) return res.status(400).json({ error: "Usuario invalido" });
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ error: passwordError });
+    const target = await get("SELECT id FROM users WHERE id = ?", [targetUserId]);
+    if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+    const passwordHash = await bcrypt.hash(password, 10);
+    await run(
+      "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [passwordHash, targetUserId]
+    );
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "USER_PASSWORD_CHANGE",
+      targetType: "user",
+      targetId: String(targetUserId),
+      targetUserId,
+      reason
+    });
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cambiar contrasena" });
+  }
+});
+
+app.put("/api/admin/users/:userId/roles", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const targetUserId = Number(req.params.userId);
+    const reason = cleanAdminReason(req.body?.reason);
+    const requestedRoles = Array.isArray(req.body?.roles) ? req.body.roles.map(normalizeRoleKey) : [];
+    const roles = [...new Set(["user", ...requestedRoles])].filter((role) => ROLE_KEYS.has(role));
+    if (!Number.isInteger(targetUserId)) return res.status(400).json({ error: "Usuario invalido" });
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+    if (roles.length === 0 || requestedRoles.some((role) => !ROLE_KEYS.has(role))) {
+      return res.status(400).json({ error: "Roles invalidos" });
+    }
+    const target = await get("SELECT id FROM users WHERE id = ?", [targetUserId]);
+    if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+
+    const currentRoles = await getUserRoles(targetUserId);
+    if (currentRoles.includes("admin") && !roles.includes("admin") && (await countAdmins()) <= 1) {
+      return res.status(400).json({ error: "No puedes quitar al ultimo administrador" });
+    }
+    if (Number(targetUserId) === Number(req.user.id) && currentRoles.includes("admin") && !roles.includes("admin")) {
+      return res.status(400).json({ error: "No puedes quitarte tu propio rol admin desde esta sesion" });
+    }
+
+    await run("BEGIN IMMEDIATE");
+    try {
+      await run("DELETE FROM user_roles WHERE user_id = ?", [targetUserId]);
+      for (const role of roles) {
+        await run(
+          `INSERT INTO user_roles (user_id, role_key, granted_by, source)
+           VALUES (?, ?, ?, 'admin-panel')`,
+          [targetUserId, role, req.user.id]
+        );
+      }
+      await run("UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", [targetUserId]);
+      await run("COMMIT");
+    } catch (error) {
+      await run("ROLLBACK").catch(() => {});
+      throw error;
+    }
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "USER_ROLES_UPDATE",
+      targetType: "user",
+      targetId: String(targetUserId),
+      targetUserId,
+      reason,
+      metadata: { before: currentRoles, after: roles }
+    });
+    return res.json({ users: await listAdminUsers() });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron actualizar roles" });
+  }
+});
+
+app.get("/api/admin/currencies", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({
+      ...(await listAdminCurrencyState(req.query.q)),
+      movements: await listCurrencyMovements({ limit: req.query.limit })
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron cargar monedas" });
+  }
+});
+
+app.post("/api/admin/currencies/adjust", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const adjustment = await adjustAdminCurrency({
+      adminId: req.user.id,
+      userId: req.body?.userId,
+      currency: req.body?.currency,
+      worldId: req.body?.worldId,
+      mode: req.body?.mode,
+      amount: req.body?.amount,
+      reason: req.body?.reason
+    });
+    return res.json({
+      adjustment,
+      currencies: await listAdminCurrencyState(),
+      movements: await listCurrencyMovements({ limit: 80 })
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo ajustar moneda" });
+  }
+});
+
+app.get("/api/admin/logs", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({ logs: await listAdminLogs({ limit: req.query.limit }) });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron cargar logs" });
+  }
+});
+
+app.get("/api/admin/stats", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({ stats: await getAdminStats() });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron cargar estadisticas" });
+  }
+});
+
+app.get("/api/admin/chat", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({
+      messages: await listChatMessages({
+        query: req.query.q,
+        userId: req.query.userId,
+        worldId: req.query.worldId,
+        from: req.query.from,
+        to: req.query.to
+      })
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar chat" });
+  }
+});
+
+app.get("/api/admin/store-analysis", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({ store: await getAdminStoreAnalysis() });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar analisis de tienda" });
+  }
+});
+
+app.get("/api/admin/model-3d-settings", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({ model3d: await eyconService.adminModel3dOverview() });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar CRUD 3D" });
+  }
+});
+
+app.post("/api/admin/model-3d-assets", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const reason = cleanAdminReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+
+    const originalName = String(req.body?.fileName || "modelo.glb").trim();
+    if (!originalName.toLowerCase().endsWith(".glb")) {
+      return res.status(400).json({ error: "Solo se permiten archivos .glb" });
+    }
+    const label = String(req.body?.label || originalName.replace(/\.glb$/i, "")).trim().slice(0, 80);
+    const baseKey = normalizeAssetKey(req.body?.assetKey || label || originalName.replace(/\.glb$/i, ""));
+    if (baseKey.length < 3) return res.status(400).json({ error: "Nombre de asset invalido" });
+
+    const buffer = safeGlbUploadBuffer(req.body?.fileBase64);
+    await fs.promises.mkdir(modelUploadsDir, { recursive: true });
+    const suffix = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+    const assetKey = `${baseKey}_${suffix}`.slice(0, 80);
+    const storedName = `${assetKey}.glb`;
+    const targetPath = path.join(modelUploadsDir, storedName);
+    await fs.promises.writeFile(targetPath, buffer, { flag: "wx" });
+
+    const result = await eyconService.adminCreateModel3dAsset({
+      assetKey,
+      label,
+      filePath: `/uploads/models3d/${storedName}`,
+      fallbackModel: req.body?.fallbackModel,
+      fitSize: req.body?.fitSize,
+      uploadedBy: req.user.id
+    });
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "MODEL_3D_ASSET_UPLOAD",
+      targetType: "model_3d_asset",
+      targetId: assetKey,
+      reason,
+      metadata: { label, originalName, bytes: buffer.length, filePath: `/uploads/models3d/${storedName}` }
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar modelo 3D" });
+  }
+});
+
+app.put("/api/admin/model-3d-settings/:productId", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const reason = cleanAdminReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+    const result = await eyconService.adminUpsertModel3dSetting({
+      adminId: req.user.id,
+      productId: req.params.productId,
+      settings: req.body?.settings || {}
+    });
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "MODEL_3D_UPSERT",
+      targetType: "eycon_product",
+      targetId: req.params.productId,
+      reason,
+      metadata: { settings: req.body?.settings || {} }
+    });
+    return res.json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo guardar modelo 3D" });
+  }
+});
+
+app.delete("/api/admin/model-3d-settings/:productId", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const reason = cleanAdminReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+    const result = await eyconService.adminDeleteModel3dSetting({
+      adminId: req.user.id,
+      productId: req.params.productId
+    });
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "MODEL_3D_DELETE",
+      targetType: "eycon_product",
+      targetId: req.params.productId,
+      reason
+    });
+    return res.json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo eliminar ajuste 3D" });
+  }
+});
+
+app.get("/api/admin/eycon", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json(await eyconService.adminOverview());
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar administracion EyCon" });
+  }
+});
+
+app.post("/api/admin/eycon/adjust", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const adjustment = await adjustAdminCurrency({
+      adminId: req.user.id,
+      userId: Number(req.body?.userId),
+      currency: "EYCON",
+      mode: "DELTA",
+      amount: Number(req.body?.amountUnits),
+      reason: String(req.body?.description || "")
+    });
+    return res.json(adjustment);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo ajustar EyCon" });
+  }
+});
+
+app.put("/api/admin/eycon/products/:productId", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const productId = String(req.params.productId);
+    const result = await eyconService.adminUpdateProduct({
+      productId,
+      priceUnits: req.body?.priceUnits,
+      active: req.body?.active,
+      rarity: req.body?.rarity
+    });
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "STORE_PRODUCT_UPDATE",
+      targetType: "eycon_product",
+      targetId: productId,
+      reason: String(req.body?.reason || "Actualizacion de producto EyCon").slice(0, 240),
+      metadata: { patch: req.body || {}, result }
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo actualizar el producto" });
+  }
+});
+
+app.post("/api/admin/eycon/products", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const result = await eyconService.adminCreateProduct(req.body || {});
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "STORE_PRODUCT_CREATE",
+      targetType: "eycon_product",
+      targetId: result.id,
+      reason: String(req.body?.reason || "Creacion de producto EyCon").slice(0, 240),
+      metadata: { product: req.body || {} }
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo crear el producto" });
+  }
+});
+
+app.post("/api/admin/eycon/grant-product", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const userId = Number(req.body?.userId);
+    const productId = String(req.body?.productId || "");
+    const result = await eyconService.adminGrantProduct({
+      userId,
+      productId
+    });
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "STORE_PRODUCT_GRANT",
+      targetType: "eycon_product",
+      targetId: productId,
+      targetUserId: userId,
+      reason: String(req.body?.reason || "Asignacion administrativa de producto").slice(0, 240)
+    });
+    return res.json(result);
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo asignar el producto" });
   }
 });
 
@@ -1583,10 +3357,47 @@ app.get("/api/monopoly/token", authRequired, async (req, res) => {
 app.put("/api/monopoly/token", authRequired, async (req, res) => {
   try {
     const token = sanitizeMonopolyToken(req.body?.token);
+    const activeRows = await all(
+      `SELECT config_json AS configJson
+       FROM monopoly_tables
+       WHERE status IN ('WAITING', 'PLAYING')`
+    );
+    const activeTable = activeRows.find((row) => {
+      try {
+        const config = JSON.parse(row.configJson || "{}");
+        return (config.seatedPlayerIds || []).map(Number).includes(Number(req.user.id));
+      } catch {
+        return false;
+      }
+    });
+    if (activeTable) {
+      const config = JSON.parse(activeTable.configJson || "{}");
+      const otherIds = (config.seatedPlayerIds || [])
+        .map(Number)
+        .filter((userId) => Number.isFinite(userId) && userId !== Number(req.user.id));
+      if (otherIds.length) {
+        const otherPlayers = await all(
+          `SELECT id, monopoly_token_json AS tokenJson
+           FROM users
+           WHERE id IN (${otherIds.map(() => "?").join(",")})`,
+          otherIds
+        );
+        const colorTaken = otherPlayers.some((player) => {
+          const seatIndex = (config.seatedPlayerIds || []).map(Number).indexOf(Number(player.id));
+          const occupiedColor = parseStoredMonopolyToken(player.tokenJson)?.bg
+            || MONOPOLY_TOKEN_COLORS[Math.max(0, seatIndex) % MONOPOLY_TOKEN_COLORS.length];
+          return occupiedColor?.toLowerCase() === token.bg.toLowerCase();
+        });
+        if (colorTaken) {
+          return res.status(409).json({ error: "Ese color ya está ocupado en tu mesa de Monopoly" });
+        }
+      }
+    }
     await run("UPDATE users SET monopoly_token_json = ? WHERE id = ?", [
       JSON.stringify(token),
       req.user.id
     ]);
+    await monopolyService.refreshUserPresentation(req.user.id);
     return res.json({ token });
   } catch (error) {
     console.error(error);
@@ -1597,6 +3408,7 @@ app.put("/api/monopoly/token", authRequired, async (req, res) => {
 app.delete("/api/monopoly/token", authRequired, async (req, res) => {
   try {
     await run("UPDATE users SET monopoly_token_json = NULL WHERE id = ?", [req.user.id]);
+    await monopolyService.refreshUserPresentation(req.user.id);
     return res.json({ token: null });
   } catch (error) {
     console.error(error);
@@ -1827,15 +3639,20 @@ app.post("/api/game/blackjack/start", authRequired, async (req, res) => {
   try {
     const worldId = Number(req.body.worldId);
     const bet = Number(req.body.bet);
+    const currency = String(req.body.currency || "NORMAL").toUpperCase();
+    const sessionId = crypto.randomUUID();
 
-    if (!Number.isInteger(worldId) || !Number.isInteger(bet) || bet <= 0) {
+    if (!Number.isInteger(worldId) || !Number.isInteger(bet) || bet <= 0 || !["NORMAL", "EYCON"].includes(currency)) {
       return res.status(400).json({ error: "Apuesta invalida" });
     }
 
-    if (bet < AI_TABLE_MIN_BET || bet > AI_TABLE_MAX_BET) {
+    if (currency === "NORMAL" && (bet < AI_TABLE_MIN_BET || bet > AI_TABLE_MAX_BET)) {
       return res.status(400).json({
         error: `La mesa IA acepta apuestas de $${AI_TABLE_MIN_BET} a $${AI_TABLE_MAX_BET}`
       });
+    }
+    if (currency === "EYCON" && (bet < 1 || bet > 100)) {
+      return res.status(400).json({ error: "La mesa EyCon acepta apuestas de 0.01 a 1.00 EyCon" });
     }
 
     const world = await get("SELECT id FROM worlds WHERE id = ?", [worldId]);
@@ -1844,33 +3661,44 @@ app.post("/api/game/blackjack/start", authRequired, async (req, res) => {
       return res.status(404).json({ error: "Mundo no encontrado" });
     }
 
-    await run("BEGIN IMMEDIATE");
+    if (currency === "EYCON") {
+      await eyconService.placeWager({
+        userId: req.user.id,
+        wagerId: sessionId,
+        amountUnits: bet,
+        gameKey: "BLACKJACK"
+      });
+    } else {
+      await run("BEGIN IMMEDIATE");
+      try {
+        const economy = await getEconomyOrFail(req.user.id, worldId);
 
-    try {
-      const economy = await getEconomyOrFail(req.user.id, worldId);
+        if (economy.balance < bet) {
+          await run("ROLLBACK");
+          return res.status(400).json({ error: "Saldo insuficiente" });
+        }
 
-      if (economy.balance < bet) {
+        await run(
+          "UPDATE economies SET balance = balance - ? WHERE user_id = ? AND world_id = ?",
+          [bet, req.user.id, worldId]
+        );
+
+        await run("COMMIT");
+      } catch (error) {
         await run("ROLLBACK");
-        return res.status(400).json({ error: "Saldo insuficiente" });
+        throw error;
       }
-
-      await run(
-        "UPDATE economies SET balance = balance - ? WHERE user_id = ? AND world_id = ?",
-        [bet, req.user.id, worldId]
-      );
-
-      await run("COMMIT");
-    } catch (error) {
-      await run("ROLLBACK");
-      throw error;
     }
 
     const deck = makeDeck();
     const session = {
-      id: crypto.randomUUID(),
+      id: sessionId,
       userId: req.user.id,
       worldId,
       bet,
+      currency,
+      eyconBetUnits: currency === "EYCON" ? bet : 0,
+      eyconPayoutUnits: 0,
       deck,
       player: [draw(deck), draw(deck)],
       dealer: [draw(deck), draw(deck)],
@@ -1955,7 +3783,7 @@ async function handleBlackjackResult(req, res) {
 app.post("/api/game/blackjack-result", authRequired, handleBlackjackResult);
 app.post("/api/game/blackjack/stand", authRequired, handleBlackjackResult);
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth && socket.handshake.auth.token;
 
@@ -1963,7 +3791,12 @@ io.use((socket, next) => {
       return next(new Error("Token requerido"));
     }
 
-    socket.user = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET);
+    const user = await loadAuthUser(payload.id);
+    if (!user) {
+      return next(new Error("Usuario inactivo o no encontrado"));
+    }
+    socket.user = user;
     return next();
   } catch (error) {
     return next(new Error("Token invalido"));
@@ -2007,7 +3840,13 @@ io.on("connection", (socket) => {
         }
       }
 
-      socket.emit("joined_world", { world, balance: economy.balance });
+      const eycon = await eyconService.ensureAccount(socket.user.id);
+      socket.emit("joined_world", {
+        world,
+        balance: economy.balance,
+        eyconBalanceUnits: eycon.balanceUnits,
+        eyconBalance: eycon.balanceUnits / eyconService.EYCON_SCALE
+      });
       socket.emit("blackjack_state", publicMultiplayerTable(worldId));
       socket.emit("player_tables_state", publicPlayerTables(worldId));
       socket.emit("monopoly_tables_state", await monopolyService.listTables(worldId));
@@ -2018,7 +3857,13 @@ io.on("connection", (socket) => {
       await emitWorldPresence(worldId);
 
       if (typeof callback === "function") {
-        callback({ ok: true, world, balance: economy.balance });
+        callback({
+          ok: true,
+          world,
+          balance: economy.balance,
+          eyconBalanceUnits: eycon.balanceUnits,
+          eyconBalance: eycon.balanceUnits / eyconService.EYCON_SCALE
+        });
       }
     } catch (error) {
       if (typeof callback === "function") {
@@ -2062,6 +3907,12 @@ io.on("connection", (socket) => {
         text,
         createdAt: new Date().toISOString()
       };
+
+      await run(
+        `INSERT INTO chat_messages (id, world_id, user_id, username, text, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [message.id, message.worldId, message.userId, message.username, message.text, message.createdAt]
+      );
 
       io.to(roomName(worldId)).emit("chat_message", message);
 
