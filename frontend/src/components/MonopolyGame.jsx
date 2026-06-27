@@ -2877,8 +2877,8 @@ function TokenCustomizer({
 
   if (colorOnly) {
     return (
-      <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-        <div className="monopoly-modal tone-info token-customizer-modal color-only">
+      <div className="monopoly-modal-backdrop fullscreen" onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+        <div className="monopoly-modal tone-info token-customizer-modal color-only fullscreen">
           <div className="token-customizer-head">
             <div>
               <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Personalizar ficha</p>
@@ -3211,8 +3211,8 @@ function BoardThemeCustomizer({
   }
 
   return (
-    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
-      <div className="monopoly-modal tone-info monopoly-board-theme-modal">
+    <div className="monopoly-modal-backdrop fullscreen" onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
+      <div className="monopoly-modal tone-info monopoly-board-theme-modal fullscreen">
         <div className="token-customizer-head">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Configuración del anfitrión</p>
