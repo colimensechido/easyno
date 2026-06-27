@@ -1,11 +1,13 @@
-import { Coins, Cuboid, Gamepad2, Globe2, LogOut, MessageSquare, Sparkles, Spade, Volume2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
+import { Coins, Cuboid, Gamepad2, Gem, Globe2, LogOut, MessageSquare, Shield, Sparkles, Trophy, Volume2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
 import { audio } from "./audio";
+import AdminPanel from "./components/AdminPanel";
 import AuthPanel from "./components/AuthPanel";
 import BlackjackTable from "./components/BlackjackTable";
 import DishesGame from "./components/DishesGame";
+import EyconStore from "./components/EyconStore";
 import MonopolyGame from "./components/MonopolyGame";
 import PlatformRadioPlayer from "./components/PlatformRadioPlayer";
 import { useRadio } from "./radio/RadioContext";
@@ -13,6 +15,116 @@ import WorldSelector from "./components/WorldSelector";
 import WorldSidebar from "./components/WorldSidebar";
 
 const APP_RADIO_GAME_KEY = "MONOPOLY";
+const GAME_VIEWS = new Set(["games", "dishes", "blackjack", "monopoly", "monopoly3d"]);
+const appCurrency = new Intl.NumberFormat("es-MX", {
+  style: "currency",
+  currency: "MXN",
+  maximumFractionDigits: 0
+});
+
+function formatMoney(value) {
+  return appCurrency.format(Number(value || 0));
+}
+
+function RoomGamesHub({ world, onSelectGame }) {
+  const games = [
+    { key: "dishes", icon: Sparkles, title: "Trabajo", text: "Lavar platos", status: "Listo" },
+    { key: "blackjack", icon: Gamepad2, title: "Blackjack", text: "Mesa contra la banca", status: "Activo" },
+    { key: "monopoly3d", icon: Cuboid, title: "Monopoly", text: "Tablero 3D", status: "Activo" }
+  ];
+
+  return (
+    <section className="games-strip room-games-hub" id="easyno-games" aria-labelledby="room-games-title">
+      <div className="section-heading">
+        <div>
+          <p><Gamepad2 size={15} /> Juegos</p>
+          <h3 id="room-games-title">{world?.name || "MAIN"}</h3>
+        </div>
+      </div>
+
+      <div className="game-card-grid">
+        {games.map((game) => {
+          const Icon = game.icon;
+          return (
+            <article className="game-card" key={game.key}>
+              <div className="game-card__top">
+                <span className="game-card__icon"><Icon size={20} /></span>
+                <span className="game-status is-live">{game.status}</span>
+              </div>
+              <div>
+                <h4>{game.title}</h4>
+                <p>{game.text}</p>
+              </div>
+              <button className="game-card__action" onClick={() => onSelectGame(game.key)} type="button">
+                Abrir
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RoomRankingPanel({ world, presence, currentUser, onOpenRooms, onOpenGames }) {
+  const ranking = useMemo(
+    () => [...presence].sort((a, b) => Number(b.balance || 0) - Number(a.balance || 0) || a.username.localeCompare(b.username)),
+    [presence]
+  );
+
+  if (!world) {
+    return (
+      <section className="activity-panel room-ranking-panel" id="easyno-activity">
+        <div className="section-heading">
+          <div>
+            <p><Trophy size={15} /> Ranking</p>
+            <h3>El ranking aparece cuando entras a una sala.</h3>
+          </div>
+          <button className="primary-action" onClick={onOpenRooms} type="button">
+            <Globe2 size={17} />
+            Ver salas
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="activity-panel room-ranking-panel" id="easyno-activity" aria-labelledby="room-ranking-title">
+      <div className="section-heading">
+        <div>
+          <p><Trophy size={15} /> Ranking</p>
+          <h3 id="room-ranking-title">Ranking en vivo de {world.name}</h3>
+        </div>
+        <button className="secondary-action" onClick={onOpenGames} type="button">
+          <Gamepad2 size={17} />
+          Juegos
+        </button>
+      </div>
+
+      <div className="activity-list room-ranking-list">
+        {ranking.length > 0 ? (
+          ranking.map((player, index) => (
+            <span className={player.userId === currentUser?.id ? "is-current" : ""} key={player.userId}>
+              <Trophy size={17} />
+              <strong>
+                #{index + 1} {player.username}
+                {player.userId === currentUser?.id ? " (tu)" : ""}
+              </strong>
+              <em>{formatMoney(player.balance)} en esta sala</em>
+            </span>
+          ))
+        ) : (
+          <span>
+            <Sparkles size={17} />
+            <strong>Sin jugadores conectados</strong>
+            <em>Cuando entren a la sala apareceran aqui.</em>
+          </span>
+        )}
+      </div>
+    </section>
+  );
+}
 
 const savedSession = () => {
   try {
@@ -27,7 +139,9 @@ export default function App() {
   const [session, setSession] = useState(savedSession);
   const [world, setWorld] = useState(null);
   const [balance, setBalance] = useState(0);
+  const [eyconProfile, setEyconProfile] = useState({ balanceUnits: 0, balance: 0, inventory: [], equipment: {} });
   const [view, setView] = useState("worlds");
+  const [routePath, setRoutePath] = useState(() => window.location.pathname);
   const [socket, setSocket] = useState(null);
   const [socketStatus, setSocketStatus] = useState("offline");
   const [socketError, setSocketError] = useState("");
@@ -41,6 +155,21 @@ export default function App() {
 
   const token = session?.token;
   const monopolyView = Boolean(world && (view === "monopoly" || view === "monopoly3d"));
+  const adminRoute = routePath.startsWith("/admin");
+  const isAdmin = Boolean(session?.user?.isAdmin || session?.user?.roles?.includes("admin"));
+
+  useEffect(() => {
+    function syncPath() {
+      setRoutePath(window.location.pathname);
+    }
+    window.addEventListener("popstate", syncPath);
+    return () => window.removeEventListener("popstate", syncPath);
+  }, []);
+
+  function navigate(pathname) {
+    window.history.pushState({}, "", pathname);
+    setRoutePath(pathname);
+  }
 
   // Mantener el estado local sincronizado con el módulo de audio
   useEffect(() => audio.subscribe(setMuted), []);
@@ -85,6 +214,20 @@ export default function App() {
   }, [session]);
 
   useEffect(() => {
+    if (!token) return undefined;
+    let active = true;
+    api("/api/me", { token })
+      .then((payload) => {
+        if (!active || !payload?.user) return;
+        setSession((current) => current ? { ...current, user: payload.user } : current);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
     if (!session) {
       pause();
       return;
@@ -117,6 +260,19 @@ export default function App() {
     return () => {
       nextSocket.disconnect();
       setSocket(null);
+    };
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let active = true;
+    api("/api/eycon/profile", { token })
+      .then((profile) => {
+        if (active) setEyconProfile(profile);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
     };
   }, [token]);
 
@@ -188,12 +344,21 @@ export default function App() {
       }
     }
 
+    function handleEycon(payload) {
+      setEyconProfile((current) => ({
+        ...current,
+        balanceUnits: Number(payload.balanceUnits || 0),
+        balance: Number(payload.balance || 0)
+      }));
+    }
+
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
     socket.on("connect_error", handleConnectError);
     socket.on("world_presence", handlePresence);
     socket.on("chat_message", handleMessage);
     socket.on("balance_update", handleBalance);
+    socket.on("eycon_update", handleEycon);
 
     if (socket.connected) {
       handleConnect();
@@ -206,6 +371,7 @@ export default function App() {
       socket.off("world_presence", handlePresence);
       socket.off("chat_message", handleMessage);
       socket.off("balance_update", handleBalance);
+      socket.off("eycon_update", handleEycon);
     };
   }, [socket]);
 
@@ -224,6 +390,11 @@ export default function App() {
 
         setWorld(response.world);
         setBalance(response.balance);
+        setEyconProfile((current) => ({
+          ...current,
+          balanceUnits: Number(response.eyconBalanceUnits || 0),
+          balance: Number(response.eyconBalance || 0)
+        }));
       });
     }
 
@@ -248,12 +419,14 @@ export default function App() {
       }).format(balance),
     [balance]
   );
+  const eyconLabel = `${(Number(eyconProfile.balanceUnits || 0) / 100).toFixed(2)} EyCon`;
 
   function resetClientSession() {
     presenceIdsRef.current = new Set();
     setSession(null);
     setWorld(null);
     setBalance(0);
+    setEyconProfile({ balanceUnits: 0, balance: 0, inventory: [], equipment: {} });
     setView("worlds");
     setPresence([]);
     setMessages([]);
@@ -263,6 +436,7 @@ export default function App() {
     setSession(nextSession);
     setWorld(null);
     setBalance(0);
+    setEyconProfile({ balanceUnits: 0, balance: 0, inventory: [], equipment: {} });
     setView("worlds");
     setPresence([]);
     setMessages([]);
@@ -301,12 +475,18 @@ export default function App() {
     });
     setWorld(data.world);
     setBalance(data.balance);
+    setEyconProfile((current) => ({
+      ...current,
+      balanceUnits: Number(data.eyconBalanceUnits ?? current.balanceUnits ?? 0),
+      balance: Number(data.eyconBalance ?? current.balance ?? 0)
+    }));
   }
 
   function leaveWorld() {
     presenceIdsRef.current = new Set();
     setWorld(null);
     setBalance(0);
+    setEyconProfile({ balanceUnits: 0, balance: 0, inventory: [], equipment: {} });
     setView("worlds");
     setPresence([]);
     setMessages([]);
@@ -321,63 +501,151 @@ export default function App() {
     socket.emit("send_message", { worldId: world.id, text }, callback);
   }
 
+  function scrollToLobbySection(id) {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function openGamesTab() {
+    if (world) {
+      setView("games");
+      return;
+    }
+
+    setView("worlds");
+    window.setTimeout(() => scrollToLobbySection("easyno-games"), 0);
+  }
+
+  function openRoomsTab() {
+    setView("worlds");
+    window.setTimeout(() => scrollToLobbySection("easyno-private-rooms"), 0);
+  }
+
+  function openRankingTab() {
+    setView("ranking");
+  }
+
+  function openStoreTab() {
+    setView("eycon-store");
+  }
+
+  function handleWorldJoined(nextWorld, nextBalance) {
+    setWorld(nextWorld);
+    setBalance(nextBalance);
+    setView("games");
+    api("/api/me", { token })
+      .then((payload) => {
+        if (!payload?.user) return;
+        setSession((current) => current ? { ...current, user: payload.user } : current);
+      })
+      .catch(() => {});
+  }
+
   if (!session) {
     return (
-      <main className="min-h-screen px-4 py-8 text-zinc-100">
+      <main className="app-shell min-h-screen px-4 py-8 text-[#F4EEDC]">
         <AuthPanel onAuth={handleAuth} />
       </main>
     );
   }
 
+  if (adminRoute) {
+    if (!isAdmin) {
+      return (
+        <main className="admin-shell">
+          <section className="admin-topbar">
+            <div>
+              <span className="admin-eyebrow"><Shield size={14} /> Acceso restringido</span>
+              <h1>Administracion</h1>
+              <p>Tu usuario no tiene rol admin activo.</p>
+            </div>
+            <div className="admin-topbar-actions">
+              <button type="button" onClick={() => navigate("/")}>
+                <X size={16} /> Volver
+              </button>
+              <button type="button" onClick={handleLogout}>
+                <LogOut size={16} /> Salir
+              </button>
+            </div>
+          </section>
+        </main>
+      );
+    }
+
+    return (
+      <AdminPanel
+        token={token}
+        currentUser={session.user}
+        onBack={() => navigate("/")}
+        onLogout={handleLogout}
+        onAdminProfile={(adminUser) => {
+          if (!adminUser) return;
+          setSession((current) => current ? { ...current, user: adminUser } : current);
+        }}
+      />
+    );
+  }
+
   return (
-    <main className="min-h-screen text-zinc-100">
-      <header className={`${monopolyView ? "relative app-header-monopoly" : "sticky top-0"} z-30 border-b border-amber-300/20 bg-black/75 backdrop-blur-xl`}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-amber-300/60 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-amber-300/40 to-transparent" />
-        <div className={`${monopolyView ? "max-w-[1800px] gap-2 py-1" : "max-w-7xl gap-3 py-2.5"} mx-auto flex flex-col px-4 lg:flex-row lg:items-center lg:justify-between`}>
+    <main className="app-shell min-h-screen text-[#F4EEDC]">
+      <header className={`${monopolyView ? "relative app-header-monopoly platform-header--compact" : "sticky top-0"} platform-header z-30`}>
+        <div className={`platform-header__inner ${monopolyView ? "platform-header__inner--game" : ""}`}>
           {/* Marca */}
-          <div className="flex min-w-0 items-center gap-3">
-            <div className={`brand-mark ${monopolyView ? "h-8 w-8 rounded-xl" : "h-11 w-11"}`}>
-              <span className={`${monopolyView ? "text-xl" : "text-2xl"} font-display font-black leading-none`}>e</span>
-              <span className={`${monopolyView ? "-bottom-0.5 -right-0.5 h-4 w-4" : "-bottom-1.5 -right-1.5 h-5 w-5"} absolute flex items-center justify-center rounded-full border border-amber-200/70 bg-zinc-950 text-amber-200`}>
-                <Spade size={11} fill="currentColor" />
+          <div className="platform-brand">
+            <div className={`brand-mark ${monopolyView ? "h-8 w-8" : "h-11 w-11"}`}>
+              <span className={`${monopolyView ? "text-base" : "text-xl"} font-display font-black leading-none`}>EN</span>
+              <span className={`${monopolyView ? "-bottom-0.5 -right-0.5 h-4 w-4" : "-bottom-1 -right-1 h-5 w-5"} absolute flex items-center justify-center rounded-full border border-[#25362F] bg-[#050807] text-[#F4C542]`}>
+                <Coins size={11} />
               </span>
             </div>
             <div className="min-w-0">
               <h1 className={`${monopolyView ? "text-base" : "text-xl"} font-display font-black leading-none tracking-tight`}>
-                <span className="brand-word">easyno</span>
+                <span className="brand-word">EasyNo</span>
               </h1>
-              <p className={`${monopolyView ? "hidden" : "block"} mt-1 truncate text-[11px] font-semibold uppercase tracking-[0.22em] text-amber-200/55`}>
-                {world ? world.name : `Bienvenido, ${session.user.username}`}
+              <p className={`${monopolyView ? "hidden" : "block"} platform-brand__subtitle`}>
+                {world ? world.name : "Plataforma social de juegos"}
               </p>
             </div>
           </div>
 
           {/* Navegación central (segmented) */}
-          {world && (
-            <nav className="app-main-nav flex w-full min-w-0 max-w-full items-center gap-1 overflow-x-auto overflow-y-hidden rounded-xl border border-white/10 bg-black/40 p-1 sm:w-auto">
-              <button className={`nav-tab ${view === "dishes" ? "is-active" : ""}`} onClick={() => setView("dishes")} title="Lavar platos">
-                <Sparkles size={17} />
-                Trabajo
-              </button>
-              <button className={`nav-tab ${view === "blackjack" ? "is-active" : ""}`} onClick={() => setView("blackjack")} title="Blackjack">
-                <Gamepad2 size={17} />
-                Blackjack
-              </button>
-              <button className={`nav-tab ${view === "monopoly3d" || view === "monopoly" ? "is-active" : ""}`} onClick={() => setView("monopoly3d")} title="Monopoly 3D">
-                <Cuboid size={17} />
-                Monopoly
-              </button>
-            </nav>
-          )}
+          <nav className="app-main-nav platform-nav" aria-label="Navegacion principal">
+            <button className={`nav-tab ${GAME_VIEWS.has(view) ? "is-active" : ""}`} onClick={openGamesTab} type="button">
+              <Gamepad2 size={17} />
+              Juegos
+            </button>
+            <button className={`nav-tab ${view === "worlds" ? "is-active" : ""}`} onClick={openRoomsTab} type="button">
+              <Globe2 size={17} />
+              Salas
+            </button>
+            <button className={`nav-tab ${view === "ranking" ? "is-active" : ""}`} onClick={openRankingTab} type="button">
+              <Trophy size={17} />
+              Ranking
+            </button>
+            <button className={`nav-tab ${view === "eycon-store" ? "is-active" : ""}`} onClick={openStoreTab} type="button">
+              <Gem size={17} />
+              Tienda
+            </button>
+          </nav>
 
           {/* Acciones a la derecha */}
-          <div className="flex flex-wrap items-center gap-2 lg:shrink-0 lg:flex-nowrap">
+          <div className="platform-actions">
             {world && (
               <div className="hud-pill hud-pill--gold">
                 <span className="coin"><Coins size={12} /></span>
                 <span key={balance} className="tabnum inline-block animate-count-pop">{money}</span>
               </div>
+            )}
+            {world && (
+              <div className="hud-pill hud-pill--eycon" title="Moneda para cosméticos">
+                <Gem size={14} />
+                <span key={eyconProfile.balanceUnits} className="tabnum inline-block animate-count-pop">{eyconLabel}</span>
+              </div>
+            )}
+            {isAdmin && (
+              <button className="ghost-button px-3" onClick={() => navigate("/admin")} title="Administracion">
+                <Shield size={18} />
+                <span className="hidden sm:inline">Admin</span>
+              </button>
             )}
             <div
               className={`hud-pill ${socketStatus === "online" ? "hud-pill--emerald" : "hud-pill--muted"} text-xs uppercase tracking-[0.14em]`}
@@ -415,32 +683,55 @@ export default function App() {
       </header>
 
       <section className={`mx-auto px-4 ${monopolyView ? "max-w-[1800px] py-3" : "max-w-7xl py-8"}`}>
-        {!world && (
+        {view === "worlds" ? (
           <WorldSelector
             token={token}
-            onWorldJoined={(nextWorld, nextBalance) => {
-              setWorld(nextWorld);
-              setBalance(nextBalance);
-              setView("dishes");
-            }}
+            eyconProfile={eyconProfile}
+            onEyconProfileChange={setEyconProfile}
+            onWorldJoined={handleWorldJoined}
           />
-        )}
-
-        {world && (
-          view === "monopoly" || view === "monopoly3d" ? (
-            <MonopolyGame
-              token={token}
-              socket={socket}
-              currentUser={session.user}
-              world={world}
-              presence={presence}
-              messages={messages}
-              connectionStatus={socketStatus}
-              onSendMessage={sendWorldMessage}
-              preferredBoardViewMode={view === "monopoly3d" ? "3d" : "2d"}
-              onBoardViewModeChange={(nextMode) => setView(nextMode === "3d" ? "monopoly3d" : "monopoly")}
-            />
-          ) : (
+        ) : view === "eycon-store" ? (
+          <EyconStore
+            token={token}
+            onProfileChange={setEyconProfile}
+            isAdmin={isAdmin}
+          />
+        ) : view === "ranking" ? (
+          <RoomRankingPanel
+            world={world}
+            presence={presence}
+            currentUser={session.user}
+            onOpenRooms={openRoomsTab}
+            onOpenGames={openGamesTab}
+          />
+        ) : !world ? (
+          <WorldSelector
+            token={token}
+            eyconProfile={eyconProfile}
+            onEyconProfileChange={setEyconProfile}
+            onWorldJoined={handleWorldJoined}
+          />
+        ) : (
+          <>
+            {view === "games" ? (
+              <RoomGamesHub world={world} onSelectGame={setView} />
+            ) : view === "monopoly" || view === "monopoly3d" ? (
+              <MonopolyGame
+                token={token}
+                socket={socket}
+                currentUser={session.user}
+                world={world}
+                presence={presence}
+                messages={messages}
+                connectionStatus={socketStatus}
+                onSendMessage={sendWorldMessage}
+                preferredBoardViewMode={view === "monopoly3d" ? "3d" : "2d"}
+                onBoardViewModeChange={(nextMode) => setView(nextMode === "3d" ? "monopoly3d" : "monopoly")}
+                equippedCosmetics={eyconProfile.equipment?.MONOPOLY || {}}
+                eyconInventory={eyconProfile.inventory || []}
+                onEyconProfileChange={setEyconProfile}
+              />
+            ) : (
             <>
               <div className={`grid gap-5 ${sidebarOpen ? "xl:grid-cols-[minmax(0,1fr)_320px]" : "grid-cols-1"}`}>
                 <div className="min-w-0">
@@ -499,10 +790,11 @@ export default function App() {
                 </button>
               )}
             </>
-          )
+            )}
+          </>
         )}
       </section>
-      <PlatformRadioPlayer />
+      <PlatformRadioPlayer compact={!world} />
     </main>
   );
 }

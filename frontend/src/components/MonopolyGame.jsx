@@ -38,10 +38,13 @@ import { api } from "../api";
 // Lobby rediseñado: pantalla principal inmersiva + flujos Unirse/Crear.
 import { audio } from "../audio";
 import { useRadio } from "../radio/RadioContext";
+import { monopolyTokenColors } from "./monopoly3d/monopolyTokenColors";
 import { Dice } from "./shared";
 
 const loadMonopoly3DView = () => import("./monopoly3d/Monopoly3DView");
 const Monopoly3DView = lazy(loadMonopoly3DView);
+const loadEyconProductPreview3D = () => import("./EyconProductPreview3D");
+const EyconProductPreview3D = lazy(loadEyconProductPreview3D);
 
 const actionAudioMap = {
   tirarDados: null, // se reproduce en la cinemática para sincronizar
@@ -154,20 +157,7 @@ const tokenPalette = [
   { id: "star", label: "Estrella" }
 ]; */
 
-const tokenColorPresets = [
-  { bg: "#d94841", ring: "#7c1510" },
-  { bg: "#2f7ef0", ring: "#163b78" },
-  { bg: "#20a56d", ring: "#0d5b3d" },
-  { bg: "#f0bc3f", ring: "#8a6206" },
-  { bg: "#7a58d7", ring: "#47289b" },
-  { bg: "#22252f", ring: "#090a0d" },
-  { bg: "#ec4899", ring: "#831843" },
-  { bg: "#0ea5e9", ring: "#075985" },
-  { bg: "#f97316", ring: "#9a3412" },
-  { bg: "#65a30d", ring: "#365314" },
-  { bg: "#c026d3", ring: "#701a75" },
-  { bg: "#fef3c7", ring: "#b45309" }
-];
+const tokenColorPresets = monopolyTokenColors;
 
 const tokenIconMap = {};
 const tokenIconPresets = [];
@@ -207,11 +197,27 @@ function isEmojiToken(value) {
   return /[^\p{L}\p{N}\s]/u.test(value) && value.length <= 4;
 }
 
+function isTokenColorLocked(product) {
+  const metadata = product?.metadata || {};
+  const colorMode = String(metadata.colorMode || "").toUpperCase();
+  if (colorMode === "TINT" || colorMode === "FORCE" || metadata.tintable === true) return false;
+  if (colorMode === "ORIGINAL") return true;
+  return Boolean(metadata.colorLocked);
+}
+
 function resolveTokenStyle(player, customTokens) {
   const palette = playerAccent(player.colorIndex ?? 0);
   const playerId = player?.id ?? player?.userId;
-  const custom = customTokens?.[playerId] || player?.token;
-  const label = initialLetters(player?.name ?? player?.username) || custom?.label || "?";
+  const tokenCosmetic = player?.cosmetics?.TOKEN?.metadata;
+  const selectedColor = customTokens?.[playerId] || player?.token;
+  const custom = tokenCosmetic
+    ? {
+        label: tokenCosmetic.glyph,
+        bg: selectedColor?.bg ?? palette.bg,
+        ring: selectedColor?.ring ?? palette.ring
+      }
+    : selectedColor;
+  const label = custom?.label || initialLetters(player?.name ?? player?.username) || "?";
   const bg = custom?.bg ?? palette.bg;
   const ring = custom?.ring ?? palette.ring;
   return { label, icon: "", bg, ring, fg: "#ffffff", shape: "circle", emoji: false };
@@ -663,6 +669,8 @@ const CINEMATIC_DICE_FOCUS_MS = 520;
 const CINEMATIC_DICE_ROLL_MS = 1180;
 const CINEMATIC_DICE_PHASE_MS = CINEMATIC_DICE_FOCUS_MS + CINEMATIC_DICE_ROLL_MS;
 const CINEMATIC_DICE_REST_MS = 320;
+const CINEMATIC_DICE_MAX_ROLL_MS = 4600;
+const CINEMATIC_DICE_SETTLE_POLL_MS = 50;
 const CINEMATIC_TARGET_HIGHLIGHT_MS = 220;
 const CINEMATIC_STEP_MS = 330;
 const CINEMATIC_SETTLE_HOLD_MS = 900;
@@ -2800,10 +2808,15 @@ function TokenCustomizer({
   currentTokenStyle,
   onChange,
   onReset,
+  figures = [],
+  activeFigureId = "",
+  onFigureChange,
   colorOnly = true,
   reservedTokenColors = []
 }) {
   const [draft, setDraft] = useState(() => colorOnly ? buildColorOnlyDraft(currentTokenStyle) : currentTokenStyle);
+  const [selectedFigureId, setSelectedFigureId] = useState(activeFigureId || "");
+  const [submitting, setSubmitting] = useState(false);
   const reservedColorSet = useMemo(
     () => new Set((reservedTokenColors || []).map(normalizeTokenColor).filter(Boolean)),
     [reservedTokenColors]
@@ -2828,8 +2841,9 @@ function TokenCustomizer({
   useEffect(() => {
     if (open) {
       setDraft(colorOnly ? buildColorOnlyDraft(currentTokenStyle) : currentTokenStyle);
+      setSelectedFigureId(activeFigureId || "");
     }
-  }, [open, currentTokenStyle, colorOnly]);
+  }, [activeFigureId, open, currentTokenStyle, colorOnly]);
 
   if (!open) return null;
 
@@ -2837,18 +2851,29 @@ function TokenCustomizer({
     setDraft((prev) => ({ ...prev, ...patch }));
   }
 
-  function applyAndClose() {
+  async function applyAndClose() {
     const finalDraft = colorOnly ? buildColorOnlyDraft(draft) : draft;
-    onChange({
-      label: finalDraft.label,
-      icon: finalDraft.icon || "",
-      bg: finalDraft.bg,
-      ring: finalDraft.ring,
-      fg: finalDraft.fg || "#ffffff",
-      shape: finalDraft.shape
-    });
-    onClose();
+    setSubmitting(true);
+    try {
+      await onChange({
+        label: finalDraft.label,
+        icon: finalDraft.icon || "",
+        bg: finalDraft.bg,
+        ring: finalDraft.ring,
+        fg: finalDraft.fg || "#ffffff",
+        shape: finalDraft.shape
+      });
+      await onFigureChange?.(selectedFigureId);
+      onClose();
+    } catch {
+      // El controlador muestra el error y mantiene abierto el selector.
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const selectedFigure = figures.find((figure) => figure.id === selectedFigureId) || null;
+  const selectedFigureColorLocked = isTokenColorLocked(selectedFigure);
 
   if (colorOnly) {
     return (
@@ -2856,10 +2881,10 @@ function TokenCustomizer({
         <div className="monopoly-modal tone-info token-customizer-modal color-only">
           <div className="token-customizer-head">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Color de ficha</p>
-              <h3 className="mt-1 text-2xl font-black uppercase">Elige tu color</h3>
+              <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Personalizar ficha</p>
+              <h3 className="mt-1 text-2xl font-black uppercase">Figura y color</h3>
               <p className="mt-2 text-sm font-semibold opacity-85">
-                {currentPlayer?.name ? `${currentPlayer.name}, elige el color de tu ficha.` : "Elige el color que usara tu ficha."}
+                {currentPlayer?.name ? `${currentPlayer.name}, elige tu figura y su color.` : "Elige la figura y el color que usarás."}
               </p>
             </div>
             <button type="button" className="toast-close token-customizer-close" onClick={onClose} aria-label="Cerrar editor de color">
@@ -2870,12 +2895,21 @@ function TokenCustomizer({
           <div className="token-customizer-body">
             <aside className="token-preview-stage">
               <div className="token-preview-orbit">
-                <TokenChip tokenStyle={draft} className="token-preview-hero monopoly-token-large" />
+                {selectedFigure ? (
+                  <Suspense fallback={<TokenChip tokenStyle={draft} className="token-preview-hero monopoly-token-large" />}>
+                    <EyconProductPreview3D
+                      product={selectedFigure}
+                      tokenColor={selectedFigureColorLocked ? null : { bg: draft.bg, ring: draft.ring }}
+                    />
+                  </Suspense>
+                ) : (
+                  <TokenChip tokenStyle={draft} className="token-preview-hero monopoly-token-large" />
+                )}
               </div>
               <div className="token-preview-card">
                 <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] opacity-75">Vista previa</p>
-                <p className="mt-1 text-xl font-black uppercase">Ficha circular</p>
-                <p className="mt-1 text-xs font-semibold opacity-80">Solo color</p>
+                <p className="mt-1 text-xl font-black uppercase">{selectedFigure?.name || "Ficha clásica"}</p>
+                <p className="mt-1 text-xs font-semibold opacity-80">{selectedFigure ? "Pieza EyCon comprada" : "Figura incluida"}</p>
                 <div className="token-preview-swatches">
                   <span style={{ background: draft.bg }} title="Interior" />
                   <span style={{ background: draft.ring }} title="Exterior" />
@@ -2885,7 +2919,40 @@ function TokenCustomizer({
 
             <section className="token-editor-column">
               <div className="token-editor-scroll">
-                <div className="token-color-only-card">
+                <div className="token-color-only-card token-figure-picker">
+                  <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Figuras disponibles</p>
+                  <div className="token-figure-grid mt-3">
+                    <button
+                      type="button"
+                      className={cx("token-figure-option", !selectedFigureId && "active")}
+                      onClick={() => setSelectedFigureId("")}
+                    >
+                      <span className="token-figure-glyph" style={{ "--figure-color": draft.bg, "--figure-ring": draft.ring }}>
+                        {initialLetters(currentPlayer?.name || currentPlayer?.username || "") || "TÚ"}
+                      </span>
+                      <strong>Clásica</strong>
+                      <small>Incluida</small>
+                    </button>
+                    {figures.map((figure) => (
+                      <button
+                        type="button"
+                        key={figure.id}
+                        className={cx("token-figure-option", selectedFigureId === figure.id && "active")}
+                        onClick={() => setSelectedFigureId(figure.id)}
+                      >
+                        <span className="token-figure-glyph" style={{ "--figure-color": draft.bg, "--figure-ring": draft.ring }}>
+                          {figure.preview || "✦"}
+                        </span>
+                        <strong>{figure.name}</strong>
+                        <small>{selectedFigureId === figure.id ? "Seleccionada" : "Comprada"}</small>
+                      </button>
+                    ))}
+                  </div>
+                  {figures.length === 0 && (
+                    <p className="mt-3 text-xs font-semibold opacity-65">Aún no tienes figuras EyCon. Puedes comprarlas en la tienda.</p>
+                  )}
+                </div>
+                {!selectedFigureColorLocked && <div className="token-color-only-card">
                   <p className="text-xs font-extrabold uppercase tracking-[0.16em] opacity-75">Colores disponibles</p>
                   <div className="token-3d-color-grid mt-3">
                     {tokenColorPresets.map((preset) => {
@@ -2910,12 +2977,23 @@ function TokenCustomizer({
                       );
                     })}
                   </div>
-                </div>
+                </div>}
               </div>
 
               <div className="token-customizer-actions">
-                <ActionButton onClick={applyAndClose}>Guardar color</ActionButton>
-                <ActionButton tone="secondary" onClick={() => { onReset(); onClose(); }}>Restablecer</ActionButton>
+                <ActionButton onClick={applyAndClose} disabled={submitting}>{submitting ? "Guardando..." : "Guardar ficha"}</ActionButton>
+                <ActionButton tone="secondary" disabled={submitting} onClick={async () => {
+                  setSubmitting(true);
+                  try {
+                    await onReset();
+                    await onFigureChange?.("");
+                    onClose();
+                  } catch {
+                    // El controlador muestra el error y conserva el selector abierto.
+                  } finally {
+                    setSubmitting(false);
+                  }
+                }}>Restablecer</ActionButton>
                 <ActionButton tone="secondary" onClick={onClose}>Cancelar</ActionButton>
               </div>
             </section>
@@ -3103,6 +3181,110 @@ function TokenCustomizer({
   );
 }
 
+function BoardThemeCustomizer({
+  open,
+  onClose,
+  themes = [],
+  activeThemeId = "",
+  onChange
+}) {
+  const [selectedId, setSelectedId] = useState(activeThemeId || "");
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (open) setSelectedId(activeThemeId || "");
+  }, [activeThemeId, open]);
+
+  if (!open) return null;
+  const selectedTheme = themes.find((theme) => theme.id === selectedId) || null;
+
+  async function saveTheme() {
+    setSubmitting(true);
+    try {
+      await onChange(selectedId);
+      onClose();
+    } catch {
+      // El controlador conserva abierto el selector y muestra el error.
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="monopoly-modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
+      <div className="monopoly-modal tone-info monopoly-board-theme-modal">
+        <div className="token-customizer-head">
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Configuración del anfitrión</p>
+            <h3 className="mt-1 text-2xl font-black uppercase">Diseño del tablero</h3>
+            <p className="mt-2 text-sm font-semibold opacity-85">El tema elegido se mostrará para todos los jugadores de esta mesa.</p>
+          </div>
+          <button type="button" className="toast-close token-customizer-close" disabled={submitting} onClick={onClose} aria-label="Cerrar selector de tablero">
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="monopoly-board-theme-body">
+          <aside className="monopoly-board-theme-preview">
+            {selectedTheme ? (
+              <Suspense fallback={<MonopolyViewLoading mode="3d" />}>
+                <EyconProductPreview3D product={selectedTheme} />
+              </Suspense>
+            ) : (
+              <div className="monopoly-board-classic-preview">
+                <MapIcon size={38} />
+                <strong>Tablero clásico</strong>
+                <small>Diseño original de la mesa</small>
+              </div>
+            )}
+            <div>
+              <small>Vista seleccionada</small>
+              <strong>{selectedTheme?.name || "Clásico"}</strong>
+              <p>{selectedTheme?.description || "La apariencia original de Monopoly."}</p>
+            </div>
+          </aside>
+
+          <section className="monopoly-board-theme-list">
+            <button
+              type="button"
+              className={cx("monopoly-board-theme-option", !selectedId && "active")}
+              onClick={() => setSelectedId("")}
+            >
+              <span style={{ "--board-a": "#2d2418", "--board-b": "#1f6f59", "--board-c": "#f4d45d" }}><MapIcon size={22} /></span>
+              <strong>Clásico</strong>
+              <small>Incluido</small>
+            </button>
+            {themes.map((theme) => (
+              <button
+                type="button"
+                key={theme.id}
+                className={cx("monopoly-board-theme-option", selectedId === theme.id && "active")}
+                onClick={() => setSelectedId(theme.id)}
+              >
+                <span style={{
+                  "--board-a": theme.metadata?.baseColor,
+                  "--board-b": theme.metadata?.centerColor,
+                  "--board-c": theme.metadata?.accentColor
+                }}>{theme.preview || "▦"}</span>
+                <strong>{theme.name}</strong>
+                <small>{selectedId === theme.id ? "Seleccionado" : "Comprado"}</small>
+              </button>
+            ))}
+            {themes.length === 0 && (
+              <p className="monopoly-board-theme-empty">No tienes diseños comprados. Puedes conseguirlos en la tienda EyCon.</p>
+            )}
+          </section>
+        </div>
+
+        <div className="monopoly-board-theme-actions">
+          <ActionButton onClick={saveTheme} disabled={submitting}>{submitting ? "Aplicando..." : "Usar en esta mesa"}</ActionButton>
+          <ActionButton tone="secondary" disabled={submitting} onClick={onClose}>Cancelar</ActionButton>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function GameLayout({ children, immersive = false }) {
   return <section className={cx("monopoly-game-layout", immersive && "is-immersive")}>{children}</section>;
 }
@@ -3132,6 +3314,7 @@ function TopHud({
   myTokenStyle,
   turnCountdown,
   onToken,
+  onBoardTheme,
   onRules,
   onMenu,
   boardViewMode,
@@ -3144,6 +3327,7 @@ function TopHud({
   canLeave,
   canSurrender,
   canCloseTable,
+  canChooseBoardTheme = false,
   canChangeColor = true,
   immersive = false
 }) {
@@ -3206,10 +3390,15 @@ function TopHud({
             className="monopoly-icon-button"
             onClick={onToken}
             disabled={!canChangeColor}
-            title={canChangeColor ? "Cambiar color de ficha" : "Color bloqueado despues del turno 10"}
+            title={canChangeColor ? "Cambiar figura y color" : "Personalización bloqueada después del turno 10"}
           >
             <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
           </button>
+          {canChooseBoardTheme && (
+            <button type="button" className="monopoly-icon-button" onClick={onBoardTheme} title="Elegir diseño del tablero">
+              <MapIcon size={17} />
+            </button>
+          )}
           <button type="button" className="monopoly-icon-button" onClick={onRules} title="Reglas">
             <Info size={17} />
           </button>
@@ -3304,10 +3493,15 @@ function TopHud({
           className="monopoly-icon-button"
           onClick={onToken}
           disabled={!canChangeColor}
-          title={canChangeColor ? "Cambiar color" : "Color bloqueado despues del turno 10"}
+          title={canChangeColor ? "Cambiar figura y color" : "Personalización bloqueada después del turno 10"}
         >
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
         </button>
+        {canChooseBoardTheme && (
+          <button type="button" className="monopoly-icon-button" onClick={onBoardTheme} title="Elegir diseño del tablero">
+            <MapIcon size={18} />
+          </button>
+        )}
         <button type="button" className="monopoly-icon-button" onClick={onRules} title="Reglas">
           <Info size={18} />
         </button>
@@ -3337,6 +3531,7 @@ function TopHud({
 
 function BoardArea({
   board,
+  boardTheme,
   selectedSpace,
   coloredPlayersById,
   playersById,
@@ -3366,12 +3561,18 @@ function BoardArea({
   onSelect
 }) {
   const locked = rollingDice || Boolean(cinematic);
+  const boardThemeMetadata = boardTheme?.metadata || {};
+  const boardThemeStyle = boardTheme ? {
+    "--monopoly-theme-base": boardThemeMetadata.baseColor || "#2d2418",
+    "--monopoly-theme-center": boardThemeMetadata.centerColor || "#1f6f59",
+    "--monopoly-theme-accent": boardThemeMetadata.accentColor || "#f4d45d"
+  } : undefined;
   const boardById = useMemo(() => new Map((board || []).map((space) => [space.id, space])), [board]);
   const diceCinematicActive = ["cameraFocusDice", "diceRolling", "dice"].includes(cinematic?.phase);
   const canRollFromDice = isMyTurn && myActions.includes("tirarDados") && !locked;
 
   return (
-    <section className="monopoly-board-area" aria-label="Tablero de Monopoly">
+    <section className="monopoly-board-area" aria-label="Tablero de Monopoly" style={boardThemeStyle}>
       <div className="monopoly-table-shell monopoly-board-shell-main monopoly-board-stage">
         <div className="monopoly-board-viewport monopoly-board-viewport-main">
           <div
@@ -6548,9 +6749,9 @@ function LobbyMenu({ world, myTokenStyle, onJoin, onCreate, onHelp, onToken, err
           <span className="monopoly-lobby-world-dot" />
           Mundo · {world.name}
         </div>
-        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir color">
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir figura y color">
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
-          <span>Mi color</span>
+          <span>Mi ficha</span>
         </button>
       </div>
 
@@ -6880,6 +7081,7 @@ function WaitingRoom({
   onLeave,
   onCloseTable,
   onToken,
+  onBoardTheme,
   myTokenStyle,
   connectionStatus,
   currentUser,
@@ -6907,9 +7109,9 @@ function WaitingRoom({
           <span className="monopoly-lobby-world-dot waiting" />
           Sala de espera
         </div>
-        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir color">
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir figura y color">
           <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
-          <span>Mi color</span>
+          <span>Mi ficha</span>
         </button>
       </div>
 
@@ -6936,10 +7138,19 @@ function WaitingRoom({
             <button type="button" className="monopoly-waitroom-color" onClick={onToken}>
               <TokenChip tokenStyle={myTokenStyle} className="h-10 w-10 text-sm" />
               <span>
-                <strong>Elegir color</strong>
-                <em>Antes de iniciar</em>
+                <strong>Figura y color</strong>
+                <em>Personalizar ficha</em>
               </span>
             </button>
+            {isHost && (
+              <button type="button" className="monopoly-waitroom-color monopoly-waitroom-board-theme" onClick={onBoardTheme}>
+                <MapIcon size={24} />
+                <span>
+                  <strong>Diseño del tablero</strong>
+                  <em>Visible para todos</em>
+                </span>
+              </button>
+            )}
 
             <div className="monopoly-waitroom-seats">
               {seats.map((player, index) => {
@@ -6992,7 +7203,10 @@ export default function MonopolyGame({
   connectionStatus,
   onSendMessage,
   preferredBoardViewMode = "3d",
-  onBoardViewModeChange
+  onBoardViewModeChange,
+  equippedCosmetics = {},
+  eyconInventory = [],
+  onEyconProfileChange
 }) {
   const { loadDefaultStation, setActiveGameKey } = useRadio();
   const [state, setState] = useState(null);
@@ -7000,6 +7214,24 @@ export default function MonopolyGame({
   const [tables, setTables] = useState([]);
   const [activeTableId, setActiveTableId] = useState("");
   const [error, setError] = useState("");
+  const [localEyconProfile, setLocalEyconProfile] = useState(() => ({
+    inventory: eyconInventory || [],
+    equipment: { MONOPOLY: equippedCosmetics || {} }
+  }));
+  const ownedTokenFigures = useMemo(
+    () => (localEyconProfile.inventory || []).filter((product) => (
+      product.gameKey === MONOPOLY_GAME_KEY &&
+      product.category === "TOKEN"
+    )),
+    [localEyconProfile.inventory]
+  );
+  const ownedBoardThemes = useMemo(
+    () => (localEyconProfile.inventory || []).filter((product) => (
+      product.gameKey === MONOPOLY_GAME_KEY &&
+      product.category === "BOARD_THEME"
+    )),
+    [localEyconProfile.inventory]
+  );
   const [tableName, setTableName] = useState("Mesa Monopoly");
   const [mode, setMode] = useState("NORMAL");
   const [timedMinutes, setTimedMinutes] = useState(60);
@@ -7020,6 +7252,7 @@ export default function MonopolyGame({
   const [cinematic, setCinematic] = useState(null);
   const [customTokens, setCustomTokens] = useState(() => loadCustomTokens());
   const [tokenEditorOpen, setTokenEditorOpen] = useState(false);
+  const [boardThemeEditorOpen, setBoardThemeEditorOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState("players");
   const [threeDSelectionVersion, setThreeDSelectionVersion] = useState(0);
   const [boardViewMode, setBoardViewMode] = useState(preferredBoardViewMode === "2d" ? "2d" : "3d");
@@ -7049,6 +7282,7 @@ export default function MonopolyGame({
   const diceTimeoutRef = useRef(null);
   const diceSequenceStartedAtRef = useRef(0);
   const diceRollStartedAtRef = useRef(0);
+  const dicePhysicsActiveRef = useRef(false);
   const rollingDiceRef = useRef(false);
   const cinematicRef = useRef(null);
   const cinematicTimeoutsRef = useRef([]);
@@ -7062,6 +7296,7 @@ export default function MonopolyGame({
   const diceMotionFrameRef = useRef(0);
   const pendingDiceMotionsRef = useRef([]);
   const lastDiceMotionSentAtRef = useRef({ move: 0, state: 0 });
+  const diceMotionAuthorizationRef = useRef({ sequenceId: "", promise: null, resolve: null });
   const remoteDiceMotionSinkRef = useRef(null);
   const bufferedRemoteDiceMotionsRef = useRef([]);
   const actionLockTimeoutRef = useRef(null);
@@ -7069,6 +7304,7 @@ export default function MonopolyGame({
   const heldMonopolyStateTimeoutRef = useRef(null);
   const [tick, setTick] = useState(Date.now());
   const currentUserId = Number.isFinite(Number(currentUser.id)) ? Number(currentUser.id) : currentUser.id;
+  const currentEquippedCosmetics = localEyconProfile.equipment?.MONOPOLY || equippedCosmetics || {};
   const boardViewModeRef = useRef(boardViewMode);
   const bindRemoteDiceMotionSink = useMemo(() => (sink) => {
     remoteDiceMotionSinkRef.current = typeof sink === "function" ? sink : null;
@@ -7079,10 +7315,39 @@ export default function MonopolyGame({
     const bufferedMotions = bufferedRemoteDiceMotionsRef.current.splice(0);
     bufferedMotions.forEach((motion) => remoteDiceMotionSinkRef.current?.(motion));
   }, []);
+  const handleDicePhysicsChange = useMemo(() => (active) => {
+    dicePhysicsActiveRef.current = Boolean(active);
+  }, []);
 
   useEffect(() => {
     rollingDiceRef.current = rollingDice;
   }, [rollingDice]);
+
+  useEffect(() => {
+    setLocalEyconProfile((current) => ({
+      ...current,
+      inventory: eyconInventory || current.inventory || [],
+      equipment: {
+        ...(current.equipment || {}),
+        MONOPOLY: equippedCosmetics || {}
+      }
+    }));
+  }, [equippedCosmetics, eyconInventory]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    let active = true;
+    api("/api/eycon/profile", { token })
+      .then((profile) => {
+        if (!active) return;
+        setLocalEyconProfile(profile);
+        onEyconProfileChange?.(profile);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [token]);
 
   useEffect(() => {
     cinematicRef.current = cinematic;
@@ -7223,6 +7488,9 @@ export default function MonopolyGame({
     diceMotionFrameRef.current = 0;
     pendingDiceMotionsRef.current = [];
     lastDiceMotionSentAtRef.current = { move: 0, state: 0 };
+    diceMotionAuthorizationRef.current.resolve?.(false);
+    diceMotionAuthorizationRef.current = { sequenceId: "", promise: null, resolve: null };
+    dicePhysicsActiveRef.current = false;
     bufferedRemoteDiceMotionsRef.current = [];
   }, [activeTableId]);
 
@@ -7340,21 +7608,55 @@ export default function MonopolyGame({
   );
 
   const tokenStylesById = useMemo(() => {
-    return buildUniqueTokenStyleMap(boardPlayers, customTokens);
-  }, [boardPlayers, customTokens]);
-  const seatedTokenStylesById = useMemo(() => buildUniqueTokenStyleMap(seatedPlayers, customTokens), [seatedPlayers, customTokens]);
+    return buildUniqueTokenStyleMap(
+      boardPlayers.map((player) => sameEntityId(player.id, currentUserId)
+        ? { ...player, cosmetics: { ...(player.cosmetics || {}), ...currentEquippedCosmetics } }
+        : player),
+      customTokens
+    );
+  }, [boardPlayers, currentEquippedCosmetics, currentUserId, customTokens]);
+  const seatedTokenStylesById = useMemo(
+    () => buildUniqueTokenStyleMap(
+      seatedPlayers.map((player) => sameEntityId(player.id, currentUserId)
+        ? { ...player, cosmetics: { ...(player.cosmetics || {}), ...currentEquippedCosmetics } }
+        : player),
+      customTokens
+    ),
+    [currentEquippedCosmetics, currentUserId, customTokens, seatedPlayers]
+  );
 
   const threeDPlayers = useMemo(
     () => displayBoardPlayers.map((player) => {
-      const tokenStyle = tokenStylesById[player.id] || resolveTokenStyle(player, customTokens);
+      const resolvedPlayer = sameEntityId(player.id, currentUserId)
+        ? { ...player, cosmetics: { ...(player.cosmetics || {}), ...currentEquippedCosmetics } }
+        : player;
+      const tokenStyle = tokenStylesById[player.id] || resolveTokenStyle(resolvedPlayer, customTokens);
       return {
-        ...player,
+        ...resolvedPlayer,
         color: tokenStyle.bg,
         tokenRing: tokenStyle.ring
       };
     }),
-    [customTokens, displayBoardPlayers, tokenStylesById]
+    [currentEquippedCosmetics, currentUserId, customTokens, displayBoardPlayers, tokenStylesById]
   );
+  const activeDiceCosmetics = useMemo(() => {
+    const actorId = state?.currentPlayerId || cinematic?.playerId;
+    const actor = boardPlayers.find((player) => sameEntityId(player.id, actorId));
+    if (actor && sameEntityId(actor.id, currentUserId)) {
+      return { ...(actor.cosmetics || {}), ...currentEquippedCosmetics };
+    }
+    return actor?.cosmetics || {};
+  }, [boardPlayers, cinematic?.playerId, currentEquippedCosmetics, currentUserId, state?.currentPlayerId]);
+  const hostBoardTheme = useMemo(() => {
+    const hostId = activeTable?.hostId || tableMeta?.hostId;
+    if (!hostId) return null;
+    const host = boardPlayers.find((player) => sameEntityId(player.id, hostId))
+      || seatedPlayers.find((player) => sameEntityId(player.id, hostId));
+    const hostCosmetics = sameEntityId(hostId, currentUserId)
+      ? { ...(host?.cosmetics || {}), ...currentEquippedCosmetics }
+      : host?.cosmetics || {};
+    return hostCosmetics.BOARD_THEME || null;
+  }, [activeTable?.hostId, boardPlayers, currentEquippedCosmetics, currentUserId, seatedPlayers, tableMeta?.hostId]);
 
   const myTokenStyle = useMemo(() => {
     const me = boardPlayers.find((player) => sameEntityId(player.id, currentUserId));
@@ -7424,10 +7726,10 @@ export default function MonopolyGame({
     });
   }, [tables, tableMeta?.seatedPlayers, state?.players]);
 
-  function persistMyToken(next) {
+  async function persistMyToken(next) {
     if (!canChangeMyColor) {
       setError("Solo puedes cambiar tu color durante los primeros 10 turnos.");
-      return;
+      throw new Error("Color bloqueado");
     }
 
     const preset = tokenColorPresets.find((option) => normalizeTokenColor(option.bg) === normalizeTokenColor(next.bg));
@@ -7442,43 +7744,102 @@ export default function MonopolyGame({
 
     if (reservedTokenColorsForMe.includes(normalizeTokenColor(normalized.bg))) {
       setError("Ese color ya esta ocupado en esta mesa. Elige otro color.");
-      return;
+      throw new Error("Color ocupado");
     }
 
-    setCustomTokens((prev) => {
-      const updated = { ...prev, [currentUserId]: normalized };
-      saveCustomTokens(updated);
-      return updated;
-    });
-
-    api("/api/monopoly/token", {
-      method: "PUT",
-      token,
-      body: { token: normalized }
-    }).catch((nextError) => {
+    try {
+      const payload = await api("/api/monopoly/token", {
+        method: "PUT",
+        token,
+        body: { token: normalized }
+      });
+      setCustomTokens((prev) => {
+        const updated = { ...prev, [currentUserId]: payload.token || normalized };
+        saveCustomTokens(updated);
+        return updated;
+      });
+      setError("");
+    } catch (nextError) {
       setError(nextError.message || "No se pudo guardar tu ficha");
-    });
+      throw nextError;
+    }
   }
 
-  function resetMyToken() {
+  async function resetMyToken() {
     if (!canChangeMyColor) {
       setError("Solo puedes cambiar tu color durante los primeros 10 turnos.");
-      return;
+      throw new Error("Color bloqueado");
     }
 
-    setCustomTokens((prev) => {
-      const updated = { ...prev };
-      delete updated[currentUserId];
-      saveCustomTokens(updated);
-      return updated;
-    });
-
-    api("/api/monopoly/token", {
-      method: "DELETE",
-      token
-    }).catch((nextError) => {
+    try {
+      await api("/api/monopoly/token", {
+        method: "DELETE",
+        token
+      });
+      setCustomTokens((prev) => {
+        const updated = { ...prev };
+        delete updated[currentUserId];
+        saveCustomTokens(updated);
+        return updated;
+      });
+      setError("");
+    } catch (nextError) {
       setError(nextError.message || "No se pudo restablecer tu ficha");
-    });
+      throw nextError;
+    }
+  }
+
+  async function equipMyTokenFigure(productId) {
+    const currentId = currentEquippedCosmetics?.TOKEN?.id || "";
+    if (String(productId || "") === String(currentId || "")) return;
+    try {
+      const profile = productId
+        ? await api("/api/eycon/equip", {
+            method: "POST",
+            token,
+            body: { productId }
+          })
+        : await api("/api/eycon/unequip", {
+            method: "POST",
+            token,
+            body: { gameKey: MONOPOLY_GAME_KEY, slotKey: "TOKEN" }
+          });
+      setLocalEyconProfile(profile);
+      onEyconProfileChange?.(profile);
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudo cambiar tu figura");
+      throw nextError;
+    }
+  }
+
+  async function equipHostBoardTheme(productId) {
+    if (!isHostAtActiveTable) {
+      const nextError = new Error("Sólo el anfitrión puede cambiar el tablero de esta mesa");
+      setError(nextError.message);
+      throw nextError;
+    }
+    const currentId = currentEquippedCosmetics?.BOARD_THEME?.id || "";
+    if (String(productId || "") === String(currentId || "")) return;
+    try {
+      const profile = productId
+        ? await api("/api/eycon/equip", {
+            method: "POST",
+            token,
+            body: { productId }
+          })
+        : await api("/api/eycon/unequip", {
+            method: "POST",
+            token,
+            body: { gameKey: MONOPOLY_GAME_KEY, slotKey: "BOARD_THEME" }
+          });
+      setLocalEyconProfile(profile);
+      onEyconProfileChange?.(profile);
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudo cambiar el diseño del tablero");
+      throw nextError;
+    }
   }
 
   function clearDiceVisualTimers({ clearFocus = true, clearResult = true } = {}) {
@@ -7898,7 +8259,9 @@ export default function MonopolyGame({
     setDiceFaces(state.turn.lastRoll.dice);
     startDiceCameraFocus(cinematicPlayerId);
 
-    // Timings cinematográficos cortos: la cámara acompaña, pero el turno no se siente retenido.
+    // La tirada conserva un mínimo cinematográfico, pero en 3D espera a que
+    // ambos dados se asienten. El máximo evita bloquear el turno si una
+    // colisión excepcional nunca converge.
     //  camera focus: 520ms
     //  dice roll   : 1180ms
     //  step delay  : 330ms
@@ -7908,7 +8271,7 @@ export default function MonopolyGame({
       ? Math.max(420, CINEMATIC_DICE_ROLL_MS - (now - diceRollStartedAtRef.current))
       : Math.max(0, CINEMATIC_DICE_FOCUS_MS - (now - diceSequenceStartedAtRef.current)) + CINEMATIC_DICE_ROLL_MS;
 
-    diceTimeoutRef.current = window.setTimeout(() => {
+    const completeDiceRoll = () => {
       if (!diceRollStartedAtRef.current) {
         startDiceRollVisual();
       }
@@ -7962,7 +8325,21 @@ export default function MonopolyGame({
         cinematicTimeoutsRef.current.push(stepStartTimeoutId);
       }, CINEMATIC_DICE_REST_MS);
       cinematicTimeoutsRef.current.push(highlightTimeoutId);
-    }, finishDelay);
+    };
+
+    const waitForPhysicalSettle = () => {
+      const currentTime = performance.now();
+      const rollStartedAt = diceRollStartedAtRef.current || diceSequenceStartedAtRef.current || currentTime;
+      const reachedMaximum = currentTime - rollStartedAt >= CINEMATIC_DICE_MAX_ROLL_MS;
+      if (boardViewModeRef.current !== "3d" || !dicePhysicsActiveRef.current || reachedMaximum) {
+        diceTimeoutRef.current = null;
+        completeDiceRoll();
+        return;
+      }
+      diceTimeoutRef.current = window.setTimeout(waitForPhysicalSettle, CINEMATIC_DICE_SETTLE_POLL_MS);
+    };
+
+    diceTimeoutRef.current = window.setTimeout(waitForPhysicalSettle, finishDelay);
   }, [state?.turn?.lastRoll, state?.turn?.turnNumber, state?.currentPlayerId]);
 
   useEffect(() => {
@@ -8236,10 +8613,39 @@ export default function MonopolyGame({
       applyResponse();
     });
 
-    if (action === "tirarDados" && typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
-      window.requestAnimationFrame(() => {
-        window.setTimeout(emitAction, 0);
-      });
+    if (action === "tirarDados") {
+      const scheduleEmit = () => {
+        if (typeof window !== "undefined" && typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(() => {
+            window.setTimeout(emitAction, 0);
+          });
+          return;
+        }
+        emitAction();
+      };
+      const authorization = diceMotionAuthorizationRef.current;
+      if (
+        diceMotionSequenceRef.current &&
+        !diceMotionAuthorizedRef.current &&
+        authorization.sequenceId === diceMotionSequenceRef.current &&
+        authorization.promise
+      ) {
+        Promise.race([
+          authorization.promise,
+          new Promise((resolve) => window.setTimeout(() => resolve(false), 2500))
+        ]).then((authorized) => {
+          if (authorized) {
+            scheduleEmit();
+            return;
+          }
+          releaseActionLock();
+          diceStateHoldUntilRef.current = 0;
+          stopDiceCinematic();
+          setError("No se pudo sincronizar el gesto de dados. Intenta de nuevo.");
+        });
+        return;
+      }
+      scheduleEmit();
       return;
     }
 
@@ -8273,6 +8679,16 @@ export default function MonopolyGame({
       diceMotionFrameRef.current = 1;
       pendingDiceMotionsRef.current = [];
       lastDiceMotionSentAtRef.current = { move: 0, state: 0 };
+      let resolveAuthorization;
+      const authorizationPromise = new Promise((resolve) => {
+        resolveAuthorization = resolve;
+      });
+      diceMotionAuthorizationRef.current.resolve?.(false);
+      diceMotionAuthorizationRef.current = {
+        sequenceId: diceMotionSequenceRef.current,
+        promise: authorizationPromise,
+        resolve: resolveAuthorization
+      };
       const payload = {
         worldId: world.id,
         tableId: activeTableId,
@@ -8282,6 +8698,10 @@ export default function MonopolyGame({
       };
       socket.emit("monopoly_dice_motion", payload, (response) => {
         if (!response?.ok || payload.sequenceId !== diceMotionSequenceRef.current) {
+          if (diceMotionAuthorizationRef.current.sequenceId === payload.sequenceId) {
+            diceMotionAuthorizationRef.current.resolve?.(false);
+            diceMotionAuthorizationRef.current = { sequenceId: "", promise: null, resolve: null };
+          }
           if (!response?.ok && response?.error) {
             setError(response.error);
           }
@@ -8293,10 +8713,14 @@ export default function MonopolyGame({
         }
 
         diceMotionAuthorizedRef.current = true;
+        if (diceMotionAuthorizationRef.current.sequenceId === payload.sequenceId) {
+          diceMotionAuthorizationRef.current.resolve?.(true);
+          diceMotionAuthorizationRef.current = { sequenceId: payload.sequenceId, promise: Promise.resolve(true), resolve: null };
+        }
         const queuedMotions = pendingDiceMotionsRef.current;
         pendingDiceMotionsRef.current = [];
         queuedMotions.forEach((queuedMotion) => {
-          sendMotion(queuedMotion);
+          sendMotion(queuedMotion, { volatile: queuedMotion.phase === "move" || queuedMotion.phase === "state" });
         });
         if (queuedMotions.some((queuedMotion) => queuedMotion.phase === "settled" || queuedMotion.phase === "cancel")) {
           diceMotionSequenceRef.current = "";
@@ -8331,12 +8755,13 @@ export default function MonopolyGame({
       return;
     }
 
-    sendMotion(motion);
+    sendMotion(motion, { volatile: motion.phase === "move" || motion.phase === "state" });
     if (isTerminal) {
       diceMotionSequenceRef.current = "";
       diceMotionAuthorizedRef.current = false;
       diceMotionFrameRef.current = 0;
       pendingDiceMotionsRef.current = [];
+      diceMotionAuthorizationRef.current = { sequenceId: "", promise: null, resolve: null };
     }
   }
 
@@ -8405,6 +8830,7 @@ export default function MonopolyGame({
             onLeave={leaveTable}
             onCloseTable={closeTable}
             onToken={() => setTokenEditorOpen(true)}
+            onBoardTheme={() => setBoardThemeEditorOpen(true)}
             myTokenStyle={myTokenStyle}
             connectionStatus={connectionStatus}
             currentUser={currentUser}
@@ -8470,9 +8896,21 @@ export default function MonopolyGame({
           currentTokenStyle={myTokenStyle}
           onChange={persistMyToken}
           onReset={resetMyToken}
+          figures={ownedTokenFigures}
+          activeFigureId={currentEquippedCosmetics?.TOKEN?.id || ""}
+          onFigureChange={equipMyTokenFigure}
           colorOnly
           reservedTokenColors={reservedTokenColorsForMe}
         />
+        {isHostAtActiveTable && (
+          <BoardThemeCustomizer
+            open={boardThemeEditorOpen}
+            onClose={() => setBoardThemeEditorOpen(false)}
+            themes={ownedBoardThemes}
+            activeThemeId={currentEquippedCosmetics?.BOARD_THEME?.id || ""}
+            onChange={equipHostBoardTheme}
+          />
+        )}
       </>
     );
   }
@@ -8574,6 +9012,7 @@ export default function MonopolyGame({
         myTokenStyle={myTokenStyle}
         turnCountdown={turnCountdown}
         onToken={() => setTokenEditorOpen(true)}
+        onBoardTheme={() => setBoardThemeEditorOpen(true)}
         onRules={() => setRulesOpen(true)}
         onMenu={() => setMenuOpen(true)}
         boardViewMode={boardViewMode}
@@ -8589,6 +9028,7 @@ export default function MonopolyGame({
         canLeave={tableMeta?.status !== "PLAYING" || state?.status === "FINALIZADO" || Boolean(state?.winnerId)}
         canSurrender={tableMeta?.status === "PLAYING" && state?.status !== "FINALIZADO" && !state?.winnerId && !myPlayer?.bankrupt}
         canCloseTable={isHostAtActiveTable && (tableMeta?.status !== "PLAYING" || state?.status === "FINALIZADO" || Boolean(state?.winnerId))}
+        canChooseBoardTheme={isHostAtActiveTable}
         canChangeColor={canChangeMyColor}
         immersive={boardViewMode === "3d"}
       />
@@ -8612,6 +9052,8 @@ export default function MonopolyGame({
               onSelectSpaceId={(spaceId) => selectThreeDSpace(spaceId, "board")}
               rollingDice={rollingDice}
               diceFaces={diceFaces}
+              diceCosmetics={activeDiceCosmetics}
+              boardTheme={hostBoardTheme}
               onRemoteDiceMotionSink={bindRemoteDiceMotionSink}
               cinematic={cinematic}
               moneyBursts={moneyBursts}
@@ -8619,8 +9061,10 @@ export default function MonopolyGame({
               selectedSpaceInfo={selectedSpaceInfo3D}
               cameraFocus={cameraAutoFollow ? cameraFocus : null}
               cameraAutoFollow={cameraAutoFollow}
+              onCameraAutoFollowChange={setCameraAutoFollow}
               canRollDice={isMyTurn && myActions.includes("tirarDados") && !rollingDice && !cinematic}
               onRollDice={() => act("tirarDados")}
+              onDicePhysicsChange={handleDicePhysicsChange}
               onDiceMotion={emitDiceMotion}
               onSelectionAction={handleThreeDSelectionAction}
               tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
@@ -8654,6 +9098,7 @@ export default function MonopolyGame({
         ) : (
           <LegacyBoardArea
             board={board}
+            boardTheme={hostBoardTheme}
             selectedSpace={selectedSpace}
             coloredPlayersById={coloredPlayersById}
             playersById={playersById}
@@ -8804,9 +9249,21 @@ export default function MonopolyGame({
         currentTokenStyle={myTokenStyle}
         onChange={persistMyToken}
         onReset={resetMyToken}
+        figures={ownedTokenFigures}
+        activeFigureId={currentEquippedCosmetics?.TOKEN?.id || ""}
+        onFigureChange={equipMyTokenFigure}
         colorOnly
         reservedTokenColors={reservedTokenColorsForMe}
       />
+      {isHostAtActiveTable && (
+        <BoardThemeCustomizer
+          open={boardThemeEditorOpen}
+          onClose={() => setBoardThemeEditorOpen(false)}
+          themes={ownedBoardThemes}
+          activeThemeId={currentEquippedCosmetics?.BOARD_THEME?.id || ""}
+          onChange={equipHostBoardTheme}
+        />
+      )}
 
       {boardViewMode !== "3d" && (rollingDice || cinematic) && (
         <div className="monopoly-anim-veil" aria-hidden="true" />

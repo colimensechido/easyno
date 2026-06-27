@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { piecePositionForPlayer, playerColors3D } from "./board3dUtils";
+import { createCosmeticTokenModel3D } from "./CosmeticToken3D";
 
 function makeNameSprite(player) {
   const canvas = document.createElement("canvas");
@@ -29,8 +30,9 @@ function makeNameSprite(player) {
 }
 
 export function createPlayerPiece3D(player, index = 0, players = []) {
-  const color = player.color || playerColors3D[index % playerColors3D.length];
-  const ringColor = player.tokenRing || "#111827";
+  const tokenCosmetic = player.cosmetics?.TOKEN || null;
+  const color = player.color || tokenCosmetic?.metadata?.color || playerColors3D[index % playerColors3D.length];
+  const ringColor = player.tokenRing || tokenCosmetic?.metadata?.ring || "#111827";
   const group = new THREE.Group();
   const start = piecePositionForPlayer(player, players);
   group.position.set(start.x, start.y, start.z);
@@ -53,15 +55,26 @@ export function createPlayerPiece3D(player, index = 0, players = []) {
   base.receiveShadow = true;
   group.add(base);
 
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.21, 0.46, 32), baseMaterial);
-  body.position.y = 0.28;
-  body.castShadow = true;
-  group.add(body);
-
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 18), baseMaterial);
-  head.position.y = 0.64;
-  head.castShadow = true;
-  group.add(head);
+  if (tokenCosmetic) {
+    const cosmeticModel = createCosmeticTokenModel3D(tokenCosmetic, {
+      color,
+      ring: ringColor
+    });
+    cosmeticModel.scale.setScalar(0.34);
+    cosmeticModel.position.y = 0.08;
+    cosmeticModel.rotation.y = Math.PI / 5;
+    group.add(cosmeticModel);
+    group.userData.cosmeticModel = cosmeticModel;
+  } else {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.21, 0.46, 32), baseMaterial);
+    body.position.y = 0.28;
+    body.castShadow = true;
+    group.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 32, 18), baseMaterial);
+    head.position.y = 0.64;
+    head.castShadow = true;
+    group.add(head);
+  }
 
   const ring = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.025, 10, 32), darkMaterial);
   ring.rotation.x = Math.PI / 2;
@@ -85,6 +98,9 @@ export function animatePlayerPiece(piece, delta, elapsed) {
   const speed = Math.min(1, delta * (distance > 1 ? 10.5 : 12.5));
   piece.position.lerp(target, speed);
   piece.rotation.y += delta * (distance > 0.04 ? 1.55 : 0.55);
+  if (piece.userData.cosmeticModel) {
+    piece.userData.cosmeticModel.rotation.y += delta * (distance > 0.04 ? 2.4 : 0.28);
+  }
   const hop = distance > 0.04 ? Math.sin(Math.min(1, distance / 0.74) * Math.PI) * 0.17 : 0;
   piece.position.y = target.y + hop + Math.sin(elapsed * 4 + piece.position.x) * 0.02;
 }

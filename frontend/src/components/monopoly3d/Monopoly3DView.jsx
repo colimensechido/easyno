@@ -1,4 +1,4 @@
-import { Dice5, MoveRight, RotateCcw, X } from "lucide-react";
+import { Camera, Dice5, Eye, EyeOff, Mouse, MoveRight, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createClassicBoard } from "../../../../shared/monopoly-engine/data/board-data.mjs";
 import Monopoly3DScene from "./Monopoly3DScene";
@@ -87,6 +87,8 @@ export default function Monopoly3DView({
   sidePanel = null,
   rollingDice = false,
   diceFaces = [1, 1],
+  diceCosmetics = {},
+  boardTheme = null,
   onRemoteDiceMotionSink,
   cinematic = null,
   moneyBursts = [],
@@ -94,8 +96,10 @@ export default function Monopoly3DView({
   selectedSpaceInfo = null,
   cameraFocus = null,
   cameraAutoFollow = false,
+  onCameraAutoFollowChange,
   canRollDice = false,
   onRollDice,
+  onDicePhysicsChange,
   onDiceMotion,
   onSelectionAction,
   statusTitle = "",
@@ -107,6 +111,8 @@ export default function Monopoly3DView({
   const [internalSelectedSpaceId, setInternalSelectedSpaceId] = useState("go");
   const [activePlayerId, setActivePlayerId] = useState("");
   const [diceGestureActive, setDiceGestureActive] = useState(false);
+  const [cameraHelpOpen, setCameraHelpOpen] = useState(true);
+  const [cameraResetVersion, setCameraResetVersion] = useState(0);
   const connectedPlayers = players || gameState?.players || [];
   const isConnected = Boolean(connectedPlayers.length);
   const displayPlayers = isConnected ? connectedPlayers : mockPlayers;
@@ -211,6 +217,11 @@ export default function Monopoly3DView({
     setInternalSelectedSpaceId(nextSpace.id);
   }
 
+  function resetCamera() {
+    onCameraAutoFollowChange?.(false);
+    setCameraResetVersion((current) => current + 1);
+  }
+
   return (
     <section className="monopoly-3d-view">
       <div className="monopoly-3d-layout">
@@ -228,6 +239,51 @@ export default function Monopoly3DView({
               </span>
             </div>
           )}
+          <aside className={`monopoly-3d-camera-guide ${cameraHelpOpen ? "is-open" : "is-collapsed"}`}>
+            <header>
+              <span className="monopoly-3d-camera-guide-title">
+                <Camera size={17} />
+                <span>
+                  <strong>Camara</strong>
+                  <small>{cameraAutoFollow ? "Siguiendo la accion" : "Control libre"}</small>
+                </span>
+              </span>
+              <button
+                type="button"
+                className="monopoly-3d-camera-guide-collapse"
+                onClick={() => setCameraHelpOpen((current) => !current)}
+                title={cameraHelpOpen ? "Ocultar ayuda de camara" : "Mostrar ayuda de camara"}
+                aria-label={cameraHelpOpen ? "Ocultar ayuda de camara" : "Mostrar ayuda de camara"}
+              >
+                {cameraHelpOpen ? <X size={14} /> : <Mouse size={15} />}
+              </button>
+            </header>
+
+            {cameraHelpOpen && (
+              <>
+                <div className="monopoly-3d-camera-bindings">
+                  <span><kbd>Izq</kbd><small>Girar</small></span>
+                  <span><kbd>Rueda</kbd><small>Zoom</small></span>
+                  <span><kbd>Der / WASD</kbd><small>Mover</small></span>
+                </div>
+                <div className="monopoly-3d-camera-actions">
+                  <button type="button" onClick={resetCamera} title="Volver a la vista general">
+                    <RotateCcw size={14} />
+                    Centrar
+                  </button>
+                  <button
+                    type="button"
+                    className={cameraAutoFollow ? "is-active" : ""}
+                    onClick={() => onCameraAutoFollowChange?.(!cameraAutoFollow)}
+                    title={cameraAutoFollow ? "Usar camara libre" : "Seguir automaticamente la accion"}
+                  >
+                    {cameraAutoFollow ? <Eye size={14} /> : <EyeOff size={14} />}
+                    {cameraAutoFollow ? "Siguiendo" : "Seguir"}
+                  </button>
+                </div>
+              </>
+            )}
+          </aside>
           <Monopoly3DScene
             board={board}
             players={displayPlayers}
@@ -236,6 +292,8 @@ export default function Monopoly3DView({
             currentPlayerId={currentPlayerId}
             rollingDice={rollingDice}
             diceFaces={diceFaces}
+            diceCosmetics={diceCosmetics}
+            boardTheme={boardTheme}
             onRemoteDiceMotionSink={onRemoteDiceMotionSink}
             cinematic={cinematic}
             moneyBursts={moneyBursts}
@@ -246,9 +304,11 @@ export default function Monopoly3DView({
             canRollDice={canRollDice}
             onRollDice={onRollDice}
             onDiceGestureChange={setDiceGestureActive}
+            onDicePhysicsChange={onDicePhysicsChange}
             onDiceMotion={onDiceMotion}
             onSelectionAction={onSelectionAction}
             cameraAutoFollow={cameraAutoFollow}
+            cameraResetVersion={cameraResetVersion}
           />
           {sidePanel}
           <Monopoly3DSpaceCard info={selectedSpaceInfo} onAction={onSelectionAction} />

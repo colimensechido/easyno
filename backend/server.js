@@ -10,6 +10,7 @@ const jwt = require("jsonwebtoken");
 const { Server } = require("socket.io");
 const { createMonopolyService } = require("./monopoly-service");
 const { createEyconService } = require("./eycon-service");
+const { isExplicitAdminUsername, resolveEffectiveRoles } = require("./admin-roles");
 
 const app = express();
 const server = http.createServer(app);
@@ -393,6 +394,14 @@ async function bootstrapAdminRoles() {
     }
   }
 
+  const explicitAdminUser = await get(
+    "SELECT id FROM users WHERE LOWER(username) = ?",
+    [normalizeUsername("colimense")]
+  );
+  if (explicitAdminUser) {
+    await grantRole(explicitAdminUser.id, "admin", { source: "username:colimense" }).catch(() => {});
+  }
+
   const existingAdmin = await get(
     `SELECT 1 AS ok FROM user_roles WHERE role_key = 'admin' LIMIT 1`
   );
@@ -424,7 +433,9 @@ async function getUserRoles(userId) {
      ORDER BY r.key ASC`,
     [userId]
   );
-  return rows.map((row) => row.key);
+  const persistedRoles = rows.map((row) => row.key);
+  const user = await get("SELECT username FROM users WHERE id = ?", [userId]);
+  return resolveEffectiveRoles(persistedRoles, user?.username);
 }
 
 async function loadAuthUser(userId) {
@@ -2047,10 +2058,19 @@ function parseAdminMetadata(value) {
 }
 
 async function countAdmins() {
-  const row = await get(
-    `SELECT COUNT(*) AS count FROM user_roles WHERE role_key = 'admin'`
+  const rows = await all(
+    `SELECT u.id, u.username, GROUP_CONCAT(ur.role_key) AS roleKeys
+     FROM users u
+     LEFT JOIN user_roles ur ON ur.user_id = u.id
+     GROUP BY u.id`
   );
-  return Number(row?.count || 0);
+  return rows.filter((row) => {
+    const persistedRoles = String(row.roleKeys || "")
+      .split(",")
+      .map(normalizeRoleKey)
+      .filter(Boolean);
+    return resolveEffectiveRoles(persistedRoles, row.username).includes("admin");
+  }).length;
 }
 
 async function listAdminUsers(query = "") {
@@ -2085,10 +2105,11 @@ async function listAdminUsers(query = "") {
   );
 
   return rows.map((row) => {
-    const roles = String(row.roleKeys || "user")
+    const persistedRoles = String(row.roleKeys || "user")
       .split(",")
       .map(normalizeRoleKey)
       .filter(Boolean);
+    const roles = resolveEffectiveRoles(persistedRoles, row.username);
     return {
       id: row.id,
       username: row.username,
@@ -2511,7 +2532,8 @@ app.post("/api/auth/register", async (req, res) => {
     );
     await grantRole(result.id, "user", { source: "register" });
 
-    const user = { id: result.id, username, active: true, roles: ["user"], isAdmin: false };
+    const effectiveRoles = resolveEffectiveRoles(["user"], username);
+    const user = { id: result.id, username, active: true, roles: effectiveRoles, isAdmin: effectiveRoles.includes("admin") };
     return res.status(201).json({ user, token: signToken(user) });
   } catch (error) {
     if (error && error.code === "SQLITE_CONSTRAINT") {

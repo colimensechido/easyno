@@ -23,6 +23,9 @@ const DIE_FLOOR_Y = 0.55;
 const DRAG_HEIGHT = 1.45;
 const TABLE_LIMIT = BOARD_3D.centerSize / 2 - DIE_RADIUS - 0.12;
 const GRAVITY = 18;
+const PHYSICS_STEP_SECONDS = 1 / 120;
+const MAX_PHYSICS_STEPS_PER_FRAME = 6;
+const MAX_PHYSICS_DURATION_SECONDS = 4.2;
 
 function pipLayout(value) {
   const p = 0.24;
@@ -36,9 +39,12 @@ function pipLayout(value) {
   }
 }
 
-function makeFaceTexture(value) {
-  if (faceTextureCache.has(value)) {
-    return faceTextureCache.get(value);
+function makeFaceTexture(value, skin = null) {
+  const baseColor = skin?.metadata?.baseColor || "#fffdf6";
+  const pipColor = skin?.metadata?.pipColor || "#3f2b17";
+  const cacheKey = `${value}:${baseColor}:${pipColor}`;
+  if (faceTextureCache.has(cacheKey)) {
+    return faceTextureCache.get(cacheKey);
   }
 
   const canvas = document.createElement("canvas");
@@ -46,14 +52,14 @@ function makeFaceTexture(value) {
   canvas.height = 256;
   const context = canvas.getContext("2d");
   const gradient = context.createLinearGradient(0, 0, 0, 256);
-  gradient.addColorStop(0, "#fffdf6");
-  gradient.addColorStop(1, "#f1dfbb");
+  gradient.addColorStop(0, baseColor);
+  gradient.addColorStop(1, baseColor);
   context.fillStyle = gradient;
   context.fillRect(0, 0, 256, 256);
   context.strokeStyle = "#d8c39a";
   context.lineWidth = 10;
   context.strokeRect(8, 8, 240, 240);
-  context.fillStyle = "#3f2b17";
+  context.fillStyle = pipColor;
 
   pipLayout(value).forEach(([x, y]) => {
     context.beginPath();
@@ -65,22 +71,34 @@ function makeFaceTexture(value) {
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.anisotropy = 4;
   texture.userData.shared = true;
-  faceTextureCache.set(value, texture);
+  faceTextureCache.set(cacheKey, texture);
   return texture;
 }
 
-function materialForFace(value) {
-  if (materialCache.has(value)) {
-    return materialCache.get(value);
+function materialForFace(value, skin = null) {
+  const metadata = skin?.metadata || {};
+  const cacheKey = [
+    value,
+    skin?.id || "default",
+    metadata.baseColor || "",
+    metadata.pipColor || "",
+    metadata.roughness ?? "",
+    metadata.metalness ?? "",
+    metadata.opacity ?? ""
+  ].join(":");
+  if (materialCache.has(cacheKey)) {
+    return materialCache.get(cacheKey);
   }
 
   const material = new THREE.MeshStandardMaterial({
-    map: makeFaceTexture(value),
-    roughness: 0.34,
-    metalness: 0.04
+    map: makeFaceTexture(value, skin),
+    roughness: Number.isFinite(Number(metadata.roughness)) ? Number(metadata.roughness) : 0.34,
+    metalness: Number.isFinite(Number(metadata.metalness)) ? Number(metadata.metalness) : 0.04,
+    opacity: Number.isFinite(Number(metadata.opacity)) ? Number(metadata.opacity) : 1,
+    transparent: Boolean(metadata.transparent) || Number(metadata.opacity) < 1
   });
   material.userData.shared = true;
-  materialCache.set(value, material);
+  materialCache.set(cacheKey, material);
   return material;
 }
 
@@ -94,6 +112,9 @@ function createDie() {
   mesh.userData.targetQuaternion = new THREE.Quaternion();
   mesh.userData.velocity = new THREE.Vector3();
   mesh.userData.angularVelocity = new THREE.Vector3();
+  mesh.userData.remotePosition = new THREE.Vector3();
+  mesh.userData.remoteQuaternion = new THREE.Quaternion();
+  mesh.userData.remoteInitialized = false;
   mesh.userData.physicsActive = false;
   mesh.userData.sleeping = true;
   return mesh;
@@ -142,9 +163,68 @@ export function createDice3D() {
     offsets: [new THREE.Vector3(-0.72, 0, 0.08), new THREE.Vector3(0.72, 0, -0.08)]
   };
   group.userData.physicsActive = false;
+  group.userData.physicsAccumulator = 0;
+  group.userData.physicsElapsed = 0;
   group.userData.landed = false;
   group.userData.remoteMotionActive = false;
   group.userData.remoteMotionSettled = false;
+  group.userData.remoteResultLocked = false;
+  group.userData.skinId = "default";
+  const fxGeometry = new THREE.BufferGeometry();
+  const fxPositions = new Float32Array(72 * 3);
+  fxGeometry.setAttribute("position", new THREE.BufferAttribute(fxPositions, 3));
+  const fxMaterial = new THREE.PointsMaterial({
+    color: "#fbbf24",
+    size: 0.075,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending
+  });
+  const fxPoints = new THREE.Points(fxGeometry, fxMaterial);
+  fxPoints.visible = false;
+  group.add(fxPoints);
+  group.userData.fxPoints = fxPoints;
+  const fxRings = new THREE.Group();
+  for (let index = 0; index < 3; index += 1) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.52, 0.58, 48),
+      new THREE.MeshBasicMaterial({
+        color: "#fbbf24",
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.visible = false;
+    fxRings.add(ring);
+  }
+  group.add(fxRings);
+  group.userData.fxRings = fxRings;
+  const beamGeometry = new THREE.BufferGeometry();
+  beamGeometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(14 * 3), 3));
+  const fxBeam = new THREE.Line(
+    beamGeometry,
+    new THREE.LineBasicMaterial({
+      color: "#ffffff",
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    })
+  );
+  fxBeam.visible = false;
+  group.add(fxBeam);
+  group.userData.fxBeam = fxBeam;
+  const fxLight = new THREE.PointLight("#fbbf24", 0, 5, 2);
+  fxLight.position.y = 1;
+  group.add(fxLight);
+  group.userData.fxLight = fxLight;
+  group.userData.fxId = "";
+  group.userData.fxMetadata = null;
   group.visible = true;
   return group;
 }
@@ -191,11 +271,16 @@ function pushDragSample(group, point, time) {
 
 export function beginDiceDrag(group, point, time = performance.now()) {
   const drag = group.userData.drag;
+  group.userData.remoteMotionActive = false;
+  group.userData.remoteMotionSettled = false;
+  group.userData.remoteResultLocked = false;
   drag.active = true;
   drag.target.set(clampToTable(point.x), DRAG_HEIGHT, clampToTable(point.z));
   drag.samples = [];
   pushDragSample(group, drag.target, time);
   group.userData.physicsActive = false;
+  group.userData.physicsAccumulator = 0;
+  group.userData.physicsElapsed = 0;
   group.userData.dice.forEach((die) => {
     die.userData.physicsActive = false;
     die.userData.sleeping = false;
@@ -222,6 +307,8 @@ export function updateDiceDrag(group, point, time = performance.now()) {
 export function cancelDiceDrag(group) {
   group.userData.drag.active = false;
   group.userData.physicsActive = false;
+  group.userData.physicsAccumulator = 0;
+  group.userData.physicsElapsed = 0;
   group.userData.dice.forEach((die) => {
     die.userData.physicsActive = false;
     die.userData.sleeping = true;
@@ -254,6 +341,8 @@ export function releaseDiceDrag(group, time = performance.now()) {
 
   drag.active = false;
   group.userData.physicsActive = true;
+  group.userData.physicsAccumulator = 0;
+  group.userData.physicsElapsed = 0;
   group.userData.landed = true;
   group.userData.dice.forEach((die, index) => {
     const side = index === 0 ? -1 : 1;
@@ -298,8 +387,6 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
   if (!group || !motion) return;
 
   if (motion.phase === "grab" || motion.phase === "move") {
-    group.userData.remoteMotionActive = true;
-    group.userData.remoteMotionSettled = false;
     const point = new THREE.Vector3(
       safeNumber(motion.point?.x),
       DRAG_HEIGHT,
@@ -310,12 +397,15 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
     } else {
       updateDiceDrag(group, point, time);
     }
+    group.userData.remoteMotionActive = true;
+    group.userData.remoteMotionSettled = false;
     return;
   }
 
   if (motion.phase === "cancel") {
     group.userData.remoteMotionActive = false;
     group.userData.remoteMotionSettled = false;
+    group.userData.remoteResultLocked = false;
     cancelDiceDrag(group);
     return;
   }
@@ -324,52 +414,87 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
 
   group.userData.drag.active = false;
   const settled = motion.phase === "settled";
+  if (motion.phase === "release") {
+    group.userData.remoteResultLocked = false;
+  }
   group.userData.remoteMotionActive = true;
   group.userData.remoteMotionSettled = settled;
-  group.userData.physicsActive = settled ? false : motion.active !== false;
+  // Remote clients are render-only for dice physics. Re-simulating between
+  // snapshots makes collisions diverge immediately under latency or jitter.
+  group.userData.physicsActive = false;
+  group.userData.physicsAccumulator = 0;
+  group.userData.physicsElapsed = 0;
   group.userData.landed = true;
   group.userData.dice.forEach((die, index) => {
     const state = motion.dice[index];
     if (!state) return;
-    applyVector(die.position, state.position, DIE_FLOOR_Y);
-    die.position.x = clampToTable(die.position.x);
-    die.position.z = clampToTable(die.position.z);
-    die.position.y = Math.max(DIE_FLOOR_Y, die.position.y);
-    die.quaternion.set(
+    applyVector(die.userData.remotePosition, state.position, DIE_FLOOR_Y);
+    die.userData.remotePosition.x = clampToTable(die.userData.remotePosition.x);
+    die.userData.remotePosition.z = clampToTable(die.userData.remotePosition.z);
+    die.userData.remotePosition.y = Math.max(DIE_FLOOR_Y, die.userData.remotePosition.y);
+    die.userData.remoteQuaternion.set(
       safeNumber(state.quaternion?.x),
       safeNumber(state.quaternion?.y),
       safeNumber(state.quaternion?.z),
       safeNumber(state.quaternion?.w, 1)
     ).normalize();
+    if (!die.userData.remoteInitialized) {
+      die.position.copy(die.userData.remotePosition);
+      die.quaternion.copy(die.userData.remoteQuaternion);
+      die.userData.remoteInitialized = true;
+    }
     applyVector(die.userData.velocity, state.velocity);
     applyVector(die.userData.angularVelocity, state.angularVelocity);
-    die.userData.physicsActive = !settled && motion.active !== false && !state.sleeping;
+    die.userData.physicsActive = false;
     die.userData.sleeping = settled || Boolean(state.sleeping);
     if (die.userData.sleeping) {
       die.userData.velocity.set(0, 0, 0);
       die.userData.angularVelocity.set(0, 0, 0);
     }
   });
-  group.userData.physicsActive = group.userData.dice.some((die) => die.userData.physicsActive);
 }
 
-export function syncDice3D(group, { diceFaces = [1, 1], rollingDice = false, cinematicPhase = null, visualStage = "idle" }) {
+export function syncDice3D(group, {
+  diceFaces = [1, 1],
+  rollingDice = false,
+  cinematicPhase = null,
+  visualStage = "idle",
+  diceSkin = null,
+  diceFx = null
+}) {
   group.userData.rollingDice = rollingDice;
   group.userData.cinematicPhase = cinematicPhase;
   group.userData.visualStage = visualStage;
+  const nextSkinId = diceSkin?.id || "default";
+  if (group.userData.skinId !== nextSkinId) {
+    group.userData.skinId = nextSkinId;
+    group.userData.dice.forEach((die) => {
+      die.material = Array.from({ length: 6 }, (_, index) => materialForFace(index + 1, diceSkin));
+    });
+  }
+  const nextFxId = diceFx?.id || "";
+  if (group.userData.fxId !== nextFxId) {
+    group.userData.fxId = nextFxId;
+    group.userData.fxMetadata = diceFx?.metadata || null;
+    if (group.userData.fxPoints) {
+      group.userData.fxPoints.material.color.set(group.userData.fxMetadata?.color || "#fbbf24");
+    }
+    group.userData.fxRings?.children.forEach((ring) => {
+      ring.material.color.set(group.userData.fxMetadata?.color || "#fbbf24");
+    });
+    group.userData.fxBeam?.material.color.set(group.userData.fxMetadata?.secondaryColor || "#ffffff");
+    group.userData.fxLight?.color.set(group.userData.fxMetadata?.color || "#fbbf24");
+  }
+  if (
+    group.userData.remoteMotionActive &&
+    ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage)
+  ) {
+    group.userData.remoteResultLocked = true;
+  }
   group.userData.dice.forEach((die, index) => {
     const target = FACE_ROTATIONS[diceFaces[index] || 1] || FACE_ROTATIONS[1];
     die.userData.targetQuaternion.setFromEuler(target);
   });
-  if (
-    group.userData.remoteMotionSettled &&
-    visualStage === "idle" &&
-    !rollingDice &&
-    !cinematicPhase
-  ) {
-    group.userData.remoteMotionActive = false;
-    group.userData.remoteMotionSettled = false;
-  }
 }
 
 function animateDraggedDice(group, delta, elapsed) {
@@ -425,31 +550,24 @@ function resolveDieCollision(left, right) {
     (right.userData.velocity.z - left.userData.velocity.z) * normalZ;
   const impactSpeed = Math.abs(relativeNormalSpeed);
 
-  if (relativeNormalSpeed < 0) {
+  if (relativeNormalSpeed < -0.05) {
     const impulse = -(1 + 0.68) * relativeNormalSpeed * 0.5;
     left.userData.velocity.x -= impulse * normalX;
     left.userData.velocity.z -= impulse * normalZ;
     right.userData.velocity.x += impulse * normalX;
     right.userData.velocity.z += impulse * normalZ;
-  } else if (impactSpeed < 0.25) {
-    left.userData.velocity.x -= normalX * 0.75;
-    left.userData.velocity.z -= normalZ * 0.75;
-    right.userData.velocity.x += normalX * 0.75;
-    right.userData.velocity.z += normalZ * 0.75;
+    const bounceLift = Math.min(1.7, 0.55 + impactSpeed * 0.12);
+    left.userData.velocity.y = Math.max(left.userData.velocity.y, bounceLift);
+    right.userData.velocity.y = Math.max(right.userData.velocity.y, bounceLift);
+    left.userData.angularVelocity.x += normalZ * 2.2;
+    left.userData.angularVelocity.z -= normalX * 2.2;
+    right.userData.angularVelocity.x -= normalZ * 2.2;
+    right.userData.angularVelocity.z += normalX * 2.2;
+    left.userData.physicsActive = true;
+    right.userData.physicsActive = true;
+    left.userData.sleeping = false;
+    right.userData.sleeping = false;
   }
-
-  const bounceLift = Math.min(1.7, 0.55 + impactSpeed * 0.12);
-  left.userData.velocity.y = Math.max(left.userData.velocity.y, bounceLift);
-  right.userData.velocity.y = Math.max(right.userData.velocity.y, bounceLift);
-  left.userData.angularVelocity.x += normalZ * 2.2;
-  left.userData.angularVelocity.z -= normalX * 2.2;
-  right.userData.angularVelocity.x -= normalZ * 2.2;
-  right.userData.angularVelocity.z += normalX * 2.2;
-
-  left.userData.physicsActive = true;
-  right.userData.physicsActive = true;
-  left.userData.sleeping = false;
-  right.userData.sleeping = false;
 }
 
 function resolveDeckCollision(die, obstacle) {
@@ -500,7 +618,58 @@ function resolveDeckCollision(die, obstacle) {
   die.userData.angularVelocity.z -= normalX * 1.8;
 }
 
-function animatePhysicalDice(group, delta, settleToResult) {
+function stabilizeRestingDice(group) {
+  const [left, right] = group.userData.dice;
+  const offset = right.position.clone().sub(left.position);
+  offset.y = 0;
+  const horizontalDistance = offset.length();
+  const minimumDistance = DIE_RADIUS * 2 + 0.035;
+
+  left.position.y = DIE_FLOOR_Y;
+  right.position.y = DIE_FLOOR_Y;
+  left.position.x = clampToTable(left.position.x);
+  left.position.z = clampToTable(left.position.z);
+  right.position.x = clampToTable(right.position.x);
+  right.position.z = clampToTable(right.position.z);
+
+  // Preserve the natural landing positions. Only separate the dice when they
+  // actually overlap; never pull already-separated dice back together.
+  if (horizontalDistance >= minimumDistance) {
+    return;
+  }
+
+  if (horizontalDistance < 0.001) {
+    offset.set(1, 0, 0);
+  } else {
+    offset.divideScalar(horizontalDistance);
+  }
+
+  const correction = (minimumDistance - horizontalDistance) * 0.5 + 0.002;
+  left.position.x = clampToTable(left.position.x - offset.x * correction);
+  left.position.z = clampToTable(left.position.z - offset.z * correction);
+  right.position.x = clampToTable(right.position.x + offset.x * correction);
+  right.position.z = clampToTable(right.position.z + offset.z * correction);
+}
+
+function stopPhysicalDice(group, snapToResult) {
+  group.userData.dice.forEach((die) => {
+    die.userData.physicsActive = false;
+    die.userData.sleeping = true;
+    die.position.y = DIE_FLOOR_Y;
+    if (snapToResult) {
+      die.quaternion.copy(die.userData.targetQuaternion);
+    } else {
+      die.quaternion.normalize();
+    }
+    die.userData.velocity.set(0, 0, 0);
+    die.userData.angularVelocity.set(0, 0, 0);
+  });
+  stabilizeRestingDice(group);
+  group.userData.physicsActive = false;
+  group.userData.physicsAccumulator = 0;
+}
+
+function animatePhysicalDiceStep(group, delta, settleToResult) {
   group.userData.dice.forEach((die) => {
     if (!die.userData.physicsActive) return;
     const velocity = die.userData.velocity;
@@ -546,11 +715,15 @@ function animatePhysicalDice(group, delta, settleToResult) {
 
     const linearSpeed = velocity.length();
     const spinSpeed = angularVelocity.length();
-    if (settleToResult && die.position.y <= DIE_FLOOR_Y + 0.001 && linearSpeed < 0.18 && spinSpeed < 0.22) {
+    if (die.position.y <= DIE_FLOOR_Y + 0.001 && linearSpeed < 0.14 && spinSpeed < 0.18) {
       die.userData.physicsActive = false;
       die.userData.sleeping = true;
       die.position.y = DIE_FLOOR_Y;
-      die.quaternion.copy(die.userData.targetQuaternion);
+      if (settleToResult) {
+        die.quaternion.copy(die.userData.targetQuaternion);
+      } else {
+        die.quaternion.normalize();
+      }
       velocity.set(0, 0, 0);
       angularVelocity.set(0, 0, 0);
     }
@@ -558,6 +731,174 @@ function animatePhysicalDice(group, delta, settleToResult) {
 
   resolveDieCollision(group.userData.dice[0], group.userData.dice[1]);
   group.userData.physicsActive = group.userData.dice.some((die) => die.userData.physicsActive);
+  if (!group.userData.physicsActive) {
+    stopPhysicalDice(group, settleToResult);
+  }
+}
+
+function animateRemoteDice(group, delta, settleToResult, visualStage) {
+  const positionRate = group.userData.remoteMotionSettled ? 20 : 15;
+  const rotationRate = group.userData.remoteMotionSettled ? 22 : 17;
+  const positionAlpha = 1 - Math.exp(-positionRate * delta);
+  const rotationAlpha = 1 - Math.exp(-rotationRate * delta);
+  let converged = true;
+
+  group.userData.dice.forEach((die) => {
+    const targetPosition = die.userData.remotePosition;
+    const targetQuaternion =
+      group.userData.remoteMotionSettled && (settleToResult || group.userData.remoteResultLocked)
+        ? die.userData.targetQuaternion
+        : die.userData.remoteQuaternion;
+    die.position.lerp(targetPosition, positionAlpha);
+    die.quaternion.slerp(targetQuaternion, rotationAlpha);
+    if (die.position.distanceToSquared(targetPosition) > 0.000025 || 1 - Math.abs(die.quaternion.dot(targetQuaternion)) > 0.000025) {
+      converged = false;
+    }
+  });
+
+  if (group.userData.remoteMotionSettled && visualStage === "idle" && converged) {
+    group.userData.dice.forEach((die) => {
+      die.position.copy(die.userData.remotePosition);
+      die.quaternion.copy(group.userData.remoteResultLocked ? die.userData.targetQuaternion : die.userData.remoteQuaternion);
+      die.userData.remoteInitialized = false;
+    });
+    group.userData.remoteMotionActive = false;
+    group.userData.remoteMotionSettled = false;
+    group.userData.remoteResultLocked = false;
+  }
+}
+
+function animateDiceFx(group, elapsed) {
+  const points = group.userData.fxPoints;
+  const rings = group.userData.fxRings;
+  const beam = group.userData.fxBeam;
+  const light = group.userData.fxLight;
+  const metadata = group.userData.fxMetadata;
+  if (!points || !metadata) {
+    if (points) points.visible = false;
+    if (rings) rings.visible = false;
+    if (beam) beam.visible = false;
+    if (light) light.intensity = 0;
+    return;
+  }
+
+  const active =
+    group.userData.physicsActive ||
+    group.userData.remoteMotionActive ||
+    group.userData.drag.active ||
+    ["cameraFocusDice", "diceRolling", "diceResult"].includes(group.userData.visualStage);
+  points.visible = active;
+  rings.visible = false;
+  beam.visible = false;
+  light.intensity = 0;
+  if (!active) {
+    points.material.opacity = 0;
+    return;
+  }
+
+  const effect = metadata.effect || "sparks";
+  const intensity = Number(metadata.intensity || 1);
+  const positions = points.geometry.attributes.position.array;
+  const [left, right] = group.userData.dice;
+  const midpointX = (left.position.x + right.position.x) * 0.5;
+  const midpointY = (left.position.y + right.position.y) * 0.5;
+  const midpointZ = (left.position.z + right.position.z) * 0.5;
+  const resultStage = group.userData.visualStage === "diceResult";
+  for (let index = 0; index < positions.length / 3; index += 1) {
+    const die = index % 2 === 0 ? left : right;
+    const seed = index * 12.9898;
+    const phase = elapsed * (2 + intensity * 0.7) + seed;
+    const radius = 0.18 + (index % 9) * 0.045;
+    let x = die.position.x + Math.sin(phase * 1.7) * radius;
+    let y = die.position.y + ((index % 9) / 9) * 0.8 + Math.cos(phase) * 0.08;
+    let z = die.position.z + Math.cos(phase * 1.35) * radius;
+
+    if (effect === "sparks") {
+      const fall = (elapsed * 2.8 + (index % 11) / 11) % 1;
+      x = die.position.x + Math.sin(seed) * (0.18 + fall * 0.55);
+      y = die.position.y + 0.72 - fall * 1.05;
+      z = die.position.z + Math.cos(seed * 1.4) * (0.18 + fall * 0.55);
+    } else if (effect === "trail") {
+      const tail = (index % 18) / 18;
+      x = die.position.x - Math.cos(elapsed * 4 + index) * tail * 0.65;
+      y = die.position.y - 0.2 + Math.sin(seed + elapsed * 8) * 0.16 + tail * 0.22;
+      z = die.position.z - Math.sin(elapsed * 3.4 + index) * tail * 0.65;
+    } else if (effect === "flakes") {
+      const drift = (elapsed * 0.7 + (index % 13) / 13) % 1;
+      x = die.position.x + Math.sin(seed + elapsed) * (0.25 + drift * 0.6);
+      y = die.position.y + 0.65 - drift * 0.9;
+      z = die.position.z + Math.cos(seed * 0.7 + elapsed) * (0.25 + drift * 0.6);
+    } else if (effect === "glitch") {
+      const tick = Math.floor(elapsed * 14 + index);
+      x = die.position.x + (((tick * 17) % 7) - 3) * 0.11;
+      y = die.position.y + (((tick * 13) % 8) - 2) * 0.1;
+      z = die.position.z + (((tick * 11) % 7) - 3) * 0.11;
+    } else if (effect === "waves") {
+      const wave = (elapsed * 1.45 + (index % 18) / 18) % 1;
+      const angle = seed;
+      x = midpointX + Math.cos(angle) * wave * 1.8;
+      y = 0.13 + Math.sin(wave * Math.PI) * 0.06;
+      z = midpointZ + Math.sin(angle) * wave * 1.8;
+    } else if (effect === "electric") {
+      const t = (index % 36) / 35;
+      x = THREE.MathUtils.lerp(left.position.x, right.position.x, t);
+      y = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.sin(seed + elapsed * 18) * 0.16;
+      z = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(seed + elapsed * 14) * 0.12;
+    } else if (effect === "orbit" || effect === "galaxy") {
+      const orbitRadius = effect === "galaxy" ? 0.45 + (index % 12) * 0.045 : 0.28 + (index % 8) * 0.04;
+      x = midpointX + Math.cos(phase * (index % 2 ? 0.8 : -0.65)) * orbitRadius;
+      y = midpointY + Math.sin(phase * 0.7 + index) * (effect === "galaxy" ? 0.55 : 0.34);
+      z = midpointZ + Math.sin(phase * (index % 2 ? 0.8 : -0.65)) * orbitRadius;
+    } else if (effect === "confetti") {
+      const fall = (elapsed * (resultStage ? 1.8 : 0.7) + (index % 17) / 17) % 1;
+      x = midpointX + Math.sin(seed) * 1.35;
+      y = 1.75 - fall * 1.6;
+      z = midpointZ + Math.cos(seed * 1.7) * 1.25;
+    } else if (effect === "flash") {
+      const burst = (elapsed * (resultStage ? 3.5 : 1.2) + (index % 12) / 12) % 1;
+      x = midpointX + Math.cos(seed) * burst * 1.5;
+      y = midpointY + Math.sin(seed * 1.3) * burst * 1.3;
+      z = midpointZ + Math.sin(seed) * burst * 1.5;
+    }
+
+    positions[index * 3] = x;
+    positions[index * 3 + 1] = y;
+    positions[index * 3 + 2] = z;
+  }
+  points.geometry.attributes.position.needsUpdate = true;
+  points.material.opacity = Math.min(0.96, 0.34 + intensity * 0.3);
+  points.material.size = effect === "glitch" ? 0.11 : effect === "galaxy" ? 0.06 : 0.055 + intensity * 0.025;
+
+  if (["waves", "flash", "galaxy"].includes(effect) && rings) {
+    rings.visible = true;
+    rings.children.forEach((ring, index) => {
+      const cycle = (elapsed * (effect === "flash" ? 2.4 : 1.2) + index / 3) % 1;
+      ring.visible = true;
+      ring.position.set(midpointX, 0.14 + index * 0.015, midpointZ);
+      ring.scale.setScalar(0.6 + cycle * (effect === "galaxy" ? 2.4 : 3.1));
+      ring.material.opacity = (1 - cycle) * (effect === "flash" && resultStage ? 0.85 : 0.48);
+    });
+  }
+
+  if (effect === "electric" && beam) {
+    beam.visible = true;
+    const beamPositions = beam.geometry.attributes.position.array;
+    for (let index = 0; index < beamPositions.length / 3; index += 1) {
+      const t = index / (beamPositions.length / 3 - 1);
+      beamPositions[index * 3] = THREE.MathUtils.lerp(left.position.x, right.position.x, t);
+      beamPositions[index * 3 + 1] = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.sin(elapsed * 22 + index * 4.7) * 0.13;
+      beamPositions[index * 3 + 2] = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(elapsed * 19 + index * 3.2) * 0.1;
+    }
+    beam.geometry.attributes.position.needsUpdate = true;
+    beam.material.opacity = 0.65 + Math.sin(elapsed * 28) * 0.25;
+  }
+
+  if (light) {
+    light.position.set(midpointX, midpointY, midpointZ);
+    light.intensity = ["flash", "electric", "trail", "galaxy"].includes(effect)
+      ? intensity * (resultStage && effect === "flash" ? 5.5 : 2.4)
+      : intensity * 0.65;
+  }
 }
 
 export function animateDice3D(group, delta, elapsed) {
@@ -583,6 +924,7 @@ export function animateDice3D(group, delta, elapsed) {
   const averageZ = (group.userData.dice[0].position.z + group.userData.dice[1].position.z) * 0.5;
   group.userData.glow.position.x = averageX;
   group.userData.glow.position.z = averageZ;
+  animateDiceFx(group, elapsed);
 
   if (dragging) {
     animateDraggedDice(group, delta, elapsed);
@@ -590,16 +932,29 @@ export function animateDice3D(group, delta, elapsed) {
   }
 
   const settleToResult = ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage);
-  if (group.userData.physicsActive) {
-    animatePhysicalDice(group, delta, settleToResult);
+  if (remoteMotionActive) {
+    animateRemoteDice(group, delta, settleToResult, visualStage);
     return;
   }
 
-  if (remoteMotionActive) {
-    if (group.userData.remoteMotionSettled && settleToResult) {
-      group.userData.dice.forEach((die) => {
-        die.quaternion.slerp(die.userData.targetQuaternion, Math.min(1, delta * 8.4));
-      });
+  if (group.userData.physicsActive) {
+    group.userData.physicsElapsed += delta;
+    group.userData.physicsAccumulator = Math.min(
+      group.userData.physicsAccumulator + delta,
+      PHYSICS_STEP_SECONDS * MAX_PHYSICS_STEPS_PER_FRAME
+    );
+    let steps = 0;
+    while (
+      group.userData.physicsActive &&
+      group.userData.physicsAccumulator >= PHYSICS_STEP_SECONDS &&
+      steps < MAX_PHYSICS_STEPS_PER_FRAME
+    ) {
+      animatePhysicalDiceStep(group, PHYSICS_STEP_SECONDS, settleToResult);
+      group.userData.physicsAccumulator -= PHYSICS_STEP_SECONDS;
+      steps += 1;
+    }
+    if (group.userData.physicsActive && group.userData.physicsElapsed >= MAX_PHYSICS_DURATION_SECONDS) {
+      stopPhysicalDice(group, settleToResult);
     }
     return;
   }
@@ -610,7 +965,12 @@ export function animateDice3D(group, delta, elapsed) {
       group.userData.rollEnergy > 0.02 ||
       ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage);
 
-    if (!remoteMotionActive && visualStage === "diceRolling" && group.userData.rollEnergy > 0.02) {
+    if (
+      !remoteMotionActive &&
+      !group.userData.landed &&
+      visualStage === "diceRolling" &&
+      group.userData.rollEnergy > 0.02
+    ) {
       const energy = group.userData.rollEnergy;
       die.rotation.x += (2.2 + index * 0.35 + energy * 4.1) * delta;
       die.rotation.y += (2.5 + index * 0.3 + energy * 4.6) * delta;

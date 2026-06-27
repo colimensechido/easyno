@@ -23,6 +23,7 @@ import {
   setSelectionBillboardHover,
   setSelectionBillboardTab,
   syncBoardTiles,
+  syncBoardTheme,
   syncPlayerPieces,
   syncSelectionBillboard
 } from "./Board3D";
@@ -44,6 +45,8 @@ export default function Monopoly3DScene({
   currentPlayerId = null,
   rollingDice = false,
   diceFaces = [1, 1],
+  diceCosmetics = {},
+  boardTheme = null,
   onRemoteDiceMotionSink,
   cinematic = null,
   moneyBursts = [],
@@ -54,26 +57,31 @@ export default function Monopoly3DScene({
   canRollDice = false,
   onRollDice,
   onDiceGestureChange,
+  onDicePhysicsChange,
   onDiceMotion,
   onSelectionAction,
-  cameraAutoFollow = true
+  cameraAutoFollow = true,
+  cameraResetVersion = 0
 }) {
   const mountRef = useRef(null);
   const modelRef = useRef(null);
   const sceneRef = useRef(null);
   const boardRef = useRef(board);
   const playersRef = useRef(players);
+  const boardThemeRef = useRef(boardTheme);
   const selectedRef = useRef(selectedSpaceIndex);
   const onSelectRef = useRef(onSelectSpace);
   const canRollDiceRef = useRef(canRollDice);
   const onRollDiceRef = useRef(onRollDice);
   const onDiceGestureChangeRef = useRef(onDiceGestureChange);
+  const onDicePhysicsChangeRef = useRef(onDicePhysicsChange);
   const onDiceMotionRef = useRef(onDiceMotion);
   const diceRef = useRef(null);
   const remoteDiceMotionRef = useRef({ sequenceId: "", frame: -1 });
   const remoteDiceMotionQueueRef = useRef([]);
   const onSelectionActionRef = useRef(onSelectionAction);
   const cameraAutoFollowRef = useRef(cameraAutoFollow);
+  const cameraResetVersionRef = useRef(cameraResetVersion);
   const localDiceRollRef = useRef({
     active: false,
     startedAt: 0,
@@ -88,6 +96,7 @@ export default function Monopoly3DScene({
     currentPlayerId,
     rollingDice,
     diceFaces,
+    diceCosmetics,
     cinematic,
     moneyBursts,
     pendingCard,
@@ -107,6 +116,11 @@ export default function Monopoly3DScene({
       syncPlayerPieces(modelRef.current, players);
     }
   }, [players]);
+
+  useEffect(() => {
+    boardThemeRef.current = boardTheme;
+    if (modelRef.current) syncBoardTheme(modelRef.current, boardTheme);
+  }, [boardTheme]);
 
   useEffect(() => {
     boardRef.current = board;
@@ -134,6 +148,10 @@ export default function Monopoly3DScene({
   useEffect(() => {
     onDiceGestureChangeRef.current = onDiceGestureChange;
   }, [onDiceGestureChange]);
+
+  useEffect(() => {
+    onDicePhysicsChangeRef.current = onDicePhysicsChange;
+  }, [onDicePhysicsChange]);
 
   useEffect(() => {
     onDiceMotionRef.current = onDiceMotion;
@@ -167,10 +185,15 @@ export default function Monopoly3DScene({
   }, [cameraAutoFollow]);
 
   useEffect(() => {
+    cameraResetVersionRef.current = cameraResetVersion;
+  }, [cameraResetVersion]);
+
+  useEffect(() => {
     visualStateRef.current = {
       currentPlayerId,
       rollingDice,
       diceFaces,
+      diceCosmetics,
       cinematic,
       moneyBursts,
       pendingCard,
@@ -178,7 +201,7 @@ export default function Monopoly3DScene({
       cameraFocus,
       destinationSpaceIndex
     };
-  }, [cameraFocus, cinematic, currentPlayerId, destinationSpaceIndex, diceFaces, moneyBursts, pendingCard, rollingDice, selectedSpaceInfo]);
+  }, [cameraFocus, cinematic, currentPlayerId, destinationSpaceIndex, diceCosmetics, diceFaces, moneyBursts, pendingCard, rollingDice, selectedSpaceInfo]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -201,11 +224,25 @@ export default function Monopoly3DScene({
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.07;
-    controls.minDistance = 8;
-    controls.maxDistance = 32;
+    controls.dampingFactor = 0.06;
+    controls.rotateSpeed = 0.48;
+    controls.zoomSpeed = 0.62;
+    controls.panSpeed = 0.52;
+    controls.keyPanSpeed = 5;
+    controls.enablePan = true;
+    controls.screenSpacePanning = false;
+    controls.zoomToCursor = true;
+    controls.keys.LEFT = "KeyA";
+    controls.keys.UP = "KeyW";
+    controls.keys.RIGHT = "KeyD";
+    controls.keys.BOTTOM = "KeyS";
+    controls.minDistance = 7.5;
+    controls.maxDistance = 26;
+    controls.minPolarAngle = Math.PI * 0.16;
     controls.maxPolarAngle = Math.PI * 0.48;
     controls.target.set(0, 0, 0);
+    renderer.domElement.tabIndex = 0;
+    controls.listenToKeyEvents(renderer.domElement);
 
     scene.add(new THREE.HemisphereLight("#fff4dc", "#173629", 1.15));
 
@@ -225,7 +262,11 @@ export default function Monopoly3DScene({
     fillLight.position.set(-8, 8, -8);
     scene.add(fillLight);
 
-    const model = createBoard3D({ board: boardRef.current, players: playersRef.current });
+    const model = createBoard3D({
+      board: boardRef.current,
+      players: playersRef.current,
+      boardTheme: boardThemeRef.current
+    });
     modelRef.current = model;
     scene.add(model.group);
     const dice = createDice3D();
@@ -243,6 +284,14 @@ export default function Monopoly3DScene({
     let activeDicePointerId = null;
     let localDiceSyncActive = false;
     let lastDiceSyncAt = 0;
+    let reportedDicePhysicsActive = false;
+
+    function reportDicePhysics(active) {
+      const nextActive = Boolean(active);
+      if (reportedDicePhysicsActive === nextActive) return;
+      reportedDicePhysicsActive = nextActive;
+      onDicePhysicsChangeRef.current?.(nextActive);
+    }
 
     function updatePointer(event) {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -276,6 +325,7 @@ export default function Monopoly3DScene({
 
     function handlePointerDown(event) {
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      renderer.domElement.focus({ preventScroll: true });
       updatePointer(event);
 
       if (canRollDiceRef.current && !localDiceRollRef.current.active && !dice.userData.physicsActive) {
@@ -369,6 +419,7 @@ export default function Monopoly3DScene({
         onDiceMotionRef.current?.(releaseMotion);
         localDiceSyncActive = true;
         lastDiceSyncAt = performance.now();
+        reportDicePhysics(true);
         startLocalDiceRoll();
         window.requestAnimationFrame(() => onRollDiceRef.current?.());
       } else {
@@ -383,6 +434,7 @@ export default function Monopoly3DScene({
       const motion = cancelDiceDrag(dice);
       localDiceSyncActive = false;
       lastDiceSyncAt = 0;
+      reportDicePhysics(false);
       onDiceMotionRef.current?.(motion);
       onDiceGestureChangeRef.current?.(false);
       renderer.domElement.style.cursor = "";
@@ -410,6 +462,8 @@ export default function Monopoly3DScene({
     const desiredPosition = new THREE.Vector3(HOME_CAMERA_POSITION.x, HOME_CAMERA_POSITION.y, HOME_CAMERA_POSITION.z);
     const diceTarget = new THREE.Vector3(0, 0.45, 0);
     const dicePosition = new THREE.Vector3(5.8, 8.2, 6.7);
+    let appliedCameraResetVersion = cameraResetVersionRef.current;
+    let cameraResetActive = false;
     let frameId = 0;
 
     function setSequenceStage(nextStage) {
@@ -430,6 +484,10 @@ export default function Monopoly3DScene({
       const elapsed = elapsedTime;
       const visualState = visualStateRef.current;
       const sequence = sequenceRef.current;
+      if (cameraResetVersionRef.current !== appliedCameraResetVersion) {
+        appliedCameraResetVersion = cameraResetVersionRef.current;
+        cameraResetActive = true;
+      }
       const queuedRemoteDiceMotions = remoteDiceMotionQueueRef.current.splice(0);
       queuedRemoteDiceMotions.forEach((payload) => {
         const sequenceId = String(payload.sequenceId || "");
@@ -446,6 +504,11 @@ export default function Monopoly3DScene({
         if (packetFrame <= remoteMotion.frame) return;
         remoteMotion.frame = packetFrame;
         applyRemoteDiceMotion(dice, payload.motion, now);
+        if (payload.motion.phase === "release") {
+          reportDicePhysics(true);
+        } else if (payload.motion.phase === "settled" || payload.motion.phase === "cancel") {
+          reportDicePhysics(false);
+        }
       });
       sequence.stageTime += delta;
       const moverPiece = visualState.cinematic?.playerId ? model.playerPieces.get(visualState.cinematic.playerId) : null;
@@ -532,6 +595,8 @@ export default function Monopoly3DScene({
 
       syncDice3D(dice, {
         diceFaces: visualState.diceFaces,
+        diceSkin: visualState.diceCosmetics?.DICE || null,
+        diceFx: visualState.diceCosmetics?.DICE_FX || null,
         rollingDice: rollingDiceVisual,
         cinematicPhase: visualState.cinematic?.phase || null,
         visualStage: diceVisualStage
@@ -539,10 +604,13 @@ export default function Monopoly3DScene({
       syncMoneyBursts3D(effects, visualState.moneyBursts, model.playerPieces);
 
       const diceDragging = isDiceDragging(dice);
-      const autoCamera = cameraAutoFollowRef.current && (rollingDiceVisual || visualState.cinematic);
+      const autoCamera = cameraResetActive || (cameraAutoFollowRef.current && (rollingDiceVisual || visualState.cinematic));
       controls.enabled = !autoCamera && !diceDragging;
 
-      if (!cameraAutoFollowRef.current) {
+      if (cameraResetActive) {
+        desiredTarget.set(0, 0, 0);
+        desiredPosition.set(HOME_CAMERA_POSITION.x, HOME_CAMERA_POSITION.y, HOME_CAMERA_POSITION.z);
+      } else if (!cameraAutoFollowRef.current) {
         desiredTarget.copy(controls.target);
         desiredPosition.copy(camera.position);
       } else if (["cameraFocusDice", "diceRolling", "diceResult"].includes(sequenceRef.current.stage)) {
@@ -565,18 +633,37 @@ export default function Monopoly3DScene({
       setActiveCardDeck(model, visualState.pendingCard?.deck || null);
 
       const cameraLerpSpeed = sequenceRef.current.stage === "cameraFocusDice"
-        ? 3.15
+        ? 2.45
         : autoCamera
-          ? 3.05
-          : 1.55;
+          ? 2.2
+          : 1.35;
       const targetLerpSpeed = sequenceRef.current.stage === "cameraFocusDice"
-        ? 3.45
+        ? 2.7
         : autoCamera
-          ? 3.35
-          : 1.75;
+          ? 2.45
+          : 1.5;
       dampVector3(camera.position, desiredPosition, cameraLerpSpeed, delta);
       dampVector3(controls.target, desiredTarget, targetLerpSpeed, delta);
       controls.update();
+      const unclampedTargetX = controls.target.x;
+      const unclampedTargetY = controls.target.y;
+      const unclampedTargetZ = controls.target.z;
+      controls.target.x = THREE.MathUtils.clamp(unclampedTargetX, -5.4, 5.4);
+      controls.target.y = THREE.MathUtils.clamp(unclampedTargetY, 0, 1.8);
+      controls.target.z = THREE.MathUtils.clamp(unclampedTargetZ, -5.4, 5.4);
+      camera.position.x += controls.target.x - unclampedTargetX;
+      camera.position.y += controls.target.y - unclampedTargetY;
+      camera.position.z += controls.target.z - unclampedTargetZ;
+      if (
+        cameraResetActive &&
+        camera.position.distanceTo(desiredPosition) < 0.08 &&
+        controls.target.distanceTo(desiredTarget) < 0.05
+      ) {
+        camera.position.copy(desiredPosition);
+        controls.target.copy(desiredTarget);
+        controls.update();
+        cameraResetActive = false;
+      }
       animateBoard3D(model, delta, elapsed, camera);
       animateDice3D(dice, delta, elapsed);
       if (localDiceSyncActive) {
@@ -584,6 +671,8 @@ export default function Monopoly3DScene({
           const settledMotion = captureDiceMotion(dice, "settled");
           if (settledMotion) onDiceMotionRef.current?.(settledMotion);
           localDiceSyncActive = false;
+          localDiceRollRef.current = { active: false, startedAt: 0, maxUntil: 0 };
+          reportDicePhysics(false);
         } else if (now - lastDiceSyncAt >= 50) {
           const stateMotion = captureDiceMotion(dice, "state");
           if (stateMotion) onDiceMotionRef.current?.(stateMotion);
@@ -606,6 +695,8 @@ export default function Monopoly3DScene({
       renderer.domElement.removeEventListener("pointercancel", handlePointerCancel);
       renderer.domElement.removeEventListener("pointerleave", handlePointerLeave);
       renderer.domElement.style.cursor = "";
+      reportDicePhysics(false);
+      controls.stopListenToKeyEvents();
       controls.dispose();
       scene.remove(model.group);
       scene.remove(dice);

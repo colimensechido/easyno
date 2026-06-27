@@ -6,88 +6,172 @@
   "assets": [],
   "settings": [
     {
+      "productId": "monopoly-token-axolotl",
+      "assetKey": "chicken",
+      "fallbackModel": "duck",
+      "fitSize": 1.95,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true,
+      "tintColor": "#22c55e"
+    },
+    {
       "productId": "monopoly-token-chicken",
       "assetKey": "chicken",
       "fallbackModel": "duck",
       "fitSize": 1.9,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#f97316"
     },
     {
       "productId": "monopoly-token-dingus-the-cat",
       "assetKey": "dingus_the_cat",
       "fallbackModel": "cat",
       "fitSize": 1.95,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#fef3c7"
     },
     {
       "productId": "monopoly-token-jigglypuff",
       "assetKey": "jigglypuff",
       "fallbackModel": "ghost",
       "fitSize": 1.75,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#f9a8d4"
     },
     {
       "productId": "monopoly-token-pikachu",
       "assetKey": "pikachu",
       "fallbackModel": "robot_dog",
       "fitSize": 1.9,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#facc15"
     },
     {
       "productId": "monopoly-token-snorlax",
       "assetKey": "snorlax",
       "fallbackModel": "astronaut",
       "fitSize": 1.9,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#334155"
     },
     {
       "productId": "monopoly-token-tralalero-tralala",
       "assetKey": "tralalero_tralala",
       "fallbackModel": "dinosaur",
       "fitSize": 2.05,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#38bdf8"
     },
     {
       "productId": "monopoly-token-tung-tung-shakur",
       "assetKey": "tung_tung_shakur",
       "fallbackModel": "hat",
       "fitSize": 2.05,
-      "rotation": [0, 0, 0],
-      "offset": [0, 0, 0],
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true
+      "active": true,
+      "tintColor": "#92400e"
     }
   ]
 }

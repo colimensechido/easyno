@@ -42,7 +42,7 @@ function writeMinimizedPreference(value) {
   }
 }
 
-export default function PlatformRadioPlayer() {
+export default function PlatformRadioPlayer({ compact = false }) {
   const {
     stations,
     categories,
@@ -63,12 +63,19 @@ export default function PlatformRadioPlayer() {
     playRecommendedStation
   } = useRadio();
   const [expanded, setExpanded] = useState(false);
-  const [minimized, setMinimized] = useState(readMinimizedPreference);
+  const [minimized, setMinimized] = useState(() => compact || readMinimizedPreference());
   const [showRecommendationHint, setShowRecommendationHint] = useState(false);
 
   useEffect(() => {
     writeMinimizedPreference(minimized);
   }, [minimized]);
+
+  useEffect(() => {
+    if (compact) {
+      setExpanded(false);
+      setMinimized(true);
+    }
+  }, [compact]);
 
   const filteredStations = useMemo(() => {
     if (!category || category === ALL_CATEGORIES) return stations;

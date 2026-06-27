@@ -1227,7 +1227,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
   useEffect(() => {
     if (mode !== "ai" || phase !== "settled" || !me?.outcome) return;
 
-    const key = `${table.roundId}-${me.outcome}-${me.payout}`;
+    const key = `${table.roundId}-${me.outcome}-${me.payout}-${me.eyconRewardUnits || 0}`;
 
     if (lastAiResultKey.current === key) return;
 
@@ -1238,7 +1238,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
       amount: me.payout ? `+${formatMoney(me.payout)}` : formatMoney(0),
       message:
         me.outcome === "win"
-          ? "La banca pago la ronda. Puedes volver a entrar cuando la mesa se reinicie."
+          ? `La banca pago la ronda.${me.eyconRewardUnits ? ` Tambien ganaste ${(me.eyconRewardUnits / 100).toFixed(2)} EyCon.` : ""} Puedes volver a entrar cuando la mesa se reinicie.`
           : me.outcome === "push"
             ? "Empate: recuperaste tu apuesta."
             : "La banca se quedo con esta mano. Ajusta apuesta y vuelve al siguiente ciclo."

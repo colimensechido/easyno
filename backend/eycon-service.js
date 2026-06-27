@@ -9,7 +9,7 @@ const MODEL_3D_DEFAULT_COLOR_MODE = "TINT";
 const MODEL_3D_DEFAULT_TINT_STRENGTH = 0.75;
 const MODEL_3D_SEED_PATH = path.join(__dirname, "model-3d-seed.json");
 const MODEL_3D_WRITE_SEED = process.env.MODEL_3D_WRITE_SEED === "1";
-const MODEL_3D_TINT_MIGRATION_KEY = "model3d-default-tint-75-v1";
+const MODEL_3D_TINT_MIGRATION_KEY = "model3d-default-tint-75-v2";
 const MODEL_3D_ASSETS = [
   {
     assetKey: "chicken",
@@ -112,6 +112,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       ${alias}.color_locked AS model3dColorLocked,
       ${alias}.tintable AS model3dTintable,
       ${alias}.tint_strength AS model3dTintStrength,
+      ${alias}.tint_color AS model3dTintColor,
       ${alias}.color_mode AS model3dColorMode,
       ${alias}.preview_status AS model3dPreviewStatus,
       ${alias}.active AS model3dActive,
@@ -144,6 +145,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       colorLocked: row.model3dColorLocked !== 0,
       tintable: row.model3dTintable === 1,
       tintStrength: Number(row.model3dTintStrength ?? MODEL_3D_DEFAULT_TINT_STRENGTH),
+      tintColor: row.model3dTintColor || null,
       colorMode: row.model3dColorMode || (row.model3dTintable === 1 ? "TINT" : MODEL_3D_DEFAULT_COLOR_MODE),
       previewStatus: row.model3dPreviewStatus || "DRAFT",
       active: row.model3dActive !== 0,
@@ -166,6 +168,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       colorLocked: setting.colorLocked,
       tintable: setting.tintable,
       tintStrength: setting.tintStrength,
+      tintColor: setting.tintColor || undefined,
       colorMode: setting.colorMode || (setting.tintable ? "TINT" : MODEL_3D_DEFAULT_COLOR_MODE),
       previewStatus: setting.previewStatus
     };
@@ -370,6 +373,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         color_locked INTEGER NOT NULL DEFAULT 0,
         tintable INTEGER NOT NULL DEFAULT 1,
         tint_strength REAL NOT NULL DEFAULT 0.75,
+        tint_color TEXT NOT NULL DEFAULT '',
         color_mode TEXT NOT NULL DEFAULT 'TINT',
         preview_status TEXT NOT NULL DEFAULT 'DRAFT',
         active INTEGER NOT NULL DEFAULT 1,
@@ -383,6 +387,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       )
     `);
     await run("ALTER TABLE model_3d_settings ADD COLUMN color_mode TEXT NOT NULL DEFAULT 'ORIGINAL'").catch(() => {});
+    await run("ALTER TABLE model_3d_settings ADD COLUMN tint_color TEXT NOT NULL DEFAULT ''").catch(() => {});
     await run(`CREATE INDEX IF NOT EXISTS idx_model_3d_settings_asset ON model_3d_settings(asset_key)`);
     await run(`
       CREATE TABLE IF NOT EXISTS eycon_inventory (
@@ -488,8 +493,8 @@ function createEyconService({ get, run, all, io, userRoom }) {
         `INSERT OR IGNORE INTO model_3d_settings (
           product_id, asset_key, file_path, fallback_model, fit_size,
           rotation_json, offset_json, color_locked, tintable, tint_strength,
-          color_mode, preview_status, active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', 1)`,
+          tint_color, color_mode, preview_status, active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', 1)`,
         [
           product.id,
           asset.assetKey,
@@ -501,6 +506,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           0,
           1,
           Number(metadata.tintStrength ?? MODEL_3D_DEFAULT_TINT_STRENGTH),
+          normalizeTintColor(metadata.tintColor || metadata.color || ""),
           metadata.colorMode || MODEL_3D_DEFAULT_COLOR_MODE
         ]
       );
@@ -1018,6 +1024,11 @@ function createEyconService({ get, run, all, io, userRoom }) {
     return MODEL_3D_COLOR_MODES.includes(mode) ? mode : MODEL_3D_DEFAULT_COLOR_MODE;
   }
 
+  function normalizeTintColor(value) {
+    const color = String(value || "").trim();
+    return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "";
+  }
+
   function normalizeFallbackModel(value, fallback = "hat") {
     const model = String(value || fallback || "hat").trim();
     return MODEL_3D_FALLBACK_MODELS.includes(model) ? model : "hat";
@@ -1072,6 +1083,20 @@ function createEyconService({ get, run, all, io, userRoom }) {
            updated_at = CURRENT_TIMESTAMP`,
       [MODEL_3D_DEFAULT_TINT_STRENGTH, MODEL_3D_DEFAULT_COLOR_MODE]
     );
+    const tintRows = await all(
+      `SELECT m.product_id AS productId, p.metadata_json AS metadataJson
+       FROM model_3d_settings m
+       JOIN eycon_products p ON p.id = m.product_id`
+    );
+    for (const row of tintRows) {
+      const metadata = parseMetadata(row.metadataJson);
+      const tintColor = normalizeTintColor(metadata.tintColor || metadata.color || "");
+      if (!tintColor) continue;
+      await run(
+        "UPDATE model_3d_settings SET tint_color = ?, updated_at = CURRENT_TIMESTAMP WHERE product_id = ?",
+        [tintColor, row.productId]
+      );
+    }
     await markEyconMeta(MODEL_3D_TINT_MIGRATION_KEY, "applied");
     return true;
   }
@@ -1146,8 +1171,8 @@ function createEyconService({ get, run, all, io, userRoom }) {
         `INSERT INTO model_3d_settings (
           product_id, asset_key, file_path, fallback_model, fit_size,
           rotation_json, offset_json, color_locked, tintable, tint_strength,
-          color_mode, preview_status, active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          tint_color, color_mode, preview_status, active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(product_id) DO UPDATE SET
           asset_key = excluded.asset_key,
           file_path = excluded.file_path,
@@ -1158,6 +1183,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           color_locked = excluded.color_locked,
           tintable = excluded.tintable,
           tint_strength = excluded.tint_strength,
+          tint_color = excluded.tint_color,
           color_mode = excluded.color_mode,
           preview_status = excluded.preview_status,
           active = excluded.active,
@@ -1173,6 +1199,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           colorMode === "ORIGINAL" ? 1 : 0,
           colorMode === "ORIGINAL" ? 0 : 1,
           tintStrength,
+          normalizeTintColor(setting.tintColor),
           colorMode,
           normalizePreviewStatus(setting.previewStatus || "READY"),
           setting.active === false ? 0 : 1
@@ -1192,8 +1219,8 @@ function createEyconService({ get, run, all, io, userRoom }) {
       `SELECT product_id AS productId, asset_key AS assetKey,
               fallback_model AS fallbackModel, fit_size AS fitSize,
               rotation_json AS rotationJson, offset_json AS offsetJson,
-              tint_strength AS tintStrength, color_mode AS colorMode,
-              preview_status AS previewStatus, active
+              tint_strength AS tintStrength, tint_color AS tintColor,
+              color_mode AS colorMode, preview_status AS previewStatus, active
        FROM model_3d_settings
        ORDER BY product_id ASC`
     );
@@ -1220,6 +1247,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         rotation: parseVector(setting.rotationJson),
         offset: parseVector(setting.offsetJson),
         tintStrength: Number(setting.tintStrength ?? MODEL_3D_DEFAULT_TINT_STRENGTH),
+        tintColor: setting.tintColor || "",
         colorMode: setting.colorMode || MODEL_3D_DEFAULT_COLOR_MODE,
         previewStatus: setting.previewStatus || "READY",
         active: setting.active !== 0
@@ -1377,6 +1405,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
     const colorLocked = colorMode === "ORIGINAL";
     const tintable = colorMode !== "ORIGINAL";
     const tintStrength = colorMode === "FORCE" ? 1 : clampNumber(settings.tintStrength, MODEL_3D_DEFAULT_TINT_STRENGTH, 0, 1);
+    const tintColor = normalizeTintColor(settings.tintColor);
     const previewStatus = normalizePreviewStatus(settings.previewStatus || "READY");
     const active = settings.active !== false;
 
@@ -1384,8 +1413,8 @@ function createEyconService({ get, run, all, io, userRoom }) {
       `INSERT INTO model_3d_settings (
         product_id, asset_key, file_path, fallback_model, fit_size,
         rotation_json, offset_json, color_locked, tintable, tint_strength,
-        color_mode, preview_status, active, created_by, updated_by
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        tint_color, color_mode, preview_status, active, created_by, updated_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(product_id) DO UPDATE SET
         asset_key = excluded.asset_key,
         file_path = excluded.file_path,
@@ -1396,6 +1425,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         color_locked = excluded.color_locked,
         tintable = excluded.tintable,
         tint_strength = excluded.tint_strength,
+        tint_color = excluded.tint_color,
         color_mode = excluded.color_mode,
         preview_status = excluded.preview_status,
         active = excluded.active,
@@ -1412,6 +1442,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         colorLocked ? 1 : 0,
         tintable ? 1 : 0,
         tintStrength,
+        tintColor,
         colorMode,
         previewStatus,
         active ? 1 : 0,
@@ -1438,7 +1469,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
     if (!product) throw clientError("Producto EyCon no encontrado", 404);
     await run(
       `UPDATE model_3d_settings
-       SET active = 0, color_mode = 'ORIGINAL', preview_status = 'DRAFT',
+       SET active = 0, color_mode = 'ORIGINAL', tint_color = '', preview_status = 'DRAFT',
            updated_by = ?, updated_at = CURRENT_TIMESTAMP
        WHERE product_id = ?`,
       [adminId || null, productId]
