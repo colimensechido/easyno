@@ -9,9 +9,13 @@ RUN npm ci --omit=dev
 
 # Copiar código fuente del backend
 COPY backend/*.js ./
+COPY backend/model-3d-seed.json ./model-3d-seed.json
+COPY backend/uploads ./seed-uploads
 
 # Copiar módulos compartidos
 COPY shared ./shared
+
+RUN mkdir -p /app/uploads/models3d /app/seed-uploads/models3d
 
 # El directorio /app/data se usa para la base de datos persistente
 # (montado como volumen en docker-compose)

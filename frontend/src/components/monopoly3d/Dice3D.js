@@ -26,6 +26,7 @@ const GRAVITY = 18;
 const PHYSICS_STEP_SECONDS = 1 / 120;
 const MAX_PHYSICS_STEPS_PER_FRAME = 6;
 const MAX_PHYSICS_DURATION_SECONDS = 4.2;
+const RESULT_STAGES = new Set(["diceResult", "highlightDestination", "tokenMoving", "settle"]);
 
 function pipLayout(value) {
   const p = 0.24;
@@ -102,6 +103,33 @@ function materialForFace(value, skin = null) {
   return material;
 }
 
+function normalizeFaceValue(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= 1 && number <= 6 ? number : 1;
+}
+
+function diceResultKey(diceFaces = []) {
+  return [normalizeFaceValue(diceFaces[0]), normalizeFaceValue(diceFaces[1])].join(":");
+}
+
+function quaternionDistanceToTarget(die) {
+  return 1 - Math.abs(die.quaternion.dot(die.userData.targetQuaternion));
+}
+
+function finishResultSettling(group) {
+  group.userData.dice.forEach((die) => {
+    die.position.y = DIE_FLOOR_Y;
+    die.quaternion.copy(die.userData.targetQuaternion);
+    die.userData.velocity.set(0, 0, 0);
+    die.userData.angularVelocity.set(0, 0, 0);
+    die.userData.physicsActive = false;
+    die.userData.sleeping = true;
+  });
+  stabilizeRestingDice(group);
+  group.userData.physicsActive = false;
+  group.userData.resultSettling = false;
+}
+
 function createDie() {
   const mesh = new THREE.Mesh(
     dieGeometry,
@@ -169,6 +197,8 @@ export function createDice3D() {
   group.userData.remoteMotionActive = false;
   group.userData.remoteMotionSettled = false;
   group.userData.remoteResultLocked = false;
+  group.userData.resultKey = diceResultKey([1, 1]);
+  group.userData.resultSettling = false;
   group.userData.skinId = "default";
   const fxGeometry = new THREE.BufferGeometry();
   const fxPositions = new Float32Array(72 * 3);
@@ -274,6 +304,7 @@ export function beginDiceDrag(group, point, time = performance.now()) {
   group.userData.remoteMotionActive = false;
   group.userData.remoteMotionSettled = false;
   group.userData.remoteResultLocked = false;
+  group.userData.resultSettling = false;
   drag.active = true;
   drag.target.set(clampToTable(point.x), DRAG_HEIGHT, clampToTable(point.z));
   drag.samples = [];
@@ -432,6 +463,9 @@ export function applyRemoteDiceMotion(group, motion, time = performance.now()) {
     die.userData.remotePosition.x = clampToTable(die.userData.remotePosition.x);
     die.userData.remotePosition.z = clampToTable(die.userData.remotePosition.z);
     die.userData.remotePosition.y = Math.max(DIE_FLOOR_Y, die.userData.remotePosition.y);
+    if (settled) {
+      die.userData.remotePosition.y = DIE_FLOOR_Y;
+    }
     die.userData.remoteQuaternion.set(
       safeNumber(state.quaternion?.x),
       safeNumber(state.quaternion?.y),
@@ -487,12 +521,20 @@ export function syncDice3D(group, {
   }
   if (
     group.userData.remoteMotionActive &&
-    ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage)
+    RESULT_STAGES.has(visualStage)
   ) {
     group.userData.remoteResultLocked = true;
   }
+  const nextResultKey = diceResultKey(diceFaces);
+  if (group.userData.resultKey !== nextResultKey) {
+    group.userData.resultKey = nextResultKey;
+    group.userData.resultSettling = true;
+    if (group.userData.remoteMotionActive) {
+      group.userData.remoteResultLocked = true;
+    }
+  }
   group.userData.dice.forEach((die, index) => {
-    const target = FACE_ROTATIONS[diceFaces[index] || 1] || FACE_ROTATIONS[1];
+    const target = FACE_ROTATIONS[normalizeFaceValue(diceFaces[index])] || FACE_ROTATIONS[1];
     die.userData.targetQuaternion.setFromEuler(target);
   });
 }
@@ -667,6 +709,9 @@ function stopPhysicalDice(group, snapToResult) {
   stabilizeRestingDice(group);
   group.userData.physicsActive = false;
   group.userData.physicsAccumulator = 0;
+  if (snapToResult) {
+    group.userData.resultSettling = false;
+  }
 }
 
 function animatePhysicalDiceStep(group, delta, settleToResult) {
@@ -745,11 +790,15 @@ function animateRemoteDice(group, delta, settleToResult, visualStage) {
 
   group.userData.dice.forEach((die) => {
     const targetPosition = die.userData.remotePosition;
+    const shouldShowResult =
+      group.userData.remoteMotionSettled &&
+      (settleToResult || group.userData.remoteResultLocked || group.userData.resultSettling || visualStage === "idle");
     const targetQuaternion =
-      group.userData.remoteMotionSettled && (settleToResult || group.userData.remoteResultLocked)
+      shouldShowResult
         ? die.userData.targetQuaternion
         : die.userData.remoteQuaternion;
     die.position.lerp(targetPosition, positionAlpha);
+    die.position.y = THREE.MathUtils.lerp(die.position.y, group.userData.remoteMotionSettled ? DIE_FLOOR_Y : targetPosition.y, positionAlpha);
     die.quaternion.slerp(targetQuaternion, rotationAlpha);
     if (die.position.distanceToSquared(targetPosition) > 0.000025 || 1 - Math.abs(die.quaternion.dot(targetQuaternion)) > 0.000025) {
       converged = false;
@@ -759,12 +808,19 @@ function animateRemoteDice(group, delta, settleToResult, visualStage) {
   if (group.userData.remoteMotionSettled && visualStage === "idle" && converged) {
     group.userData.dice.forEach((die) => {
       die.position.copy(die.userData.remotePosition);
-      die.quaternion.copy(group.userData.remoteResultLocked ? die.userData.targetQuaternion : die.userData.remoteQuaternion);
+      die.position.y = DIE_FLOOR_Y;
+      die.quaternion.copy(
+        (group.userData.remoteResultLocked || group.userData.resultSettling || visualStage === "idle")
+          ? die.userData.targetQuaternion
+          : die.userData.remoteQuaternion
+      );
       die.userData.remoteInitialized = false;
     });
+    stabilizeRestingDice(group);
     group.userData.remoteMotionActive = false;
     group.userData.remoteMotionSettled = false;
     group.userData.remoteResultLocked = false;
+    group.userData.resultSettling = false;
   }
 }
 
@@ -931,7 +987,7 @@ export function animateDice3D(group, delta, elapsed) {
     return;
   }
 
-  const settleToResult = ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage);
+  const settleToResult = RESULT_STAGES.has(visualStage) || group.userData.resultSettling;
   if (remoteMotionActive) {
     animateRemoteDice(group, delta, settleToResult, visualStage);
     return;
@@ -959,11 +1015,14 @@ export function animateDice3D(group, delta, elapsed) {
     return;
   }
 
+  let allResultsSettled = true;
   group.userData.dice.forEach((die, index) => {
     const wobble = Math.sin(elapsed * (hovered ? 5.4 : readyToRoll ? 7.2 : 2.8) + index * 0.65) * (hovered ? 0.018 : readyToRoll ? 0.04 : 0.004);
     const shouldSettleFace =
+      group.userData.resultSettling ||
       group.userData.rollEnergy > 0.02 ||
-      ["diceResult", "highlightDestination", "tokenMoving", "settle"].includes(visualStage);
+      RESULT_STAGES.has(visualStage) ||
+      (visualStage === "idle" && group.userData.landed);
 
     if (
       !remoteMotionActive &&
@@ -985,9 +1044,19 @@ export function animateDice3D(group, delta, elapsed) {
       die.position.x = THREE.MathUtils.lerp(die.position.x, die.userData.home.x, Math.min(1, delta * 8));
       die.position.z = THREE.MathUtils.lerp(die.position.z, die.userData.home.z, Math.min(1, delta * 8));
     }
-    die.position.y = THREE.MathUtils.lerp(die.position.y, DIE_FLOOR_Y + wobble, Math.min(1, delta * 7));
+    die.position.y = THREE.MathUtils.lerp(
+      die.position.y,
+      shouldSettleFace ? DIE_FLOOR_Y : DIE_FLOOR_Y + wobble,
+      Math.min(1, delta * 7)
+    );
     if (shouldSettleFace) {
-      die.quaternion.slerp(die.userData.targetQuaternion, Math.min(1, delta * 8.4));
+      die.quaternion.slerp(die.userData.targetQuaternion, Math.min(1, delta * 12));
+      if (quaternionDistanceToTarget(die) > 0.00008 || Math.abs(die.position.y - DIE_FLOOR_Y) > 0.002) {
+        allResultsSettled = false;
+      }
     }
   });
+  if (group.userData.resultSettling && allResultsSettled) {
+    finishResultSettling(group);
+  }
 }

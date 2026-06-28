@@ -597,7 +597,7 @@ function resolveBoardTheme(theme = null) {
   };
 }
 
-export function createBoard3D({ board = [], players = [], boardTheme = null }) {
+export function createBoard3D({ board = [], players = [], boardTheme = null, hideCenterDecks = false }) {
   const group = new THREE.Group();
   const theme = resolveBoardTheme(boardTheme);
   const tileMeshes = [];
@@ -644,31 +644,33 @@ export function createBoard3D({ board = [], players = [], boardTheme = null }) {
   centerRing.position.y = 0.12;
   group.add(centerRing);
 
-  const chanceObstacle = CARD_DECK_OBSTACLES.find((obstacle) => obstacle.deck === "CASUALIDAD");
-  const chestObstacle = CARD_DECK_OBSTACLES.find((obstacle) => obstacle.deck === "ARCA_COMUNAL");
-  const chanceDeck = createDeckStack({
-    deck: "CASUALIDAD",
-    title: "CASUALIDAD",
-    mark: "?",
-    color: "#f7c948",
-    ink: "#7c3f00",
-    x: chanceObstacle.x,
-    z: chanceObstacle.z,
-    rotation: chanceObstacle.rotation
-  });
-  const chestDeck = createDeckStack({
-    deck: "ARCA_COMUNAL",
-    title: "ARCA",
-    mark: "!",
-    color: "#78d4c8",
-    ink: "#064e3b",
-    x: chestObstacle.x,
-    z: chestObstacle.z,
-    rotation: chestObstacle.rotation
-  });
-  cardDecks.set("CASUALIDAD", chanceDeck);
-  cardDecks.set("ARCA_COMUNAL", chestDeck);
-  group.add(chanceDeck, chestDeck);
+  if (!hideCenterDecks) {
+    const chanceObstacle = CARD_DECK_OBSTACLES.find((obstacle) => obstacle.deck === "CASUALIDAD");
+    const chestObstacle = CARD_DECK_OBSTACLES.find((obstacle) => obstacle.deck === "ARCA_COMUNAL");
+    const chanceDeck = createDeckStack({
+      deck: "CASUALIDAD",
+      title: "CASUALIDAD",
+      mark: "?",
+      color: "#f7c948",
+      ink: "#7c3f00",
+      x: chanceObstacle.x,
+      z: chanceObstacle.z,
+      rotation: chanceObstacle.rotation
+    });
+    const chestDeck = createDeckStack({
+      deck: "ARCA_COMUNAL",
+      title: "ARCA",
+      mark: "!",
+      color: "#78d4c8",
+      ink: "#064e3b",
+      x: chestObstacle.x,
+      z: chestObstacle.z,
+      rotation: chestObstacle.rotation
+    });
+    cardDecks.set("CASUALIDAD", chanceDeck);
+    cardDecks.set("ARCA_COMUNAL", chestDeck);
+    group.add(chanceDeck, chestDeck);
+  }
   group.add(selectionBillboard);
 
   board.forEach((space) => {

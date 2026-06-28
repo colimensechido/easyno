@@ -61,7 +61,8 @@ export default function Monopoly3DScene({
   onDiceMotion,
   onSelectionAction,
   cameraAutoFollow = true,
-  cameraResetVersion = 0
+  cameraResetVersion = 0,
+  hideCenterDecks = false
 }) {
   const mountRef = useRef(null);
   const modelRef = useRef(null);
@@ -82,6 +83,7 @@ export default function Monopoly3DScene({
   const onSelectionActionRef = useRef(onSelectionAction);
   const cameraAutoFollowRef = useRef(cameraAutoFollow);
   const cameraResetVersionRef = useRef(cameraResetVersion);
+  const hideCenterDecksRef = useRef(hideCenterDecks);
   const localDiceRollRef = useRef({
     active: false,
     startedAt: 0,
@@ -265,7 +267,8 @@ export default function Monopoly3DScene({
     const model = createBoard3D({
       board: boardRef.current,
       players: playersRef.current,
-      boardTheme: boardThemeRef.current
+      boardTheme: boardThemeRef.current,
+      hideCenterDecks: hideCenterDecksRef.current
     });
     modelRef.current = model;
     scene.add(model.group);

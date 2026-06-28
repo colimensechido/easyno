@@ -111,7 +111,7 @@ El panel inicial de la tienda muestra saldos y movimientos y permite ajustes aud
 El catálogo inicial contiene:
 
 - 17 piezas 3D seleccionadas: 10 procedurales recoloreables y 7 modelos
-  GLB legendarios con textura fija.
+  GLB legendarios configurables desde Admin.
 - 15 diseños de dados.
 - 10 FX de dados con comportamientos diferenciados.
 - 6 temas de tablero.
@@ -121,7 +121,8 @@ con `model_3d_settings`. Las piezas se construyen con geometría 3D, o con
 modelos GLB registrados en el frontend y elegidos desde la lista blanca del
 admin. Esa lista vive en `model_3d_assets` y puede incluir archivos subidos a
 `/uploads/models3d`. Los modelos GLB de piezas pueden conservar color original,
-recibir tinte o forzar el color del jugador, y se publican como legendarios.
+recibir tinte o forzar el color activo del jugador, y se publican como
+legendarios. El tinte no guarda un color propio por modelo.
 Los dados cambian materiales, los FX combinan partículas, anillos, luz y
 descargas, y los tableros aplican paletas y acabados materiales. Esta
 estructura permite ajustar modelos GLB sin cambiar inventario, compras ni

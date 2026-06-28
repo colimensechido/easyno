@@ -24,6 +24,7 @@ const CURRENT_TURN_ACTIONS = new Set([
 
 const TABLE_STATUS = Object.freeze({
   WAITING: "WAITING",
+  ORDERING: "ORDERING",
   PLAYING: "PLAYING",
   FINISHED: "FINISHED"
 });
@@ -161,6 +162,9 @@ function createMonopolyService({
 
   function parseConfig(row) {
     const config = row?.configJson ? JSON.parse(row.configJson) : {};
+    const seatedPlayerIds = Array.isArray(config.seatedPlayerIds)
+      ? config.seatedPlayerIds.map(Number).filter(Number.isInteger)
+      : [];
     return {
       hostId: config.hostId || row.createdBy,
       mode: config.mode || "NORMAL",
@@ -169,10 +173,129 @@ function createMonopolyService({
       maxPlayers: clampMaxPlayers(config.maxPlayers),
       isPrivate: Boolean(config.isPrivate),
       password: typeof config.password === "string" ? config.password : "",
-      seatedPlayerIds: Array.isArray(config.seatedPlayerIds) ? config.seatedPlayerIds.map(Number).filter(Number.isInteger) : [],
+      seatedPlayerIds,
+      turnOrderRolls: normalizeTurnOrderRolls(config.turnOrderRolls, seatedPlayerIds),
+      turnOrderStartedAt: typeof config.turnOrderStartedAt === "string" ? config.turnOrderStartedAt : null,
+      turnOrderCompletedAt: typeof config.turnOrderCompletedAt === "string" ? config.turnOrderCompletedAt : null,
       eyconRewardEligible: config.eyconRewardEligible !== false,
       createdAt: config.createdAt || row.createdAt
     };
+  }
+
+  function normalizeDicePair(value) {
+    const dice = Array.isArray(value) ? value.slice(0, 2).map(Number) : [];
+    if (dice.length !== 2 || dice.some((die) => !Number.isInteger(die) || die < 1 || die > 6)) {
+      return null;
+    }
+    return dice;
+  }
+
+  function normalizeTurnOrderRoll(value) {
+    if (!value || typeof value !== "object") {
+      return null;
+    }
+
+    const playerId = Number(value.playerId);
+    const dice = normalizeDicePair(value.dice);
+    if (!Number.isInteger(playerId) || !dice) {
+      return null;
+    }
+
+    const high = Math.max(dice[0], dice[1]);
+    const low = Math.min(dice[0], dice[1]);
+    return {
+      playerId,
+      dice,
+      total: dice[0] + dice[1],
+      isDouble: dice[0] === dice[1],
+      high,
+      low,
+      rolledAt: typeof value.rolledAt === "string" ? value.rolledAt : null
+    };
+  }
+
+  function normalizeTurnOrderRolls(value, seatedPlayerIds = []) {
+    const seatedSet = new Set((seatedPlayerIds || []).map(Number));
+    const seen = new Set();
+    return (Array.isArray(value) ? value : [])
+      .map(normalizeTurnOrderRoll)
+      .filter((roll) => {
+        if (!roll || seen.has(roll.playerId)) {
+          return false;
+        }
+        if (seatedSet.size > 0 && !seatedSet.has(roll.playerId)) {
+          return false;
+        }
+        seen.add(roll.playerId);
+        return true;
+      });
+  }
+
+  function rollTurnOrderDice() {
+    const dice = [
+      Math.floor(Math.random() * 6) + 1,
+      Math.floor(Math.random() * 6) + 1
+    ];
+    const high = Math.max(dice[0], dice[1]);
+    const low = Math.min(dice[0], dice[1]);
+    return {
+      dice,
+      total: dice[0] + dice[1],
+      isDouble: dice[0] === dice[1],
+      high,
+      low
+    };
+  }
+
+  function compareTurnOrderEntries(left, right) {
+    return Number(right.total || 0) - Number(left.total || 0) ||
+      Number(Boolean(right.isDouble)) - Number(Boolean(left.isDouble)) ||
+      Number(right.high || 0) - Number(left.high || 0) ||
+      Number(right.low || 0) - Number(left.low || 0) ||
+      Number(left.seatIndex || 0) - Number(right.seatIndex || 0) ||
+      Number(left.playerId || 0) - Number(right.playerId || 0);
+  }
+
+  function buildTurnOrderState(config, playersById = new Map()) {
+    const rollsById = new Map(normalizeTurnOrderRolls(config.turnOrderRolls, config.seatedPlayerIds).map((roll) => [roll.playerId, roll]));
+    const rolls = (config.seatedPlayerIds || []).map((playerId, seatIndex) => {
+      const roll = rollsById.get(playerId);
+      const player = playersById.get(playerId);
+      return {
+        playerId,
+        name: player?.name || "Jugador",
+        seatIndex,
+        rolled: Boolean(roll),
+        dice: roll?.dice || null,
+        total: roll?.total ?? null,
+        isDouble: Boolean(roll?.isDouble),
+        high: roll?.high ?? null,
+        low: roll?.low ?? null,
+        rolledAt: roll?.rolledAt || null
+      };
+    });
+    const ranking = rolls
+      .filter((roll) => roll.rolled)
+      .sort(compareTurnOrderEntries)
+      .map((roll, index) => ({
+        ...roll,
+        rank: index + 1
+      }));
+
+    return {
+      startedAt: config.turnOrderStartedAt,
+      completedAt: config.turnOrderCompletedAt,
+      rolls,
+      ranking,
+      pendingPlayerIds: rolls.filter((roll) => !roll.rolled).map((roll) => roll.playerId),
+      complete: rolls.length >= 2 && rolls.every((roll) => roll.rolled)
+    };
+  }
+
+  function resetTurnOrderConfig(config) {
+    config.turnOrderRolls = [];
+    config.turnOrderStartedAt = null;
+    config.turnOrderCompletedAt = null;
   }
 
   function clampMaxPlayers(value) {
@@ -279,6 +402,7 @@ function createMonopolyService({
     const engine = await loadEngineFromRow(row);
     const { buildGameSnapshot } = await loadMonopolyModule();
     const game = engine ? buildGameSnapshot(engine) : null;
+    const turnOrder = buildTurnOrderState(config, playersById);
     const seatedPlayers = (game?.players || config.seatedPlayerIds.map((playerId) => {
       const player = playersById.get(playerId);
       return player ? {
@@ -316,6 +440,7 @@ function createMonopolyService({
         inJail: Boolean(player.inJail),
         token: player.token || playersById.get(player.id)?.token || null
       })),
+      turnOrder,
       currentPlayerId: game?.currentPlayerId || null,
       winnerId: game?.winnerId || null
     };
@@ -357,6 +482,7 @@ function createMonopolyService({
     const playersById = await mapPlayersById(worldId, config.seatedPlayerIds);
     const cosmeticsById = await getEquippedCosmetics(config.seatedPlayerIds);
     const game = engine ? buildGameSnapshot(engine) : null;
+    const turnOrder = buildTurnOrderState(config, playersById);
 
     if (game?.players) {
       game.players = game.players.map((player) => ({
@@ -399,6 +525,7 @@ function createMonopolyService({
             cosmetics: cosmeticsById.get(Number(playerId)) || {}
           };
         }),
+        turnOrder,
         game
       }
     };
@@ -427,8 +554,8 @@ function createMonopolyService({
     const rows = await all(
       `SELECT id, world_id AS worldId, config_json AS configJson
        FROM monopoly_tables
-       WHERE status IN (?, ?)`,
-      [TABLE_STATUS.WAITING, TABLE_STATUS.PLAYING]
+       WHERE status IN (?, ?, ?)`,
+      [TABLE_STATUS.WAITING, TABLE_STATUS.ORDERING, TABLE_STATUS.PLAYING]
     );
     const matchingRows = rows.filter((row) => parseConfig(row).seatedPlayerIds.includes(Number(userId)));
     for (const row of matchingRows) {
@@ -447,7 +574,7 @@ function createMonopolyService({
       const config = parseConfig(row);
       if (
         config.seatedPlayerIds.includes(actorId) &&
-        [TABLE_STATUS.WAITING, TABLE_STATUS.PLAYING].includes(row.status)
+        [TABLE_STATUS.WAITING, TABLE_STATUS.ORDERING, TABLE_STATUS.PLAYING].includes(row.status)
       ) {
         throw asClientError(new Error("Ya estas sentado en otra mesa de Monopoly de este mundo"));
       }
@@ -797,6 +924,9 @@ function createMonopolyService({
           isPrivate: wantsPrivate,
           password: cleanPassword,
           seatedPlayerIds: [actorId],
+          turnOrderRolls: [],
+          turnOrderStartedAt: null,
+          turnOrderCompletedAt: null,
           eyconRewardEligible: true,
           createdAt: new Date().toISOString()
         };
@@ -840,12 +970,15 @@ function createMonopolyService({
           throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
         }
 
-        if (row.status !== TABLE_STATUS.WAITING) {
-          throw asClientError(new Error("La partida ya empezo"));
-        }
-
         const config = parseConfig(row);
         const alreadySeated = config.seatedPlayerIds.includes(actorId);
+
+        if (row.status !== TABLE_STATUS.WAITING) {
+          if (alreadySeated) {
+            return emitAll(worldId, tableId);
+          }
+          throw asClientError(new Error("La partida ya empezo"));
+        }
 
         if (!alreadySeated && config.isPrivate && config.password) {
           if (String(password || "").trim() !== config.password) {
@@ -893,6 +1026,10 @@ function createMonopolyService({
         }
 
         removePlayerFromTableConfig(config, actorId);
+        if (row.status === TABLE_STATUS.ORDERING) {
+          resetTurnOrderConfig(config);
+          row.status = TABLE_STATUS.WAITING;
+        }
 
         if (config.seatedPlayerIds.length === 0) {
           await deleteTableRow(tableId);
@@ -903,7 +1040,7 @@ function createMonopolyService({
           name: row.name,
           status: row.status,
           config,
-          stateJson: row.stateJson,
+          stateJson: row.status === TABLE_STATUS.WAITING ? null : row.stateJson,
           updatedBy: actorId
         });
 
@@ -926,6 +1063,10 @@ function createMonopolyService({
 
         if (row.status !== TABLE_STATUS.PLAYING || !row.stateJson) {
           removePlayerFromTableConfig(config, actorId);
+          if (row.status === TABLE_STATUS.ORDERING) {
+            resetTurnOrderConfig(config);
+            row.status = TABLE_STATUS.WAITING;
+          }
 
           if (config.seatedPlayerIds.length === 0) {
             await deleteTableRow(tableId);
@@ -936,7 +1077,7 @@ function createMonopolyService({
             name: row.name,
             status: row.status,
             config,
-            stateJson: row.stateJson,
+            stateJson: row.status === TABLE_STATUS.WAITING ? null : row.stateJson,
             updatedBy: actorId
           });
 
@@ -1005,6 +1146,10 @@ function createMonopolyService({
 
         await assertHost(row, actorId);
 
+        if (row.status === TABLE_STATUS.ORDERING) {
+          return emitAll(worldId, tableId);
+        }
+
         if (row.status !== TABLE_STATUS.WAITING) {
           throw asClientError(new Error("La mesa ya esta en curso"));
         }
@@ -1017,15 +1162,86 @@ function createMonopolyService({
           throw asClientError(new Error("Necesitas al menos 2 jugadores sentados"));
         }
 
+        resetTurnOrderConfig(config);
+        config.turnOrderStartedAt = new Date().toISOString();
+        row.status = TABLE_STATUS.ORDERING;
+        await saveTableRow(row, {
+          name: row.name,
+          status: row.status,
+          config,
+          stateJson: null,
+          updatedBy: actorId
+        });
+
+        return emitAll(worldId, tableId);
+      });
+    },
+
+    async rollTurnOrder({ worldId, tableId, actorId }) {
+      return queueByKey(`monopoly:${tableId}`, async () => {
+        const row = await getTableRow(tableId);
+
+        if (!row || row.worldId !== worldId) {
+          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+        }
+
+        if (row.status !== TABLE_STATUS.ORDERING) {
+          throw asClientError(new Error("El sorteo de turnos no esta activo"));
+        }
+
+        const config = parseConfig(row);
+        if (!config.seatedPlayerIds.includes(actorId)) {
+          throw asClientError(new Error("No estas sentado en esta mesa"));
+        }
+        if (config.turnOrderRolls.some((roll) => roll.playerId === actorId)) {
+          throw asClientError(new Error("Ya tiraste los dados para definir tu turno"));
+        }
+
+        const rolledAt = new Date().toISOString();
+        const roll = {
+          playerId: actorId,
+          ...rollTurnOrderDice(),
+          rolledAt
+        };
+        config.turnOrderRolls = [
+          ...config.turnOrderRolls.filter((existing) => existing.playerId !== actorId),
+          roll
+        ];
+
+        const playersById = await mapPlayersById(worldId, config.seatedPlayerIds);
+        const turnOrder = buildTurnOrderState(config, playersById);
+        if (!turnOrder.complete) {
+          await saveTableRow(row, {
+            name: row.name,
+            status: row.status,
+            config,
+            stateJson: null,
+            updatedBy: actorId
+          });
+          return {
+            ...(await emitAll(worldId, tableId)),
+            rolled: roll
+          };
+        }
+
+        const orderedPlayerIds = turnOrder.ranking.map((entry) => entry.playerId);
+        const orderedPlayers = orderedPlayerIds.map((playerId) => playersById.get(playerId)).filter(Boolean);
+
+        if (orderedPlayers.length < 2) {
+          throw asClientError(new Error("Necesitas al menos 2 jugadores disponibles"));
+        }
+
         const { MonopolyGameEngine, buildGameSnapshot } = await loadMonopolyModule();
         const engine = new MonopolyGameEngine({
-          players,
+          players: orderedPlayers,
           mode: config.mode,
           endAt: pickTimedEndAt(config.mode, config.timedMinutes)
         });
 
         engine.iniciarPartida();
         row.status = TABLE_STATUS.PLAYING;
+        config.seatedPlayerIds = orderedPlayerIds;
+        config.turnOrderCompletedAt = new Date().toISOString();
         await saveTableRow(row, {
           name: row.name,
           status: row.status,
@@ -1038,6 +1254,7 @@ function createMonopolyService({
         await scheduleTurnTimeoutForRow(await getTableRow(tableId));
         return {
           ...payload,
+          rolled: roll,
           game: buildGameSnapshot(engine)
         };
       });

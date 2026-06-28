@@ -113,11 +113,11 @@ function prepareCustomModelMaterials(root, metadata, primary) {
   const tintable = colorMode === "TINT" || colorMode === "FORCE" || metadata.tintable === true || metadata.tintMode === "multiply";
   const forceColor = colorMode === "FORCE" || metadata.forceColor === true || metadata.tintMode === "replace";
   const tintStrength = numberFromMetadata(metadata.tintStrength, 0.75);
-  let tintColor;
+  let targetColor;
   try {
-    tintColor = new THREE.Color(metadata.tintColor || primary);
+    targetColor = new THREE.Color(primary);
   } catch {
-    tintColor = new THREE.Color(primary);
+    targetColor = new THREE.Color("#22d3ee");
   }
 
   root.traverse((child) => {
@@ -130,9 +130,9 @@ function prepareCustomModelMaterials(root, metadata, primary) {
     const nextMaterials = sourceMaterials.filter(Boolean).map((sourceMaterial) => {
       const nextMaterial = sourceMaterial.clone();
       if (forceColor && nextMaterial.color) {
-        nextMaterial.color.copy(tintColor);
+        nextMaterial.color.copy(targetColor);
       } else if (tintable && nextMaterial.color) {
-        nextMaterial.color.lerp(tintColor, tintStrength);
+        nextMaterial.color.lerp(targetColor, tintStrength);
       }
       textureSlots.forEach((slot) => {
         if (nextMaterial[slot]) nextMaterial[slot].userData.shared = true;

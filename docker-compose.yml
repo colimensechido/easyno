@@ -37,6 +37,7 @@ services:
       CLIENT_ORIGIN: ${CLIENT_ORIGIN:-https://${ROOT_DOMAIN}}
     volumes:
       - db_data:/app/data
+      - model_uploads:/app/uploads
     expose:
       - "4000"
 
@@ -58,6 +59,7 @@ services:
 
 volumes:
   db_data:
+  model_uploads:
   caddy_data:
   caddy_config:
 

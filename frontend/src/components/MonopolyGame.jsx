@@ -167,6 +167,8 @@ const tokenFigureColorChoices = [];
 
 const TOKEN_STORAGE_KEY = "monopoly-custom-tokens-v1";
 const MONOPOLY_GAME_KEY = "MONOPOLY";
+const TURN_ORDER_REVEAL_MS = 5200;
+const TURN_ORDER_REVEAL_RECENT_MS = 12000;
 
 function normalizeTokenColor(value) {
   return String(value || "").trim().toLowerCase();
@@ -200,7 +202,14 @@ function isEmojiToken(value) {
 function isTokenColorLocked(product) {
   const metadata = product?.metadata || {};
   const colorMode = String(metadata.colorMode || "").toUpperCase();
-  if (colorMode === "TINT" || colorMode === "FORCE" || metadata.tintable === true) return false;
+  if (
+    colorMode === "TINT" ||
+    colorMode === "FORCE" ||
+    metadata.tintable === true ||
+    metadata.forceColor === true ||
+    metadata.tintMode === "replace" ||
+    metadata.tintMode === "multiply"
+  ) return false;
   if (colorMode === "ORIGINAL") return true;
   return Boolean(metadata.colorLocked);
 }
@@ -6502,6 +6511,7 @@ function roomStatusMeta(table, currentUserId) {
   const full = seated >= max;
   if (table.status === "FINISHED") return { key: "finished", label: "Finalizada", tone: "muted", mine, full };
   if (table.status === "PLAYING") return { key: "playing", label: "En partida", tone: "playing", mine, full };
+  if (table.status === "ORDERING") return { key: "ordering", label: "Sorteo", tone: "ordering", mine, full: true };
   if (full) return { key: "full", label: "Llena", tone: "full", mine, full };
   if (protectedRoom) return { key: "private", label: "Privada", tone: "private", mine, full };
   return { key: "waiting", label: "Esperando jugadores", tone: "waiting", mine, full };
@@ -6788,8 +6798,16 @@ function RoomCard({ table, currentUserId, onJoin, customTokens = {} }) {
   const max = table.maxPlayers || 4;
   const seated = table.playerCount || 0;
   const protectedRoom = Boolean(table.isPrivate || table.hasPassword);
-  const disabled = (meta.key === "playing" || meta.key === "finished" || meta.full) && !meta.mine;
-  const label = meta.mine ? "Volver" : meta.key === "playing" ? "En curso" : meta.full ? "Llena" : "Unirse";
+  const disabled = (meta.key === "playing" || meta.key === "ordering" || meta.key === "finished" || meta.full) && !meta.mine;
+  const label = meta.mine
+    ? "Volver"
+    : meta.key === "ordering"
+      ? "Sorteando"
+      : meta.key === "playing"
+        ? "En curso"
+        : meta.full
+          ? "Llena"
+          : "Unirse";
   const seatedPlayers = table.players || [];
   const tokenStylesById = buildUniqueTokenStyleMap(
     seatedPlayers.map((player, index) => ({ ...player, colorIndex: index })),
@@ -6850,7 +6868,7 @@ function RoomCard({ table, currentUserId, onJoin, customTokens = {} }) {
 function JoinGameModal({ open, onClose, tables, currentUserId, onSelectJoin, customTokens = {} }) {
   if (!open) return null;
   const ordered = tables.filter((table) => table.status !== "FINISHED").sort((a, b) => {
-    const rank = (table) => (table.status === "WAITING" ? 0 : table.status === "PLAYING" ? 1 : 2);
+    const rank = (table) => (table.status === "WAITING" ? 0 : table.status === "ORDERING" ? 1 : table.status === "PLAYING" ? 2 : 3);
     return rank(a) - rank(b);
   });
 
@@ -7193,6 +7211,258 @@ function WaitingRoom({
   );
 }
 
+function TurnOrder3DPanel({
+  table,
+  displayRows,
+  players,
+  tokenStylesById,
+  customTokens,
+  currentUserId,
+  myRoll,
+  latestRoll,
+  rolledCount,
+  totalCount,
+  orderComplete,
+  reveal,
+  rollBusy,
+  isHost,
+  onLeave,
+  onCloseTable,
+  error
+}) {
+  return (
+    <aside className="monopoly-order-3d-panel">
+      <header className="monopoly-order-3d-head">
+        <span>
+          <em>Orden inicial</em>
+          <strong>{table.name}</strong>
+        </span>
+        <i>{rolledCount}/{totalCount}</i>
+      </header>
+
+      <div className={cx("monopoly-order-3d-callout", !orderComplete && !myRoll?.rolled && "is-active", orderComplete && "is-complete")}>
+        {orderComplete ? <Trophy size={20} /> : <Dice5 size={20} />}
+        <span>
+          <strong>
+            {orderComplete
+              ? "Orden final confirmado"
+              : myRoll?.rolled
+                ? "Tirada registrada"
+                : rollBusy
+                  ? "Tirando..."
+                  : "Arrastra los dados"}
+          </strong>
+          <em>
+            {orderComplete
+              ? "La partida empieza en unos segundos."
+              : myRoll?.rolled
+              ? `Tu resultado: ${myRoll.total}`
+              : "Suelta los dados del tablero 3D para fijar tu lugar."}
+          </em>
+        </span>
+      </div>
+
+      {orderComplete && (
+        <div
+          className={cx("monopoly-order-3d-starting", !reveal && "is-waiting")}
+          style={reveal ? { "--order-reveal-duration": `${reveal.durationMs || TURN_ORDER_REVEAL_MS}ms` } : undefined}
+        >
+          <span />
+          <em>{reveal ? "Preparando tablero..." : "Sincronizando tablero..."}</em>
+        </div>
+      )}
+
+      {latestRoll?.rolled && (
+        <div className="monopoly-order-3d-latest">
+          <span>Ultima tirada</span>
+          <strong>{latestRoll.name || "Jugador"} - {latestRoll.total}</strong>
+        </div>
+      )}
+
+      <div className="monopoly-order-list monopoly-order-list-3d">
+        {displayRows.map((entry, index) => {
+          const player = players.find((candidate) => sameEntityId(candidate.id, entry.playerId));
+          const tokenStyle = tokenStylesById[entry.playerId] || (player ? resolveTokenStyle(player, customTokens) : null);
+          return (
+            <article
+              key={entry.playerId || index}
+              className={cx(
+                "monopoly-order-row",
+                entry.rolled ? "is-rolled" : "is-pending",
+                sameEntityId(entry.playerId, currentUserId) && "is-me"
+              )}
+            >
+              <span className="monopoly-order-rank">{entry.rank ? `#${entry.rank}` : "--"}</span>
+              <TokenChip tokenStyle={tokenStyle} className="h-9 w-9 text-xs" />
+              <span className="monopoly-order-name">
+                <strong>{entry.name || player?.name || "Jugador"}</strong>
+                <em>{entry.rolled ? (entry.isDouble ? "Doble" : "Registrado") : "Pendiente"}</em>
+              </span>
+              <strong className="monopoly-order-total">{entry.rolled ? entry.total : "--"}</strong>
+            </article>
+          );
+        })}
+      </div>
+
+      {error && <div className="monopoly-lobby-error">{error}</div>}
+
+      <div className="monopoly-order-3d-actions">
+        <button type="button" className="monopoly-ghost-button" onClick={onLeave}>
+          <DoorOpen size={18} /> Salir
+        </button>
+        {isHost && (
+          <button type="button" className="monopoly-danger-button" onClick={onCloseTable}>
+            <LogOut size={18} /> Cerrar sala
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function TurnOrderRoom({
+  table,
+  reveal,
+  currentUser,
+  currentUserId,
+  isHost,
+  onRoll,
+  rollBusy,
+  onLeave,
+  onCloseTable,
+  onToken,
+  myTokenStyle,
+  customTokens,
+  currentEquippedCosmetics,
+  diceFaces,
+  diceCosmetics,
+  boardTheme,
+  cameraAutoFollow,
+  onCameraAutoFollowChange,
+  onDicePhysicsChange,
+  error
+}) {
+  const players = table.seatedPlayers || table.players || [];
+  const turnOrder = table.turnOrder || {};
+  const rolls = turnOrder.rolls?.length
+    ? turnOrder.rolls
+    : players.map((player, index) => ({
+        playerId: player.id,
+        name: player.name,
+        seatIndex: index,
+        rolled: false,
+        dice: null,
+        total: null
+      }));
+  const ranking = turnOrder.ranking?.length
+    ? turnOrder.ranking
+    : rolls.filter((roll) => roll.rolled).sort((left, right) => Number(right.total || 0) - Number(left.total || 0));
+  const pending = rolls.filter((roll) => !roll.rolled);
+  const orderComplete = Boolean(turnOrder.complete || (rolls.length >= 2 && pending.length === 0));
+  const displayRows = [...ranking, ...pending];
+  const myRoll = rolls.find((roll) => sameEntityId(roll.playerId, currentUserId));
+  const latestRoll = [...rolls]
+    .filter((roll) => roll.rolled)
+    .sort((left, right) => Date.parse(right.rolledAt || 0) - Date.parse(left.rolledAt || 0))[0] || null;
+  const tokenStylesById = useMemo(
+    () => buildUniqueTokenStyleMap(
+      players.map((player, index) => (
+        sameEntityId(player.id, currentUserId)
+          ? { ...player, colorIndex: index, cosmetics: { ...(player.cosmetics || {}), ...currentEquippedCosmetics } }
+          : { ...player, colorIndex: index }
+      )),
+      customTokens
+    ),
+    [currentEquippedCosmetics, currentUserId, customTokens, players]
+  );
+  const orderPlayers3D = useMemo(
+    () => players.map((player, index) => {
+      const resolvedPlayer = sameEntityId(player.id, currentUserId)
+        ? { ...player, cosmetics: { ...(player.cosmetics || {}), ...currentEquippedCosmetics } }
+        : player;
+      const tokenStyle = tokenStylesById[player.id] || resolveTokenStyle({ ...resolvedPlayer, colorIndex: index }, customTokens);
+      return {
+        ...resolvedPlayer,
+        colorIndex: index,
+        position: 0,
+        cash: resolvedPlayer.cash ?? resolvedPlayer.balance ?? 1500,
+        bankrupt: false,
+        color: tokenStyle.bg,
+        tokenRing: tokenStyle.ring
+      };
+    }),
+    [currentEquippedCosmetics, currentUserId, customTokens, players, tokenStylesById]
+  );
+  const canRoll = !orderComplete && !rollBusy && !myRoll?.rolled;
+  const rolledCount = rolls.length - pending.length;
+  const visibleDiceFaces = latestRoll?.dice || myRoll?.dice || diceFaces || [1, 6];
+  const currentRollerId = canRoll ? currentUserId : latestRoll?.playerId || currentUserId;
+  const statusTitle = orderComplete ? "Orden final listo" : myRoll?.rolled ? "Tirada registrada" : rollBusy ? "Tirando dados..." : "Arrastra los dados";
+  const statusBody = orderComplete
+    ? "Asi quedan los turnos. La partida entra al tablero en unos segundos."
+    : latestRoll?.rolled
+    ? `${latestRoll.name || "Jugador"} saco ${latestRoll.total}. El tablero arranca cuando todos tiren.`
+    : "El centro esta limpio hasta iniciar la partida: sin cartas, solo dados y fichas listas.";
+
+  return (
+    <section className="monopoly-lobby monopoly-turn-order-3d-screen">
+      <div className="monopoly-lobby-topbar">
+        <div className="monopoly-lobby-world">
+          <span className="monopoly-lobby-world-dot ordering" />
+          Sorteo de turnos
+        </div>
+        <button type="button" className="monopoly-lobby-token" onClick={onToken} title="Elegir figura y color">
+          <TokenChip tokenStyle={myTokenStyle} className="h-7 w-7 text-xs" />
+          <span>Mi ficha</span>
+        </button>
+      </div>
+
+      <div className="monopoly-turn-order-3d-stage">
+        <Suspense fallback={<MonopolyViewLoading mode="3d" />}>
+          <Monopoly3DView
+            currentUser={currentUser}
+            players={orderPlayers3D}
+            currentPlayerId={currentRollerId}
+            rollingDice={rollBusy && !myRoll?.rolled}
+            diceFaces={visibleDiceFaces}
+            diceCosmetics={diceCosmetics}
+            boardTheme={boardTheme}
+            cameraAutoFollow={cameraAutoFollow}
+            onCameraAutoFollowChange={onCameraAutoFollowChange}
+            canRollDice={canRoll}
+            onRollDice={onRoll}
+            onDicePhysicsChange={onDicePhysicsChange}
+            statusTitle={statusTitle}
+            statusBody={statusBody}
+            hideCenterDecks
+            sidePanel={(
+              <TurnOrder3DPanel
+                table={table}
+                displayRows={displayRows}
+                players={players}
+                tokenStylesById={tokenStylesById}
+                customTokens={customTokens}
+                currentUserId={currentUserId}
+                myRoll={myRoll}
+                latestRoll={latestRoll}
+                rolledCount={rolledCount}
+                totalCount={rolls.length}
+                orderComplete={orderComplete}
+                reveal={reveal}
+                rollBusy={rollBusy}
+                isHost={isHost}
+                onLeave={onLeave}
+                onCloseTable={onCloseTable}
+                error={error}
+              />
+            )}
+          />
+        </Suspense>
+      </div>
+    </section>
+  );
+}
+
 export default function MonopolyGame({
   token,
   socket,
@@ -7268,6 +7538,8 @@ export default function MonopolyGame({
   const [joinOpen, setJoinOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [orderRollBusy, setOrderRollBusy] = useState(false);
+  const [turnOrderReveal, setTurnOrderReveal] = useState(null);
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [isPrivate, setIsPrivate] = useState(false);
   const [tablePassword, setTablePassword] = useState("");
@@ -7289,6 +7561,9 @@ export default function MonopolyGame({
   const cardModalRevealTimeoutRef = useRef(null);
   const moneyBurstTimeoutsRef = useRef([]);
   const turnBannerTimeoutRef = useRef(null);
+  const turnOrderRevealRef = useRef(null);
+  const turnOrderRevealTimeoutRef = useRef(null);
+  const lastTurnOrderRevealKeyRef = useRef("");
   // Bloqueo anti doble-clic / reentrada de acciones (robustez de interaccion).
   const actionLockRef = useRef(false);
   const diceMotionSequenceRef = useRef("");
@@ -7322,6 +7597,30 @@ export default function MonopolyGame({
   useEffect(() => {
     rollingDiceRef.current = rollingDice;
   }, [rollingDice]);
+
+  useEffect(() => {
+    turnOrderRevealRef.current = turnOrderReveal;
+  }, [turnOrderReveal]);
+
+  useEffect(() => {
+    const reveal = turnOrderRevealRef.current;
+    if (!reveal) return;
+    if (activeTableId && reveal.table?.id === activeTableId) return;
+
+    if (turnOrderRevealTimeoutRef.current) {
+      window.clearTimeout(turnOrderRevealTimeoutRef.current);
+      turnOrderRevealTimeoutRef.current = null;
+    }
+    turnOrderRevealRef.current = null;
+    setTurnOrderReveal(null);
+  }, [activeTableId]);
+
+  useEffect(() => () => {
+    if (turnOrderRevealTimeoutRef.current) {
+      window.clearTimeout(turnOrderRevealTimeoutRef.current);
+      turnOrderRevealTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     setLocalEyconProfile((current) => ({
@@ -7441,6 +7740,14 @@ export default function MonopolyGame({
             return;
           }
           setActiveTableId(payload.tableId);
+        }
+        if (shouldHoldTurnOrderReveal(payload.table)) {
+          beginTurnOrderReveal({
+            worldId: payload.worldId,
+            tableId: payload.tableId,
+            table: payload.table
+          });
+          return;
         }
         setTableMeta(payload.table || null);
         setState(payload.table?.game || null);
@@ -8457,6 +8764,81 @@ export default function MonopolyGame({
     }
   }, [cinematic]);
 
+  function turnOrderCompletedKey(table) {
+    if (
+      table?.status !== "PLAYING" ||
+      !table?.turnOrder?.complete ||
+      !table?.turnOrder?.completedAt
+    ) {
+      return "";
+    }
+    return `${table.id}:${table.turnOrder.completedAt}`;
+  }
+
+  function hasRecentTurnOrderCompletion(table) {
+    const key = turnOrderCompletedKey(table);
+    if (!key || lastTurnOrderRevealKeyRef.current === key) return false;
+
+    const completedAtMs = Date.parse(table.turnOrder.completedAt);
+    if (!Number.isFinite(completedAtMs)) return false;
+
+    const ageMs = Date.now() - completedAtMs;
+    return ageMs >= 0 && ageMs <= TURN_ORDER_REVEAL_RECENT_MS;
+  }
+
+  function shouldHoldTurnOrderReveal(table) {
+    const key = turnOrderCompletedKey(table);
+    if (!key || !table?.game) return false;
+    if (turnOrderRevealRef.current?.key === key) return true;
+    return hasRecentTurnOrderCompletion(table);
+  }
+
+  function beginTurnOrderReveal(nextState = {}) {
+    const table = nextState.table;
+    const key = turnOrderCompletedKey(table);
+    if (!key || !table?.game) return false;
+
+    if (turnOrderRevealRef.current?.key === key) {
+      return true;
+    }
+
+    if (turnOrderRevealTimeoutRef.current) {
+      window.clearTimeout(turnOrderRevealTimeoutRef.current);
+      turnOrderRevealTimeoutRef.current = null;
+    }
+
+    const reveal = {
+      key,
+      table,
+      tables: nextState.tables || null,
+      startedAt: Date.now(),
+      durationMs: TURN_ORDER_REVEAL_MS
+    };
+
+    turnOrderRevealRef.current = reveal;
+    setTurnOrderReveal(reveal);
+    setTableMeta(table);
+    setState(null);
+    if (nextState.tables) {
+      setTables(nextState.tables);
+    }
+    setError("");
+
+    turnOrderRevealTimeoutRef.current = window.setTimeout(() => {
+      lastTurnOrderRevealKeyRef.current = key;
+      turnOrderRevealTimeoutRef.current = null;
+      turnOrderRevealRef.current = null;
+      setTurnOrderReveal(null);
+      if (reveal.tables) {
+        setTables(reveal.tables);
+      }
+      setTableMeta(reveal.table);
+      setState(reveal.table.game || null);
+    }, TURN_ORDER_REVEAL_MS);
+
+    return true;
+  }
+
   function createTable() {
     if (!socket) {
       setError("Socket desconectado");
@@ -8511,6 +8893,15 @@ export default function MonopolyGame({
 
   function requestJoin(table) {
     const mine = (table.players || []).some((player) => sameEntityId(player.id, currentUserId));
+    if (mine) {
+      setActiveTableId(table.id);
+      setError("");
+      setJoinOpen(false);
+      setPasswordPrompt(null);
+      setPasswordError("");
+      socket?.emit("request_monopoly_state", { worldId: world.id, tableId: table.id });
+      return;
+    }
     if (!mine && (table.isPrivate || table.hasPassword)) {
       setPasswordError("");
       setPasswordPrompt(table);
@@ -8536,6 +8927,41 @@ export default function MonopolyGame({
         return;
       }
 
+      setError("");
+    });
+  }
+
+  function rollTurnOrder() {
+    if (!socket || !activeTableId) {
+      setError("Primero elige una mesa");
+      return;
+    }
+    if (orderRollBusy) return;
+
+    setOrderRollBusy(true);
+    audio.playRandomDice();
+    socket.emit("roll_monopoly_turn_order", { worldId: world.id, tableId: activeTableId }, (response) => {
+      setOrderRollBusy(false);
+      if (!response?.ok) {
+        setError(response?.error || "No se pudo tirar para definir turnos");
+        return;
+      }
+
+      if (response.state?.rolled?.dice) {
+        setDiceFaces(response.state.rolled.dice);
+      }
+      if (shouldHoldTurnOrderReveal(response.state?.table)) {
+        beginTurnOrderReveal(response.state);
+        setError("");
+        return;
+      }
+      if (response.state?.tables) {
+        setTables(response.state.tables);
+      }
+      if (response.state?.table) {
+        setTableMeta(response.state.table);
+        setState(response.state.table.game || null);
+      }
       setError("");
     });
   }
@@ -8818,10 +9244,53 @@ export default function MonopolyGame({
 
   if (!state) {
     const seatedWaiting = Boolean(activeTable && isSeatedAtActiveTable && activeTable.status === "WAITING");
+    const revealTable = turnOrderReveal?.table && activeTableId && turnOrderReveal.table.id === activeTableId
+      ? turnOrderReveal.table
+      : null;
+    const seatedOrdering = Boolean(activeTable && isSeatedAtActiveTable && activeTable.status === "ORDERING");
+    const pendingRevealTable = !revealTable &&
+      activeTable &&
+      isSeatedAtActiveTable &&
+      activeTable.status === "PLAYING" &&
+      hasRecentTurnOrderCompletion(activeTable)
+      ? activeTable
+      : null;
+    const showOrdering = seatedOrdering || Boolean(revealTable) || Boolean(pendingRevealTable);
+    const seatedPregame = seatedWaiting || showOrdering;
+    const pregameTable = revealTable || pendingRevealTable || (activeTable && tableMeta?.id === activeTable.id
+      ? {
+          ...activeTable,
+          ...tableMeta,
+          players: tableMeta.seatedPlayers?.length ? tableMeta.seatedPlayers : activeTable.players
+        }
+      : activeTable);
 
     return (
       <>
-        {seatedWaiting ? (
+        {showOrdering ? (
+          <TurnOrderRoom
+            table={pregameTable}
+            reveal={turnOrderReveal}
+            currentUser={currentUser}
+            currentUserId={currentUserId}
+            isHost={sameEntityId(pregameTable?.hostId, currentUserId)}
+            onRoll={rollTurnOrder}
+            rollBusy={orderRollBusy}
+            onLeave={leaveTable}
+            onCloseTable={closeTable}
+            onToken={() => setTokenEditorOpen(true)}
+            myTokenStyle={myTokenStyle}
+            customTokens={customTokens}
+            currentEquippedCosmetics={currentEquippedCosmetics}
+            diceFaces={diceFaces}
+            diceCosmetics={currentEquippedCosmetics}
+            boardTheme={hostBoardTheme}
+            cameraAutoFollow={cameraAutoFollow}
+            onCameraAutoFollowChange={setCameraAutoFollow}
+            onDicePhysicsChange={handleDicePhysicsChange}
+            error={error}
+          />
+        ) : seatedWaiting ? (
           <WaitingRoom
             table={activeTable}
             currentUserId={currentUserId}
@@ -8852,7 +9321,7 @@ export default function MonopolyGame({
         )}
 
         <JoinGameModal
-          open={joinOpen && !seatedWaiting}
+          open={joinOpen && !seatedPregame}
           onClose={() => setJoinOpen(false)}
           tables={tables}
           currentUserId={currentUserId}
@@ -8861,7 +9330,7 @@ export default function MonopolyGame({
         />
 
         <CreateGameModal
-          open={createOpen && !seatedWaiting}
+          open={createOpen && !seatedPregame}
           onClose={() => setCreateOpen(false)}
           tableName={tableName}
           setTableName={setTableName}

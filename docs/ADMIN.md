@@ -163,8 +163,8 @@ Estado actual:
   puede elegir desde admin sale de una lista blanca del backend.
 - Escala, offset y rotacion se leen desde `model_3d_settings` cuando el ajuste
   esta activo; si no, se usa el fallback primitivo.
-- Los modelos legendarios GLB usan `colorLocked` para conservar su
-  material/texture original.
+- Los modelos GLB pueden usar `ORIGINAL` para conservar materiales, o
+  `TINT`/`FORCE` para tomar el color activo del jugador.
 - Al guardar un ajuste 3D sobre una pieza Monopoly, el producto queda como
   `LEGENDARY`.
 
@@ -187,8 +187,17 @@ Para probar colores:
 - `Tinte`: mezcla el color de prueba con el material segun `tint_strength`.
 - `Forzar`: aplica el color del jugador sobre el material con fuerza completa.
 
-El selector de color del panel solo cambia la previsualizacion; lo persistente
-es el modo de color y los ajustes 3D guardados.
+El selector de color del panel solo simula el color activo del jugador. No se
+guarda ningun color de tinte por modelo; lo persistente es el modo de color y
+los ajustes 3D guardados.
+
+Flujo localhost -> produccion:
+
+- En localhost, levanta backend con `MODEL_3D_WRITE_SEED=1` y guarda desde
+  `/admin`; esto actualiza `backend/model-3d-seed.json`.
+- Si subes GLB nuevos, versiona tambien `backend/uploads/models3d/*.glb`.
+- En Docker, el backend lee `model-3d-seed.json` al arrancar y copia los GLB
+  versionados hacia `/app/uploads/models3d`, que queda persistido por volumen.
 
 ## Pendiente recomendado
 

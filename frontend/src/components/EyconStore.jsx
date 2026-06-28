@@ -31,31 +31,19 @@ function formatEycon(units = 0) {
   return `${(Number(units || 0) / 100).toFixed(2)} EyCon`;
 }
 
-function isModel3dToken(product) {
-  const metadata = product?.metadata || {};
-  const renderer = String(metadata.renderer || "").toLowerCase();
-  const modelUrl = String(metadata.assetUrl || metadata.modelUrl || metadata.gltfUrl || metadata.filePath || "");
-  return product?.category === "TOKEN" && (
-    renderer === "gltf" ||
-    Boolean(metadata.assetKey) ||
-    modelUrl.toLowerCase().includes(".glb")
-  );
-}
-
 function isTokenColorLocked(product) {
   const metadata = product?.metadata || {};
   const colorMode = String(metadata.colorMode || "").toUpperCase();
-  if (isModel3dToken(product)) return true;
-  if (colorMode === "FORCE" || metadata.forceColor === true || metadata.tintMode === "replace") return true;
-  if (colorMode === "TINT" || metadata.tintable === true) return false;
+  if (
+    colorMode === "TINT" ||
+    colorMode === "FORCE" ||
+    metadata.tintable === true ||
+    metadata.forceColor === true ||
+    metadata.tintMode === "multiply" ||
+    metadata.tintMode === "replace"
+  ) return false;
   if (colorMode === "ORIGINAL") return true;
   return Boolean(metadata.colorLocked);
-}
-
-function getSavedTintColor(product) {
-  const metadata = product?.metadata || {};
-  if (!isModel3dToken(product)) return "";
-  return metadata.tintColor || metadata.color || "";
 }
 
 export default function EyconStore({ token, onProfileChange, isAdmin = false }) {
@@ -193,7 +181,6 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
   const selected = filteredProducts.find((product) => product.id === selectedId) || filteredProducts[0] || null;
   const categoryLabel = categories.find((item) => item.key === selected?.category)?.label || selected?.category;
   const selectedTokenColorLocked = isTokenColorLocked(selected);
-  const selectedSavedTintColor = getSavedTintColor(selected);
   const categoryCounts = useMemo(() => (
     (data.products || []).reduce((counts, product) => {
       counts.ALL = (counts.ALL || 0) + 1;
@@ -546,18 +533,6 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
                               ? "Este es tu color activo"
                               : `Usar ${previewTokenColor.name} como mi color`}
                         </button>
-                      </div>
-                    )}
-                    {selectedSavedTintColor && (
-                      <div className="eycon-token-color-preview is-saved-tint">
-                        <header>
-                          <span>Tinte guardado del modelo</span>
-                          <small>{String(selectedSavedTintColor).toUpperCase()}</small>
-                        </header>
-                        <div className="eycon-saved-tint-swatch">
-                          <i style={{ "--preview-color": selectedSavedTintColor }} />
-                          <span>Esta figura usa el color configurado en Admin, no el color activo de Monopoly.</span>
-                        </div>
                       </div>
                     )}
                     <p>{selected.description}</p>

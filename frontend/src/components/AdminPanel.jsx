@@ -99,7 +99,6 @@ function draftFromModelProduct(product, allowedAssets = []) {
   const assetKey = setting?.assetKey || metadata.assetKey || firstAsset.assetKey || "";
   const asset = allowedAssets.find((item) => item.assetKey === assetKey) || firstAsset;
   const colorMode = setting?.colorMode || metadata.colorMode || DEFAULT_MODEL_COLOR_MODE;
-  const tintColor = setting?.tintColor || metadata.tintColor || metadata.color || previewColorPresets[0].bg;
   return {
     productId: product?.id || "",
     assetKey,
@@ -111,7 +110,6 @@ function draftFromModelProduct(product, allowedAssets = []) {
     colorLocked: colorMode === "ORIGINAL",
     tintable: colorMode !== "ORIGINAL",
     tintStrength: setting?.tintStrength ?? metadata.tintStrength ?? DEFAULT_MODEL_TINT_STRENGTH,
-    tintColor,
     colorMode,
     previewStatus: setting?.previewStatus || metadata.previewStatus || "READY",
     active: setting?.active ?? true,
@@ -135,9 +133,7 @@ function productWithModelDraft(product, draft) {
         colorLocked: draft.colorLocked !== false,
         tintable: draft.tintable === true,
         tintStrength: Number(draft.tintStrength ?? DEFAULT_MODEL_TINT_STRENGTH),
-        tintColor: draft.tintColor || undefined,
         colorMode: draft.colorMode || DEFAULT_MODEL_COLOR_MODE,
-        forceColor: draft.colorMode === "FORCE",
         previewStatus: draft.previewStatus || "READY"
       }
     : {
@@ -232,7 +228,6 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
   const fallbackModels = model3d.fallbackModels || [];
   const previewStatuses = model3d.previewStatuses || ["DRAFT", "READY", "NEEDS_REVIEW", "BROKEN"];
   const seedWriteEnabled = Boolean(model3d.seedWriteEnabled);
-  const modelDefaultTint = model3d.defaultTintStrength ?? DEFAULT_MODEL_TINT_STRENGTH;
   const selectedUser = useMemo(
     () => users.find((user) => String(user.id) === String(selectedUserId)) || users[0] || null,
     [selectedUserId, users]
@@ -493,7 +488,6 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
             colorLocked: modelDraft.colorLocked,
             tintable: modelDraft.tintable,
             tintStrength: Number(modelDraft.tintStrength),
-            tintColor: modelDraft.tintColor,
             colorMode: modelDraft.colorMode,
             previewStatus: modelDraft.previewStatus,
             active: modelDraft.active
@@ -771,8 +765,8 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
                 <small>{model3d.seedPath || "backend/model-3d-seed.json"} {seedWriteEnabled ? "se actualiza al guardar." : "esta en solo lectura."}</small>
               </span>
               <span>
-                <strong>Default color</strong>
-                <small>Modo TINTE al {formatPercent(modelDefaultTint)} para guardados existentes y nuevos.</small>
+                <strong>Modo de color</strong>
+                <small>TINTE/FORZAR usan el color activo del jugador; no guardan un color propio.</small>
               </span>
             </div>
             {selectedModelProduct ? (
@@ -847,11 +841,6 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
                         ))}
                       </div>
                       <small>{colorModeCopy[modelDraft.colorMode || DEFAULT_MODEL_COLOR_MODE]}</small>
-                      <label className="admin-tint-color-control">
-                        <strong>Color guardado del tinte</strong>
-                        <small>Este color si se guarda y se usa en tienda/juego. No es el color de prueba.</small>
-                        <input type="color" value={modelDraft.tintColor || previewColorPresets[0].bg} onChange={(event) => updateModelDraft("tintColor", event.target.value)} disabled={modelDraft.colorMode === "ORIGINAL"} />
-                      </label>
                     </div>
 
                     <div className="admin-model-section">
@@ -919,7 +908,7 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
                   <div className="admin-model-preview">
                     <div className="admin-preview-tools">
                       <strong><Palette size={15} /> Color de jugador simulado</strong>
-                      <small>Solo afecta esta vista previa. El color final del tinte es el campo guardado.</small>
+                      <small>Este color simula el color activo que usara la pieza en tienda y Monopoly.</small>
                       <div className="admin-color-swatches">
                         {previewColorPresets.map((preset) => (
                           <button
@@ -939,7 +928,7 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
                     </div>
                     <EyconProductPreview3D product={modelPreviewProduct} tokenColor={previewTokenColor} />
                     <div className="admin-list">
-                      <span><strong>{selectedModelProduct.name}</strong><small>{modelDraft.assetKey || "Sin asset"} - {modelDraft.colorMode || "ORIGINAL"} - {modelDraft.previewStatus} - {modelDraft.tintColor || "sin color"}</small></span>
+                      <span><strong>{selectedModelProduct.name}</strong><small>{modelDraft.assetKey || "Sin asset"} - {modelDraft.colorMode || "ORIGINAL"} - {modelDraft.previewStatus}</small></span>
                       <span><strong>Archivo</strong><small>{allowedModelAssets.find((asset) => asset.assetKey === modelDraft.assetKey)?.filePath || "No seleccionado"}</small></span>
                     </div>
                   </div>

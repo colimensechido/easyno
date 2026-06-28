@@ -61,6 +61,7 @@ const io = new Server(server, {
 
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, "database.sqlite");
 const modelUploadsDir = path.join(__dirname, "uploads", "models3d");
+const modelSeedUploadsDir = path.join(__dirname, "seed-uploads", "models3d");
 const db = new sqlite3.Database(dbPath);
 const blackjackSessions = new Map();
 const worldPresence = new Map();
@@ -129,7 +130,7 @@ function all(sql, params = []) {
 }
 
 async function initDatabase() {
-  await fs.promises.mkdir(modelUploadsDir, { recursive: true });
+  await syncSeededModelUploads();
   await run("PRAGMA foreign_keys = ON");
 
   await run(`
@@ -311,6 +312,29 @@ async function initDatabase() {
   await ensureRoleSeeds();
   await bootstrapAdminRoles();
   await eyconService.initSchema();
+}
+
+async function syncSeededModelUploads() {
+  await fs.promises.mkdir(modelUploadsDir, { recursive: true });
+
+  let entries;
+  try {
+    entries = await fs.promises.readdir(modelSeedUploadsDir, { withFileTypes: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.warn("No se pudieron preparar uploads 3D versionados", error);
+    }
+    return;
+  }
+
+  for (const entry of entries) {
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".glb")) continue;
+    const sourcePath = path.join(modelSeedUploadsDir, entry.name);
+    const targetPath = path.join(modelUploadsDir, entry.name);
+    await fs.promises.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL).catch((error) => {
+      if (error.code !== "EEXIST") throw error;
+    });
+  }
 }
 
 function requestIp(req) {
@@ -2498,7 +2522,7 @@ async function getAdminStoreAnalysis() {
         "Los ajustes por producto viven en model_3d_settings y se mezclan en la metadata publica.",
         "El seed versionable vive en backend/model-3d-seed.json; con MODEL_3D_WRITE_SEED=1 se actualiza al guardar desde admin local.",
         "Escala, offset, rotacion y modo de color se leen desde base de datos cuando el ajuste esta activo.",
-        "Por default las figuras GLB usan modo TINTE al 75%."
+        "TINTE y FORZAR usan el color activo del jugador; no guardan un color propio."
       ],
       recommendation: [
         "Sube un .glb en Cargar GLB nuevo para agregarlo a model_3d_assets.",
@@ -4100,6 +4124,34 @@ io.on("connection", (socket) => {
 
       if (typeof callback === "function") {
         callback({ ok: false, error: error.message || "No se pudo iniciar Monopoly" });
+      }
+    }
+  });
+
+  socket.on("roll_monopoly_turn_order", async (payload, callback) => {
+    try {
+      const worldId = Number(payload && payload.worldId);
+      const tableId = String((payload && payload.tableId) || "");
+
+      if (!socket.data.worldId || socket.data.worldId !== worldId) {
+        throw new Error("Primero debes entrar a este mundo");
+      }
+
+      socket.join(tableChannel(worldId, tableId));
+      const state = await monopolyService.rollTurnOrder({
+        worldId,
+        tableId,
+        actorId: socket.user.id
+      });
+
+      if (typeof callback === "function") {
+        callback({ ok: true, state });
+      }
+    } catch (error) {
+      socket.emit("monopoly_error", { message: error.message || "No se pudo tirar para definir turnos" });
+
+      if (typeof callback === "function") {
+        callback({ ok: false, error: error.message || "No se pudo tirar para definir turnos" });
       }
     }
   });

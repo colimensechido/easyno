@@ -103,7 +103,8 @@ export default function Monopoly3DView({
   onDiceMotion,
   onSelectionAction,
   statusTitle = "",
-  statusBody = ""
+  statusBody = "",
+  hideCenterDecks = false
 }) {
   const board = useMemo(() => gameState?.board || createClassicBoard(), [gameState?.board]);
   const fallbackPlayers = useMemo(() => createMockPlayers(currentUser), [currentUser?.id, currentUser?.username]);
@@ -309,6 +310,7 @@ export default function Monopoly3DView({
             onSelectionAction={onSelectionAction}
             cameraAutoFollow={cameraAutoFollow}
             cameraResetVersion={cameraResetVersion}
+            hideCenterDecks={hideCenterDecks}
           />
           {sidePanel}
           <Monopoly3DSpaceCard info={selectedSpaceInfo} onAction={onSelectionAction} />

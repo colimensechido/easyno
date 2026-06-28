@@ -23,8 +23,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#22c55e"
+      "active": true
     },
     {
       "productId": "monopoly-token-chicken",
@@ -44,8 +43,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#f97316"
+      "active": true
     },
     {
       "productId": "monopoly-token-dingus-the-cat",
@@ -65,8 +63,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#fef3c7"
+      "active": true
     },
     {
       "productId": "monopoly-token-jigglypuff",
@@ -86,8 +83,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#f9a8d4"
+      "active": true
     },
     {
       "productId": "monopoly-token-pikachu",
@@ -107,8 +103,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#facc15"
+      "active": true
     },
     {
       "productId": "monopoly-token-snorlax",
@@ -128,8 +123,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#334155"
+      "active": true
     },
     {
       "productId": "monopoly-token-tralalero-tralala",
@@ -149,8 +143,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#38bdf8"
+      "active": true
     },
     {
       "productId": "monopoly-token-tung-tung-shakur",
@@ -170,8 +163,7 @@
       "tintStrength": 0.75,
       "colorMode": "TINT",
       "previewStatus": "READY",
-      "active": true,
-      "tintColor": "#92400e"
+      "active": true
     }
   ]
 }

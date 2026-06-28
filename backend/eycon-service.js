@@ -10,6 +10,7 @@ const MODEL_3D_DEFAULT_TINT_STRENGTH = 0.75;
 const MODEL_3D_SEED_PATH = path.join(__dirname, "model-3d-seed.json");
 const MODEL_3D_WRITE_SEED = process.env.MODEL_3D_WRITE_SEED === "1";
 const MODEL_3D_TINT_MIGRATION_KEY = "model3d-default-tint-75-v2";
+const MODEL_3D_LEGACY_COLOR_CLEANUP_KEY = "model3d-remove-legacy-color-v1";
 const MODEL_3D_ASSETS = [
   {
     assetKey: "chicken",
@@ -112,7 +113,6 @@ function createEyconService({ get, run, all, io, userRoom }) {
       ${alias}.color_locked AS model3dColorLocked,
       ${alias}.tintable AS model3dTintable,
       ${alias}.tint_strength AS model3dTintStrength,
-      ${alias}.tint_color AS model3dTintColor,
       ${alias}.color_mode AS model3dColorMode,
       ${alias}.preview_status AS model3dPreviewStatus,
       ${alias}.active AS model3dActive,
@@ -145,7 +145,6 @@ function createEyconService({ get, run, all, io, userRoom }) {
       colorLocked: row.model3dColorLocked !== 0,
       tintable: row.model3dTintable === 1,
       tintStrength: Number(row.model3dTintStrength ?? MODEL_3D_DEFAULT_TINT_STRENGTH),
-      tintColor: row.model3dTintColor || null,
       colorMode: row.model3dColorMode || (row.model3dTintable === 1 ? "TINT" : MODEL_3D_DEFAULT_COLOR_MODE),
       previewStatus: row.model3dPreviewStatus || "DRAFT",
       active: row.model3dActive !== 0,
@@ -168,7 +167,6 @@ function createEyconService({ get, run, all, io, userRoom }) {
       colorLocked: setting.colorLocked,
       tintable: setting.tintable,
       tintStrength: setting.tintStrength,
-      tintColor: setting.tintColor || undefined,
       colorMode: setting.colorMode || (setting.tintable ? "TINT" : MODEL_3D_DEFAULT_COLOR_MODE),
       previewStatus: setting.previewStatus
     };
@@ -506,7 +504,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           0,
           1,
           Number(metadata.tintStrength ?? MODEL_3D_DEFAULT_TINT_STRENGTH),
-          normalizeTintColor(metadata.tintColor || metadata.color || ""),
+          "",
           metadata.colorMode || MODEL_3D_DEFAULT_COLOR_MODE
         ]
       );
@@ -514,6 +512,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
 
     await applyDefaultTintMigration();
     await applyModel3dSeed();
+    await clearSavedModel3dTintColors();
 
     const managedTokenIds = allProducts
       .filter((product) => product.gameKey === "MONOPOLY" && product.category === "TOKEN")
@@ -1024,11 +1023,6 @@ function createEyconService({ get, run, all, io, userRoom }) {
     return MODEL_3D_COLOR_MODES.includes(mode) ? mode : MODEL_3D_DEFAULT_COLOR_MODE;
   }
 
-  function normalizeTintColor(value) {
-    const color = String(value || "").trim();
-    return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : "";
-  }
-
   function normalizeFallbackModel(value, fallback = "hat") {
     const model = String(value || fallback || "hat").trim();
     return MODEL_3D_FALLBACK_MODELS.includes(model) ? model : "hat";
@@ -1083,21 +1077,21 @@ function createEyconService({ get, run, all, io, userRoom }) {
            updated_at = CURRENT_TIMESTAMP`,
       [MODEL_3D_DEFAULT_TINT_STRENGTH, MODEL_3D_DEFAULT_COLOR_MODE]
     );
-    const tintRows = await all(
-      `SELECT m.product_id AS productId, p.metadata_json AS metadataJson
-       FROM model_3d_settings m
-       JOIN eycon_products p ON p.id = m.product_id`
-    );
-    for (const row of tintRows) {
-      const metadata = parseMetadata(row.metadataJson);
-      const tintColor = normalizeTintColor(metadata.tintColor || metadata.color || "");
-      if (!tintColor) continue;
-      await run(
-        "UPDATE model_3d_settings SET tint_color = ?, updated_at = CURRENT_TIMESTAMP WHERE product_id = ?",
-        [tintColor, row.productId]
-      );
-    }
     await markEyconMeta(MODEL_3D_TINT_MIGRATION_KEY, "applied");
+    return true;
+  }
+
+  async function clearSavedModel3dTintColors() {
+    await ensureEyconMetaTable();
+    const applied = await get("SELECT value FROM eycon_meta WHERE key = ?", [MODEL_3D_LEGACY_COLOR_CLEANUP_KEY]);
+    if (applied) return false;
+
+    await run(
+      `UPDATE model_3d_settings
+       SET tint_color = '', updated_at = CURRENT_TIMESTAMP
+       WHERE tint_color <> ''`
+    );
+    await markEyconMeta(MODEL_3D_LEGACY_COLOR_CLEANUP_KEY, "applied");
     return true;
   }
 
@@ -1199,7 +1193,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           colorMode === "ORIGINAL" ? 1 : 0,
           colorMode === "ORIGINAL" ? 0 : 1,
           tintStrength,
-          normalizeTintColor(setting.tintColor),
+          "",
           colorMode,
           normalizePreviewStatus(setting.previewStatus || "READY"),
           setting.active === false ? 0 : 1
@@ -1219,7 +1213,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       `SELECT product_id AS productId, asset_key AS assetKey,
               fallback_model AS fallbackModel, fit_size AS fitSize,
               rotation_json AS rotationJson, offset_json AS offsetJson,
-              tint_strength AS tintStrength, tint_color AS tintColor,
+              tint_strength AS tintStrength,
               color_mode AS colorMode, preview_status AS previewStatus, active
        FROM model_3d_settings
        ORDER BY product_id ASC`
@@ -1247,7 +1241,6 @@ function createEyconService({ get, run, all, io, userRoom }) {
         rotation: parseVector(setting.rotationJson),
         offset: parseVector(setting.offsetJson),
         tintStrength: Number(setting.tintStrength ?? MODEL_3D_DEFAULT_TINT_STRENGTH),
-        tintColor: setting.tintColor || "",
         colorMode: setting.colorMode || MODEL_3D_DEFAULT_COLOR_MODE,
         previewStatus: setting.previewStatus || "READY",
         active: setting.active !== 0
@@ -1405,7 +1398,6 @@ function createEyconService({ get, run, all, io, userRoom }) {
     const colorLocked = colorMode === "ORIGINAL";
     const tintable = colorMode !== "ORIGINAL";
     const tintStrength = colorMode === "FORCE" ? 1 : clampNumber(settings.tintStrength, MODEL_3D_DEFAULT_TINT_STRENGTH, 0, 1);
-    const tintColor = normalizeTintColor(settings.tintColor);
     const previewStatus = normalizePreviewStatus(settings.previewStatus || "READY");
     const active = settings.active !== false;
 
@@ -1442,7 +1434,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         colorLocked ? 1 : 0,
         tintable ? 1 : 0,
         tintStrength,
-        tintColor,
+        "",
         colorMode,
         previewStatus,
         active ? 1 : 0,
