@@ -1,8 +1,27 @@
-import { AlertTriangle, Check, Club, Diamond, Heart, Lock, LogIn, Spade, Sparkles, User, UserPlus, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Check,
+  Club,
+  Diamond,
+  ExternalLink,
+  Gem,
+  Heart,
+  Lock,
+  LogIn,
+  ShieldCheck,
+  Spade,
+  Sparkles,
+  User,
+  UserPlus,
+  X
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../api";
+import BrandLogo from "./shared/BrandLogo";
+import TermsModal from "./TermsModal";
 
 const usernamePattern = /^[a-z0-9_]{3,16}$/;
+const TERMS_STORAGE_KEY = "easyno-terms-accepted-v1";
 
 function passwordRules(password) {
   return [
@@ -13,6 +32,14 @@ function passwordRules(password) {
   ];
 }
 
+function readTermsAccepted() {
+  try {
+    return window.localStorage.getItem(TERMS_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function AuthPanel({ onAuth }) {
   const [mode, setMode] = useState("login");
   const [username, setUsername] = useState("");
@@ -20,20 +47,40 @@ export default function AuthPanel({ onAuth }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(readTermsAccepted);
+  const [termsOpen, setTermsOpen] = useState(false);
 
   const cleanUsername = username.trim().toLowerCase();
   const rules = useMemo(() => passwordRules(password), [password]);
   const usernameOk = usernamePattern.test(cleanUsername);
   const passwordOk = rules.every((rule) => rule.ok);
   const confirmOk = mode === "login" || password === confirmPassword;
+  const needsTerms = mode === "register" && !termsAccepted;
   const canSubmit =
     !loading &&
     usernameOk &&
-    (mode === "login" ? password.length > 0 : passwordOk && confirmOk);
+    (mode === "login" ? password.length > 0 : passwordOk && confirmOk) &&
+    !needsTerms;
+
+  function acceptTerms() {
+    setTermsAccepted(true);
+    setTermsOpen(false);
+    try {
+      window.localStorage.setItem(TERMS_STORAGE_KEY, "1");
+    } catch {
+      // almacenamiento no disponible, no bloquea el flujo
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
     setError("");
+
+    if (needsTerms) {
+      setError("Debes leer y aceptar los terminos y condiciones para registrarte");
+      setTermsOpen(true);
+      return;
+    }
 
     if (!canSubmit) {
       setError("Revisa usuario y contrasena antes de continuar");
@@ -57,6 +104,13 @@ export default function AuthPanel({ onAuth }) {
 
   return (
     <section className="relative mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 md:grid-cols-[minmax(0,1fr)_440px]">
+      <TermsModal
+        open={termsOpen}
+        initiallyAccepted={termsAccepted}
+        onAccept={acceptTerms}
+        onClose={() => setTermsOpen(false)}
+      />
+
       {/* fondos decorativos */}
       <div className="pointer-events-none absolute -left-12 top-12 hidden text-amber-300/10 md:block">
         <Spade size={220} strokeWidth={0.5} />
@@ -71,13 +125,11 @@ export default function AuthPanel({ onAuth }) {
           Acceso VIP &middot; easyno casino
         </div>
 
-        <h1 className="font-display text-6xl font-black leading-[0.95] sm:text-8xl">
-          <span className="brand-word">easyno</span>
-        </h1>
-
-        <p className="mt-3 font-display text-lg font-bold uppercase tracking-[0.3em] text-amber-200/70">
-          Casino &amp; Arcade
-        </p>
+        <div className="auth-brand-lockup">
+          <BrandLogo size="hero" alt="EasyNo" />
+          <h1 className="sr-only">EasyNo</h1>
+          <p className="auth-brand-tagline">Casino &amp; Arcade</p>
+        </div>
 
         <p className="mt-6 max-w-xl text-lg font-semibold leading-8 text-zinc-300">
           Entra al gran salon: apuesta, trabaja por monedas y juega Blackjack contra la banca o contra otros jugadores en mesas en vivo.
@@ -95,6 +147,23 @@ export default function AuthPanel({ onAuth }) {
           <div className="flex items-center gap-2 rounded-md border border-violet-300/30 bg-violet-300/10 px-3 py-2 text-xs font-extrabold uppercase tracking-[0.16em] text-violet-200">
             <Club size={14} />
             Chat global
+          </div>
+        </div>
+
+        <div className="auth-disclaimer-grid">
+          <div className="auth-disclaimer-card">
+            <ShieldCheck size={18} />
+            <div>
+              <strong>Juego 100% virtual</strong>
+              <span>Sin apuestas reales. Fichas y saldo son solo de entretenimiento y no tienen valor de cambio.</span>
+            </div>
+          </div>
+          <div className="auth-disclaimer-card">
+            <Gem size={18} />
+            <div>
+              <strong>Solo pagas por cosmeticos</strong>
+              <span>Piezas, tableros, dados y efectos visuales. Nunca ventajas competitivas ni dinero de juego.</span>
+            </div>
           </div>
         </div>
 
@@ -201,23 +270,41 @@ export default function AuthPanel({ onAuth }) {
                 {confirmOk ? <Check size={14} /> : <X size={14} />}
                 Las contrasenas coinciden
               </div>
+
+              <button
+                type="button"
+                className={`terms-accept-row ${termsAccepted ? "is-accepted" : ""}`}
+                onClick={() => setTermsOpen(true)}
+              >
+                <span className="terms-accept-check">
+                  {termsAccepted ? <Check size={14} /> : null}
+                </span>
+                <span className="terms-accept-copy">
+                  {termsAccepted ? (
+                    <>Aceptaste los terminos y condiciones <em>(ver de nuevo)</em></>
+                  ) : (
+                    <>Debes leer y aceptar los <strong>terminos y condiciones</strong> para continuar</>
+                  )}
+                </span>
+                <ExternalLink size={14} />
+              </button>
             </>
           )}
 
           {error && (
-            <div className="mb-4 flex items-center gap-2 rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-200">
+            <div className="mb-4 mt-4 flex items-center gap-2 rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-200">
               <AlertTriangle size={17} />
               {error}
             </div>
           )}
 
-          <button className="arcade-button w-full" disabled={!canSubmit}>
+          <button className="arcade-button mt-4 w-full" disabled={!canSubmit}>
             {mode === "login" ? <LogIn size={18} /> : <UserPlus size={18} />}
             {loading ? "Conectando" : mode === "login" ? "Entrar al casino" : "Crear jugador"}
           </button>
 
           <p className="mt-4 text-center text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-            Apuesta responsable &middot; Solo diversion
+            13+ para jugar &middot; 18+ para recargar EyCon &middot; Juego virtual &middot; Solo diversion
           </p>
         </div>
       </form>

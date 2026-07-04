@@ -9,6 +9,7 @@ import {
   Eye,
   EyeOff,
   Gavel,
+  Gem,
   Globe,
   Hammer,
   Landmark,
@@ -37,8 +38,15 @@ import { Suspense, lazy, memo, useEffect, useMemo, useRef, useState } from "reac
 import { api } from "../api";
 // Lobby rediseñado: pantalla principal inmersiva + flujos Unirse/Crear.
 import { audio } from "../audio";
+import {
+  BOLOWPOLY_DEFAULT_TABLE_NAME,
+  BOLOWPOLY_DISPLAY_NAME,
+  BOLOWPOLY_LOGO_TEXT,
+  BOLOWPOLY_TAGLINE
+} from "../content/bolowpolyBrand";
 import { useRadio } from "../radio/RadioContext";
 import { monopolyTokenColors } from "./monopoly3d/monopolyTokenColors";
+import { PREVIEW_BOARD_SPACES } from "./monopoly3d/previewBoardSpaces";
 import { Dice } from "./shared";
 
 const loadMonopoly3DView = () => import("./monopoly3d/Monopoly3DView");
@@ -274,48 +282,7 @@ function buildUniqueTokenStyleMap(players = [], customTokens = {}) {
   return map;
 }
 
-const previewBoard = [
-  { index: 0, id: "go", name: "Salida", type: "SALIDA" },
-  { index: 1, id: "mediterranean", name: "La Paz", shortName: "LPZ", type: "PROPIEDAD", colorGroup: "brown", price: 60 },
-  { index: 2, id: "cc1", name: "Arca", type: "ARCA_COMUNAL" },
-  { index: 3, id: "baltic", name: "Sucre", shortName: "Sucre", type: "PROPIEDAD", colorGroup: "brown", price: 60 },
-  { index: 4, id: "tax1", name: "Impuesto", type: "IMPUESTO" },
-  { index: 5, id: "rr1", name: "Tren Maya", type: "FERROCARRIL", price: 200 },
-  { index: 6, id: "oriental", name: "Quito", shortName: "Quito", type: "PROPIEDAD", colorGroup: "light_blue", price: 100 },
-  { index: 7, id: "chance1", name: "Casualidad", type: "CASUALIDAD" },
-  { index: 8, id: "vermont", name: "Cuenca", type: "PROPIEDAD", colorGroup: "light_blue", price: 100 },
-  { index: 9, id: "connecticut", name: "Guayaquil", shortName: "GYE", type: "PROPIEDAD", colorGroup: "light_blue", price: 120 },
-  { index: 10, id: "jail", name: "Carcel", type: "CARCEL_VISITA" },
-  { index: 11, id: "stcharles", name: "Arequipa", shortName: "AQP", type: "PROPIEDAD", colorGroup: "pink", price: 140 },
-  { index: 12, id: "electric", name: "Red Andina", type: "SERVICIO_PUBLICO", price: 150 },
-  { index: 13, id: "states", name: "Cusco", type: "PROPIEDAD", colorGroup: "pink", price: 140 },
-  { index: 14, id: "virginia", name: "Lima", type: "PROPIEDAD", colorGroup: "pink", price: 160 },
-  { index: 15, id: "rr2", name: "Tren Pacífico", type: "FERROCARRIL", price: 200 },
-  { index: 16, id: "stjames", name: "Valparaiso", shortName: "Valpo", type: "PROPIEDAD", colorGroup: "orange", price: 180 },
-  { index: 17, id: "cc2", name: "Arca", type: "ARCA_COMUNAL" },
-  { index: 18, id: "tennessee", name: "Concepcion", shortName: "CCP", type: "PROPIEDAD", colorGroup: "orange", price: 180 },
-  { index: 19, id: "newyork", name: "Santiago", shortName: "STGO", type: "PROPIEDAD", colorGroup: "orange", price: 200 },
-  { index: 20, id: "free", name: "Libre", type: "PARADA_LIBRE" },
-  { index: 21, id: "kentucky", name: "Rosario", shortName: "ROS", type: "PROPIEDAD", colorGroup: "red", price: 220 },
-  { index: 22, id: "chance2", name: "Casualidad", type: "CASUALIDAD" },
-  { index: 23, id: "indiana", name: "Cordoba", shortName: "CBA", type: "PROPIEDAD", colorGroup: "red", price: 220 },
-  { index: 24, id: "illinois", name: "Buenos Aires", shortName: "BSAS", type: "PROPIEDAD", colorGroup: "red", price: 240 },
-  { index: 25, id: "rr3", name: "Tren Pampa", type: "FERROCARRIL", price: 200 },
-  { index: 26, id: "atlantic", name: "Cali", shortName: "Cali", type: "PROPIEDAD", colorGroup: "yellow", price: 260 },
-  { index: 27, id: "ventnor", name: "Medellin", shortName: "MDE", type: "PROPIEDAD", colorGroup: "yellow", price: 260 },
-  { index: 28, id: "water", name: "Aguas Caribe", type: "SERVICIO_PUBLICO", price: 150 },
-  { index: 29, id: "marvin", name: "Bogota", shortName: "BOG", type: "PROPIEDAD", colorGroup: "yellow", price: 280 },
-  { index: 30, id: "gotojail", name: "Ve a carcel", type: "VAYASE_A_LA_CARCEL" },
-  { index: 31, id: "pacific", name: "Brasilia", shortName: "BSB", type: "PROPIEDAD", colorGroup: "green", price: 300 },
-  { index: 32, id: "northcarolina", name: "Rio de Janeiro", shortName: "RIO", type: "PROPIEDAD", colorGroup: "green", price: 300 },
-  { index: 33, id: "cc3", name: "Arca", type: "ARCA_COMUNAL" },
-  { index: 34, id: "pennsylvania", name: "Sao Paulo", shortName: "SP", type: "PROPIEDAD", colorGroup: "green", price: 320 },
-  { index: 35, id: "rr4", name: "Tren Austral", type: "FERROCARRIL", price: 200 },
-  { index: 36, id: "chance3", name: "Casualidad", type: "CASUALIDAD" },
-  { index: 37, id: "park", name: "Guadalajara", shortName: "GDL", type: "PROPIEDAD", colorGroup: "dark_blue", price: 350 },
-  { index: 38, id: "tax2", name: "Lujo", type: "IMPUESTO" },
-  { index: 39, id: "boardwalk", name: "Ciudad de Mexico", shortName: "CDMX", type: "PROPIEDAD", colorGroup: "dark_blue", price: 400 }
-];
+const previewBoard = PREVIEW_BOARD_SPACES;
 
 const boardShortNameById = {
   mediterranean_avenue: "LPZ",
@@ -1232,7 +1199,7 @@ function propertyTradeBanter({ sellerName = "Tú", buyerName = "alguien", proper
     `${buyerName} puede salir de aqui con ${propertyName} y una sonrisa de villano inmobiliario.`,
     `${sellerName} esta a nada de convertir ${propertyName} en trato cerrado y mirada sospechosa de ${buyerName}.`,
     `${propertyName} ya esta en vitrina. Falta ver si ${buyerName} compra o solo vino a pasear.`,
-    `${sellerName} y ${buyerName} estan negociando como si esto fuera un mercado negro elegante de Monopoly.`,
+    `${sellerName} y ${buyerName} estan negociando como si esto fuera un mercado negro elegante de ${BOLOWPOLY_DISPLAY_NAME}.`,
     `${propertyName} podria cambiar de manos hoy si ${buyerName} no se hace el dificil con el precio.`,
     `${sellerName} ya puso a ${propertyName} bajo reflectores. Ahora que hable la billetera de ${buyerName}.`
   ]);
@@ -3243,13 +3210,13 @@ function BoardThemeCustomizer({
               <div className="monopoly-board-classic-preview">
                 <MapIcon size={38} />
                 <strong>Tablero clásico</strong>
-                <small>Diseño original de la mesa</small>
+                <small>{BOLOWPOLY_TAGLINE}</small>
               </div>
             )}
             <div>
               <small>Vista seleccionada</small>
               <strong>{selectedTheme?.name || "Clásico"}</strong>
-              <p>{selectedTheme?.description || "La apariencia original de Monopoly."}</p>
+              <p>{selectedTheme?.description || `La apariencia original de ${BOLOWPOLY_DISPLAY_NAME}.`}</p>
             </div>
           </aside>
 
@@ -3273,8 +3240,11 @@ function BoardThemeCustomizer({
                 <span style={{
                   "--board-a": theme.metadata?.baseColor,
                   "--board-b": theme.metadata?.centerColor,
-                  "--board-c": theme.metadata?.accentColor
-                }}>{theme.preview || "▦"}</span>
+                  "--board-c": theme.metadata?.accentColor,
+                  ...(theme.metadata?.boardTexture
+                    ? { backgroundImage: `url(${theme.metadata.boardTexture})`, backgroundSize: "cover", backgroundPosition: "center" }
+                    : null)
+                }}>{!theme.metadata?.boardTexture && (theme.preview || "▦")}</span>
                 <strong>{theme.name}</strong>
                 <small>{selectedId === theme.id ? "Seleccionado" : "Comprado"}</small>
               </button>
@@ -3346,7 +3316,7 @@ function TopHud({
     return (
       <header className="monopoly-top-hud monopoly-top-hud--immersive">
         <div className="monopoly-hud-title">
-          <div className="monopoly-logo monopoly-hud-logo">MONOPOLY</div>
+          <div className="monopoly-logo monopoly-hud-logo">{BOLOWPOLY_LOGO_TEXT}</div>
           <div className="min-w-0">
             <p className="monopoly-hud-kicker">{tableName}</p>
             <h2>{currentPlayer?.name || "Partida"} <span>en turno</span></h2>
@@ -3428,7 +3398,7 @@ function TopHud({
   return (
     <header className="monopoly-top-hud">
       <div className="monopoly-hud-title">
-        <div className="monopoly-logo monopoly-hud-logo">MONOPOLY</div>
+        <div className="monopoly-logo monopoly-hud-logo">{BOLOWPOLY_LOGO_TEXT}</div>
         <div className="min-w-0">
           <p className="monopoly-hud-kicker">Turno de</p>
           <h2>{currentPlayer?.name || "Partida"}</h2>
@@ -3574,14 +3544,17 @@ function BoardArea({
   const boardThemeStyle = boardTheme ? {
     "--monopoly-theme-base": boardThemeMetadata.baseColor || "#2d2418",
     "--monopoly-theme-center": boardThemeMetadata.centerColor || "#1f6f59",
-    "--monopoly-theme-accent": boardThemeMetadata.accentColor || "#f4d45d"
+    "--monopoly-theme-accent": boardThemeMetadata.accentColor || "#f4d45d",
+    ...(typeof boardThemeMetadata.boardTexture === "string" && boardThemeMetadata.boardTexture.startsWith("data:image")
+      ? { "--monopoly-theme-image": `url(${boardThemeMetadata.boardTexture})` }
+      : null)
   } : undefined;
   const boardById = useMemo(() => new Map((board || []).map((space) => [space.id, space])), [board]);
   const diceCinematicActive = ["cameraFocusDice", "diceRolling", "dice"].includes(cinematic?.phase);
   const canRollFromDice = isMyTurn && myActions.includes("tirarDados") && !locked;
 
   return (
-    <section className="monopoly-board-area" aria-label="Tablero de Monopoly" style={boardThemeStyle}>
+    <section className="monopoly-board-area" aria-label={`Tablero de ${BOLOWPOLY_DISPLAY_NAME}`} style={boardThemeStyle}>
       <div className="monopoly-table-shell monopoly-board-shell-main monopoly-board-stage">
         <div className="monopoly-board-viewport monopoly-board-viewport-main">
           <div
@@ -3653,7 +3626,7 @@ function BoardArea({
                         ? `Total ${state.turn.lastRoll.total}`
                         : "Listo para tirar"}
                   </p>
-                  <div className="monopoly-logo monopoly-logo-sm">MONOPOLY</div>
+                  <div className="monopoly-logo monopoly-logo-sm">{BOLOWPOLY_LOGO_TEXT}</div>
                 </div>
 
                 <div className="monopoly-center-stats-row">
@@ -5276,7 +5249,8 @@ function RulesModal({ open, onClose }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-xs font-extrabold uppercase tracking-[0.18em] opacity-75">Reglas</p>
-            <h3 className="mt-1 text-2xl font-black uppercase">Reglas de esta mesa</h3>
+            <h3 className="mt-1 text-2xl font-black uppercase">Reglas de {BOLOWPOLY_DISPLAY_NAME}</h3>
+            <p className="mt-1 text-sm font-semibold opacity-80">{BOLOWPOLY_TAGLINE}</p>
           </div>
           <button type="button" className="toast-close" onClick={onClose}><X size={16} /></button>
         </div>
@@ -5834,7 +5808,7 @@ function TradeModalV2({
                   <div className="monopoly-trade-help-card">
                     <ShieldAlert size={18} />
                     <p>
-                      En Monopoly solo se comercian las cartas <strong>Salir libre de la carcel</strong>. Casualidad y Arca comunal normales son eventos: salen, se resuelven y hacen su travesura.
+                      En {BOLOWPOLY_DISPLAY_NAME} solo se comercian las cartas <strong>Salir libre de la carcel</strong>. Casualidad y Arca comunal normales son eventos: salen, se resuelven y hacen su travesura.
                     </p>
                   </div>
 
@@ -6535,7 +6509,7 @@ function LobbyStage({ children, dim = false, overlayClassName = "" }) {
             />
           ))}
           <div className="monopoly-center monopoly-center-stage">
-            <div className="monopoly-logo monopoly-logo-preview">MONOPOLY</div>
+            <div className="monopoly-logo monopoly-logo-preview">{BOLOWPOLY_LOGO_TEXT}</div>
           </div>
         </div>
       </div>
@@ -6835,6 +6809,11 @@ function RoomCard({ table, currentUserId, onJoin, customTokens = {} }) {
           {table.mode === "TIMED" && (
             <span className="monopoly-room-meta-item">{table.timedMinutes} min</span>
           )}
+          {table.eyconStakeUnits > 0 && (
+            <span className="monopoly-room-meta-item monopoly-room-meta-item--stake">
+              <Gem size={14} /> {(table.eyconStakeUnits / 100).toFixed(2)} EyCon
+            </span>
+          )}
         </div>
         <div className="monopoly-room-seats">
           {Array.from({ length: max }, (_, index) => {
@@ -6960,6 +6939,9 @@ function CreateGameModal({
   setIsPrivate,
   tablePassword,
   setTablePassword,
+  eyconStake,
+  setEyconStake,
+  eyconBalanceUnits = 0,
   onCreate
 }) {
   if (!open) return null;
@@ -6986,7 +6968,7 @@ function CreateGameModal({
               className="monopoly-input"
               value={tableName}
               maxLength={48}
-              placeholder="Mesa Monopoly"
+              placeholder={BOLOWPOLY_DEFAULT_TABLE_NAME}
               onChange={(event) => setTableName(event.target.value)}
             />
           </label>
@@ -7078,6 +7060,25 @@ function CreateGameModal({
               />
             </label>
           )}
+
+          <label className="monopoly-field">
+            <span className="monopoly-field-label">Apuesta EyCon por jugador (opcional)</span>
+            <input
+              className="monopoly-input"
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              value={eyconStake}
+              onChange={(event) => setEyconStake(Math.max(0, Math.min(100, Number(event.target.value) || 0)))}
+              placeholder="0 = sin apuesta"
+            />
+            <span className="monopoly-field-hint">
+              {eyconStake > 0
+                ? `Cada jugador aporta ${(eyconStake / 100).toFixed(2)} EyCon al iniciar. El ganador se lleva todo el pozo. Tu saldo: ${(eyconBalanceUnits / 100).toFixed(2)} EyCon.`
+                : "Deja en 0 para jugar sin apostar EyCon."}
+            </span>
+          </label>
         </div>
 
         <div className="monopoly-modal-actions">
@@ -7149,6 +7150,11 @@ function WaitingRoom({
               <span className="monopoly-room-meta-item"><TimerReset size={14} /> {table.turnTimeSeconds}s</span>
               {table.mode === "TIMED" && <span className="monopoly-room-meta-item">{table.timedMinutes} min</span>}
               <span className="monopoly-room-meta-item">{table.isPrivate ? <><Lock size={14} /> Privada</> : <><Globe size={14} /> Pública</>}</span>
+              {table.eyconStakeUnits > 0 && (
+                <span className="monopoly-room-meta-item monopoly-room-meta-item--stake">
+                  <Gem size={14} /> Apuesta {(table.eyconStakeUnits / 100).toFixed(2)} EyCon
+                </span>
+              )}
             </div>
 
             <p className="monopoly-waitroom-count">{seated}/{max} jugadores en la sala</p>
@@ -7476,6 +7482,7 @@ export default function MonopolyGame({
   onBoardViewModeChange,
   equippedCosmetics = {},
   eyconInventory = [],
+  eyconBalanceUnits = 0,
   onEyconProfileChange
 }) {
   const { loadDefaultStation, setActiveGameKey } = useRadio();
@@ -7491,7 +7498,7 @@ export default function MonopolyGame({
   const ownedTokenFigures = useMemo(
     () => (localEyconProfile.inventory || []).filter((product) => (
       product.gameKey === MONOPOLY_GAME_KEY &&
-      product.category === "TOKEN"
+      product.slotKey === "TOKEN"
     )),
     [localEyconProfile.inventory]
   );
@@ -7502,7 +7509,7 @@ export default function MonopolyGame({
     )),
     [localEyconProfile.inventory]
   );
-  const [tableName, setTableName] = useState("Mesa Monopoly");
+  const [tableName, setTableName] = useState(BOLOWPOLY_DEFAULT_TABLE_NAME);
   const [mode, setMode] = useState("NORMAL");
   const [timedMinutes, setTimedMinutes] = useState(60);
   const [turnTimeSeconds, setTurnTimeSeconds] = useState(60);
@@ -7543,6 +7550,7 @@ export default function MonopolyGame({
   const [maxPlayers, setMaxPlayers] = useState(4);
   const [isPrivate, setIsPrivate] = useState(false);
   const [tablePassword, setTablePassword] = useState("");
+  const [eyconStake, setEyconStake] = useState(0);
   const [passwordPrompt, setPasswordPrompt] = useState(null);
   const [passwordError, setPasswordError] = useState("");
   const seenEventIdsRef = useRef(new Set());
@@ -7693,7 +7701,7 @@ export default function MonopolyGame({
       } catch (nextError) {
         if (active) {
           setTables([]);
-          setError(nextError.message || "No se pudo cargar Monopoly");
+          setError(nextError.message || `No se pudo cargar ${BOLOWPOLY_DISPLAY_NAME}`);
         }
       }
     }
@@ -7771,7 +7779,7 @@ export default function MonopolyGame({
     }
 
     function handleMonopolyError(payload) {
-      setError(payload.message || "Error en Monopoly");
+      setError(payload.message || `Error en ${BOLOWPOLY_DISPLAY_NAME}`);
     }
 
     socket.on("monopoly_tables_state", handleTablesState);
@@ -8853,7 +8861,8 @@ export default function MonopolyGame({
       turnTimeSeconds,
       maxPlayers,
       isPrivate,
-      password: isPrivate ? tablePassword : ""
+      password: isPrivate ? tablePassword : "",
+      eyconStake
     }, (response) => {
       if (!response?.ok) {
         setError(response?.error || "No se pudo crear la mesa");
@@ -8923,7 +8932,7 @@ export default function MonopolyGame({
 
     socket.emit("start_monopoly_game", { worldId: world.id, tableId: activeTableId }, (response) => {
       if (!response?.ok) {
-        setError(response?.error || "No se pudo iniciar Monopoly");
+        setError(response?.error || `No se pudo iniciar ${BOLOWPOLY_DISPLAY_NAME}`);
         return;
       }
 
@@ -9346,6 +9355,9 @@ export default function MonopolyGame({
           setIsPrivate={setIsPrivate}
           tablePassword={tablePassword}
           setTablePassword={setTablePassword}
+          eyconStake={eyconStake}
+          setEyconStake={setEyconStake}
+          eyconBalanceUnits={eyconBalanceUnits}
           onCreate={createTable}
         />
 
@@ -9474,7 +9486,7 @@ export default function MonopolyGame({
       )}
 
       <TopHud
-        tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
+        tableName={tableMeta?.name || activeTable?.name || BOLOWPOLY_DEFAULT_TABLE_NAME}
         state={state}
         currentPlayer={currentPlayer}
         myPlayer={myPlayer}
@@ -9536,7 +9548,7 @@ export default function MonopolyGame({
               onDicePhysicsChange={handleDicePhysicsChange}
               onDiceMotion={emitDiceMotion}
               onSelectionAction={handleThreeDSelectionAction}
-              tableName={tableMeta?.name || activeTable?.name || "Mesa Monopoly"}
+              tableName={tableMeta?.name || activeTable?.name || BOLOWPOLY_DEFAULT_TABLE_NAME}
               statusTitle={prompt?.title || prompt?.eyebrow || ""}
               statusBody={prompt?.body || ""}
               sidePanel={(

@@ -585,15 +585,38 @@ function createDeckStack({ deck, title, mark, color, ink, x, z, rotation = 0 }) 
   return group;
 }
 
+const boardTextureCache = new Map();
+
+function getBoardTexture(dataUrl) {
+  if (!dataUrl) return null;
+  if (boardTextureCache.has(dataUrl)) return boardTextureCache.get(dataUrl);
+  const texture = new THREE.TextureLoader().load(dataUrl, (loaded) => {
+    loaded.colorSpace = THREE.SRGBColorSpace;
+    loaded.needsUpdate = true;
+  });
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 4;
+  // Flagged as shared so generic disposal helpers never free a texture that
+  // other boards/scenes might still be referencing from the cache.
+  texture.userData.shared = true;
+  boardTextureCache.set(dataUrl, texture);
+  return texture;
+}
+
 function resolveBoardTheme(theme = null) {
   const metadata = theme?.metadata || {};
+  const textureImage = typeof metadata.boardTexture === "string" && metadata.boardTexture.startsWith("data:image")
+    ? metadata.boardTexture
+    : "";
   return {
     id: theme?.id || "default",
     baseColor: metadata.baseColor || "#2d2418",
     centerColor: metadata.centerColor || "#1f6f59",
     accentColor: metadata.accentColor || "#f4d45d",
     roughness: Number.isFinite(Number(metadata.roughness)) ? Number(metadata.roughness) : 0.68,
-    metalness: Number.isFinite(Number(metadata.metalness)) ? Number(metadata.metalness) : 0.08
+    metalness: Number.isFinite(Number(metadata.metalness)) ? Number(metadata.metalness) : 0.08,
+    glow: Number.isFinite(Number(metadata.glow)) ? Number(metadata.glow) : 0,
+    textureImage
   };
 }
 
@@ -608,10 +631,13 @@ export function createBoard3D({ board = [], players = [], boardTheme = null, hid
   const cardDecks = new Map();
   const selectionBillboard = createSelectionBillboard();
 
+  const boardTexture = getBoardTexture(theme.textureImage);
+
   const base = new THREE.Mesh(
     new THREE.BoxGeometry(BOARD_3D.track * 2 + 2.4, 0.22, BOARD_3D.track * 2 + 2.4),
     new THREE.MeshStandardMaterial({
-      color: theme.baseColor,
+      color: boardTexture ? "#ffffff" : theme.baseColor,
+      map: boardTexture,
       roughness: theme.roughness,
       metalness: theme.metalness
     })
@@ -623,7 +649,8 @@ export function createBoard3D({ board = [], players = [], boardTheme = null, hid
   const center = new THREE.Mesh(
     new THREE.BoxGeometry(BOARD_3D.centerSize, 0.08, BOARD_3D.centerSize),
     new THREE.MeshStandardMaterial({
-      color: theme.centerColor,
+      color: boardTexture ? "#ffffff" : theme.centerColor,
+      map: boardTexture,
       roughness: Math.max(0.12, theme.roughness - 0.06),
       metalness: theme.metalness
     })
@@ -637,7 +664,9 @@ export function createBoard3D({ board = [], players = [], boardTheme = null, hid
     new THREE.MeshStandardMaterial({
       color: theme.accentColor,
       roughness: 0.32,
-      metalness: Math.max(0.35, theme.metalness)
+      metalness: Math.max(0.35, theme.metalness),
+      emissive: theme.accentColor,
+      emissiveIntensity: theme.glow * 0.5
     })
   );
   centerRing.rotation.x = Math.PI / 2;
@@ -708,21 +737,27 @@ export function syncBoardTheme(model, boardTheme = null) {
   const theme = resolveBoardTheme(boardTheme);
   if (model.boardThemeId === theme.id) return;
   model.boardThemeId = theme.id;
-  model.base?.material?.color.set(theme.baseColor);
+  const boardTexture = getBoardTexture(theme.textureImage);
+
   if (model.base?.material) {
+    model.base.material.color.set(boardTexture ? "#ffffff" : theme.baseColor);
+    model.base.material.map = boardTexture;
     model.base.material.roughness = theme.roughness;
     model.base.material.metalness = theme.metalness;
     model.base.material.needsUpdate = true;
   }
-  model.center?.material?.color.set(theme.centerColor);
   if (model.center?.material) {
+    model.center.material.color.set(boardTexture ? "#ffffff" : theme.centerColor);
+    model.center.material.map = boardTexture;
     model.center.material.roughness = Math.max(0.12, theme.roughness - 0.06);
     model.center.material.metalness = theme.metalness;
     model.center.material.needsUpdate = true;
   }
-  model.centerRing?.material?.color.set(theme.accentColor);
   if (model.centerRing?.material) {
+    model.centerRing.material.color.set(theme.accentColor);
     model.centerRing.material.metalness = Math.max(0.35, theme.metalness);
+    model.centerRing.material.emissive?.set?.(theme.accentColor);
+    model.centerRing.material.emissiveIntensity = theme.glow * 0.5;
     model.centerRing.material.needsUpdate = true;
   }
 }

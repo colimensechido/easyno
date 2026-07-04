@@ -19,7 +19,9 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import BoardThemePainter from "./BoardThemePainter";
 import EyconProductPreview3D from "./EyconProductPreview3D";
+import BrandLogo from "./shared/BrandLogo";
 
 const tabs = [
   { key: "overview", label: "Resumen", icon: Activity },
@@ -47,6 +49,214 @@ const colorModeCopy = {
   TINT: "Mezcla el color del jugador con el material. Default recomendado: 75%.",
   FORCE: "Reemplaza el color del material por el color del jugador."
 };
+
+const productRarities = ["COMMON", "RARE", "EPIC", "LEGENDARY"];
+const monopolyProductCategories = [
+  { key: "TOKEN", label: "Pieza", slotKey: "TOKEN" },
+  { key: "TOKEN_ANIMAL", label: "Pieza animal", slotKey: "TOKEN" },
+  { key: "TOKEN_VEHICLE", label: "Pieza vehiculo", slotKey: "TOKEN" },
+  { key: "TOKEN_OBJECT", label: "Pieza objeto", slotKey: "TOKEN" },
+  { key: "TOKEN_FANTASY", label: "Pieza fantasia", slotKey: "TOKEN" },
+  { key: "TOKEN_FOOD", label: "Pieza comida", slotKey: "TOKEN" },
+  { key: "TOKEN_COLLECTIBLE", label: "Pieza coleccion", slotKey: "TOKEN" },
+  { key: "TOKEN_PREMIUM", label: "Pieza especial", slotKey: "TOKEN" },
+  { key: "DICE", label: "Dados", slotKey: "DICE" },
+  { key: "DICE_FX", label: "FX de dados", slotKey: "DICE_FX" },
+  { key: "BOARD_THEME", label: "Tablero", slotKey: "BOARD_THEME" }
+];
+const visualDesignerCategories = monopolyProductCategories.filter((item) => item.slotKey !== "TOKEN");
+const dicePatternOptions = [
+  { key: "solid", label: "Solido" },
+  { key: "radial", label: "Radial" },
+  { key: "split", label: "Split" },
+  { key: "stripes", label: "Lineas" },
+  { key: "checker", label: "Ajedrez" },
+  { key: "speckles", label: "Speckles" },
+  { key: "circuit", label: "Circuito" },
+  { key: "stars", label: "Estrellas" },
+  { key: "danger", label: "Hazard" },
+  { key: "marble", label: "Marmol" }
+];
+const pipShapeOptions = [
+  { key: "dot", label: "Circulo" },
+  { key: "square", label: "Cuadro" },
+  { key: "diamond", label: "Diamante" },
+  { key: "ring", label: "Anillo" },
+  { key: "star", label: "Estrella" }
+];
+const diceFxEffectOptions = [
+  { key: "sparks", label: "Chispas" },
+  { key: "trail", label: "Estela" },
+  { key: "flakes", label: "Hielo" },
+  { key: "glitch", label: "Glitch" },
+  { key: "waves", label: "Ondas" },
+  { key: "electric", label: "Electrico" },
+  { key: "orbit", label: "Orbita" },
+  { key: "galaxy", label: "Galaxia" },
+  { key: "confetti", label: "Confeti" },
+  { key: "flash", label: "Flash" },
+  { key: "flames", label: "Flamas" },
+  { key: "smoke", label: "Humo" },
+  { key: "embers", label: "Brasas" },
+  { key: "coins", label: "Monedas" },
+  { key: "hearts", label: "Corazones" },
+  { key: "portal", label: "Portal" },
+  { key: "laser", label: "Laser" },
+  { key: "bubbles", label: "Burbujas" },
+  { key: "storm", label: "Tormenta" },
+  { key: "runes", label: "Runas" }
+];
+const designerDefaults = {
+  DICE: {
+    baseColor: "#fffdf6",
+    pipColor: "#3f2b17",
+    accentColor: "#fbbf24",
+    edgeColor: "#d8c39a",
+    pattern: "solid",
+    pipShape: "dot",
+    roughness: 0.34,
+    metalness: 0.04,
+    opacity: 1,
+    pipScale: 1,
+    faceContrast: 0.35
+  },
+  DICE_FX: {
+    effect: "flames",
+    color: "#fb451f",
+    secondaryColor: "#facc15",
+    intensity: 1.15,
+    speed: 1,
+    spread: 1,
+    particleSize: 1,
+    ringScale: 1,
+    beamJitter: 1,
+    gravity: 0.55,
+    sparkle: 0.65,
+    density: 1
+  },
+  BOARD_THEME: {
+    baseColor: "#2d2418",
+    centerColor: "#1f6f59",
+    accentColor: "#f4d45d",
+    roughness: 0.58,
+    metalness: 0.16,
+    glow: 0.32,
+    boardTexture: ""
+  }
+};
+
+function slugFromName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+function assetLookupKey(value) {
+  return slugFromName(value).replace(/-/g, "_");
+}
+
+function likelyAssetForProduct(product, allowedAssets = []) {
+  const candidates = [assetLookupKey(product?.slug), assetLookupKey(product?.name)].filter(Boolean);
+  return allowedAssets.find((asset) => {
+    const assetKey = String(asset.assetKey || "");
+    const labelKey = assetLookupKey(asset.label);
+    return candidates.some((candidate) =>
+      assetKey === candidate ||
+      assetKey.startsWith(`${candidate}_`) ||
+      labelKey === candidate
+    );
+  }) || null;
+}
+
+function emptyProductDraft(category = "TOKEN") {
+  const categoryConfig = monopolyProductCategories.find((item) => item.key === category) || monopolyProductCategories[0];
+  return {
+    id: "",
+    slug: "",
+    name: "",
+    description: "",
+    gameKey: "MONOPOLY",
+    category: categoryConfig.key,
+    slotKey: categoryConfig.slotKey,
+    rarity: "LEGENDARY",
+    priceUnits: 300,
+    active: true,
+    preview: "*",
+    model: "hat",
+    color: "#fbbf24",
+    ring: "#92400e",
+    reason: ""
+  };
+}
+
+function draftFromStoreProduct(product) {
+  if (!product) return emptyProductDraft();
+  const metadata = product.metadata || {};
+  return {
+    id: product.id || "",
+    slug: product.slug || "",
+    name: product.name || "",
+    description: product.description || "",
+    gameKey: product.gameKey || "MONOPOLY",
+    category: product.category || "TOKEN",
+    slotKey: product.slotKey || product.category || "TOKEN",
+    rarity: product.rarity || "COMMON",
+    priceUnits: product.priceUnits ?? 0,
+    active: product.active !== false,
+    preview: product.preview || metadata.glyph || "*",
+    model: metadata.model || metadata.fallbackModel || "hat",
+    color: metadata.color || "#fbbf24",
+    ring: metadata.ring || "#92400e",
+    reason: ""
+  };
+}
+
+function isTokenDraft(draft) {
+  return draft?.slotKey === "TOKEN" || String(draft?.category || "").startsWith("TOKEN");
+}
+
+function isTokenProduct(product) {
+  return product?.slotKey === "TOKEN" || String(product?.category || "").startsWith("TOKEN");
+}
+
+function metadataFromProductDraft(draft, currentProduct = null) {
+  const metadata = { ...(currentProduct?.metadata || {}) };
+  if (isTokenDraft(draft)) {
+    metadata.renderer = metadata.renderer || "primitive";
+    metadata.model = draft.model || metadata.model || metadata.fallbackModel || "hat";
+    metadata.glyph = draft.preview || metadata.glyph || "*";
+    metadata.color = draft.color || metadata.color || "#fbbf24";
+    metadata.ring = draft.ring || metadata.ring || "#92400e";
+  }
+  return metadata;
+}
+
+function payloadFromProductDraft(draft, currentProduct = null) {
+  const name = String(draft.name || "").trim();
+  const slug = slugFromName(draft.slug || name);
+  const categoryConfig = monopolyProductCategories.find((item) => item.key === draft.category);
+  const payload = {
+    slug,
+    name,
+    description: String(draft.description || "").trim(),
+    gameKey: "MONOPOLY",
+    category: draft.category,
+    slotKey: draft.slotKey || categoryConfig?.slotKey || draft.category,
+    rarity: draft.rarity,
+    priceUnits: Number(draft.priceUnits),
+    active: draft.active,
+    preview: draft.preview || "*",
+    metadata: metadataFromProductDraft(draft, currentProduct),
+    reason: draft.reason
+  };
+  if (draft.id) payload.id = String(draft.id).trim();
+  return payload;
+}
 
 function formatDate(value) {
   if (!value) return "Sin registro";
@@ -77,7 +287,8 @@ function formatPercent(value = 0) {
 }
 
 function roleLabel(roles = []) {
-  return roles.includes("admin") ? "admin" : "user";
+  const base = roles.includes("admin") ? "admin" : "user";
+  return roles.includes("vip") ? `${base} · VIP` : base;
 }
 
 function metric(value) {
@@ -95,9 +306,9 @@ function vectorFrom(value, fallback = [0, 0, 0]) {
 function draftFromModelProduct(product, allowedAssets = []) {
   const metadata = product?.metadata || {};
   const setting = product?.model3dSetting || null;
-  const firstAsset = allowedAssets[0] || {};
-  const assetKey = setting?.assetKey || metadata.assetKey || firstAsset.assetKey || "";
-  const asset = allowedAssets.find((item) => item.assetKey === assetKey) || firstAsset;
+  const suggestedAsset = !setting && !metadata.assetKey ? likelyAssetForProduct(product, allowedAssets) : null;
+  const assetKey = setting?.assetKey || metadata.assetKey || suggestedAsset?.assetKey || "";
+  const asset = allowedAssets.find((item) => item.assetKey === assetKey) || suggestedAsset || {};
   const colorMode = setting?.colorMode || metadata.colorMode || DEFAULT_MODEL_COLOR_MODE;
   return {
     productId: product?.id || "",
@@ -114,6 +325,32 @@ function draftFromModelProduct(product, allowedAssets = []) {
     previewStatus: setting?.previewStatus || metadata.previewStatus || "READY",
     active: setting?.active ?? true,
     reason: ""
+  };
+}
+
+function modelDraftWithAsset(current, asset) {
+  return {
+    ...current,
+    assetKey: asset?.assetKey || "",
+    assetUrl: asset?.assetUrl || null,
+    fallbackModel: asset?.fallbackModel || current.fallbackModel || "hat",
+    fitSize: asset?.fitSize ?? current.fitSize ?? 1.9
+  };
+}
+
+function modelSettingsFromDraft(draft, assetKey = draft.assetKey) {
+  return {
+    assetKey,
+    fallbackModel: draft.fallbackModel,
+    fitSize: Number(draft.fitSize),
+    rotation: vectorFrom(draft.rotation),
+    offset: vectorFrom(draft.offset),
+    colorLocked: draft.colorLocked,
+    tintable: draft.tintable,
+    tintStrength: Number(draft.tintStrength),
+    colorMode: draft.colorMode,
+    previewStatus: draft.previewStatus,
+    active: draft.active
   };
 }
 
@@ -145,6 +382,190 @@ function productWithModelDraft(product, draft) {
   return { ...product, rarity: active ? "LEGENDARY" : product.rarity, metadata };
 }
 
+function numberDraft(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function designerCategoryConfig(category) {
+  return visualDesignerCategories.find((item) => item.key === category) || visualDesignerCategories[0];
+}
+
+function emptyDesignerDraft(category = "DICE") {
+  const categoryConfig = designerCategoryConfig(category);
+  const defaults = designerDefaults[categoryConfig.key] || designerDefaults.DICE;
+  return {
+    id: "",
+    slug: "",
+    name: "",
+    description: "",
+    gameKey: "MONOPOLY",
+    category: categoryConfig.key,
+    slotKey: categoryConfig.slotKey,
+    rarity: categoryConfig.key === "DICE_FX" ? "EPIC" : "RARE",
+    priceUnits: categoryConfig.key === "BOARD_THEME" ? 240 : categoryConfig.key === "DICE_FX" ? 180 : 120,
+    active: true,
+    preview: categoryConfig.key === "DICE" ? "D6" : categoryConfig.key === "DICE_FX" ? "FX" : "MAP",
+    reason: "",
+    ...defaults
+  };
+}
+
+function draftFromDesignerProduct(product, fallbackCategory = "DICE") {
+  const category = product?.category || fallbackCategory;
+  const metadata = product?.metadata || {};
+  const draft = {
+    ...emptyDesignerDraft(category),
+    id: product?.id || "",
+    slug: product?.slug || "",
+    name: product?.name || "",
+    description: product?.description || "",
+    category,
+    slotKey: product?.slotKey || category,
+    rarity: product?.rarity || "COMMON",
+    priceUnits: product?.priceUnits ?? 0,
+    active: product?.active !== false,
+    preview: product?.preview || (category === "DICE" ? "D6" : category === "DICE_FX" ? "FX" : "MAP"),
+    reason: ""
+  };
+  if (category === "DICE") {
+    return {
+      ...draft,
+      baseColor: metadata.baseColor || draft.baseColor,
+      pipColor: metadata.pipColor || draft.pipColor,
+      accentColor: metadata.accentColor || draft.accentColor,
+      edgeColor: metadata.edgeColor || draft.edgeColor,
+      pattern: metadata.pattern || draft.pattern,
+      pipShape: metadata.pipShape || draft.pipShape,
+      roughness: metadata.roughness ?? draft.roughness,
+      metalness: metadata.metalness ?? draft.metalness,
+      opacity: metadata.opacity ?? draft.opacity,
+      pipScale: metadata.pipScale ?? draft.pipScale,
+      faceContrast: metadata.faceContrast ?? draft.faceContrast
+    };
+  }
+  if (category === "DICE_FX") {
+    return {
+      ...draft,
+      effect: metadata.effect || draft.effect,
+      color: metadata.color || draft.color,
+      secondaryColor: metadata.secondaryColor || draft.secondaryColor,
+      intensity: metadata.intensity ?? draft.intensity,
+      speed: metadata.speed ?? draft.speed,
+      spread: metadata.spread ?? draft.spread,
+      particleSize: metadata.particleSize ?? draft.particleSize,
+      ringScale: metadata.ringScale ?? draft.ringScale,
+      beamJitter: metadata.beamJitter ?? draft.beamJitter,
+      gravity: metadata.gravity ?? draft.gravity,
+      sparkle: metadata.sparkle ?? draft.sparkle,
+      density: metadata.density ?? draft.density
+    };
+  }
+  if (category === "BOARD_THEME") {
+    return {
+      ...draft,
+      baseColor: metadata.baseColor || draft.baseColor,
+      centerColor: metadata.centerColor || draft.centerColor,
+      accentColor: metadata.accentColor || draft.accentColor,
+      roughness: metadata.roughness ?? draft.roughness,
+      metalness: metadata.metalness ?? draft.metalness,
+      glow: metadata.glow ?? draft.glow,
+      boardTexture: metadata.boardTexture || ""
+    };
+  }
+  return draft;
+}
+
+function metadataFromDesignerDraft(draft) {
+  if (draft.category === "DICE") {
+    const opacity = numberDraft(draft.opacity, 1);
+    return {
+      baseColor: draft.baseColor,
+      pipColor: draft.pipColor,
+      accentColor: draft.accentColor,
+      edgeColor: draft.edgeColor,
+      pattern: draft.pattern,
+      pipShape: draft.pipShape,
+      roughness: numberDraft(draft.roughness, 0.34),
+      metalness: numberDraft(draft.metalness, 0.04),
+      opacity,
+      transparent: opacity < 1,
+      pipScale: numberDraft(draft.pipScale, 1),
+      faceContrast: numberDraft(draft.faceContrast, 0.35),
+      fxCompatible: true
+    };
+  }
+  if (draft.category === "DICE_FX") {
+    return {
+      effect: draft.effect,
+      color: draft.color,
+      secondaryColor: draft.secondaryColor,
+      intensity: numberDraft(draft.intensity, 1),
+      speed: numberDraft(draft.speed, 1),
+      spread: numberDraft(draft.spread, 1),
+      particleSize: numberDraft(draft.particleSize, 1),
+      ringScale: numberDraft(draft.ringScale, 1),
+      beamJitter: numberDraft(draft.beamJitter, 1),
+      gravity: numberDraft(draft.gravity, 0.55),
+      sparkle: numberDraft(draft.sparkle, 0.65),
+      density: numberDraft(draft.density, 1)
+    };
+  }
+  if (draft.category === "BOARD_THEME") {
+    return {
+      baseColor: draft.baseColor,
+      centerColor: draft.centerColor,
+      accentColor: draft.accentColor,
+      roughness: numberDraft(draft.roughness, 0.58),
+      metalness: numberDraft(draft.metalness, 0.16),
+      glow: numberDraft(draft.glow, 0.32),
+      boardTexture: typeof draft.boardTexture === "string" && draft.boardTexture.startsWith("data:image")
+        ? draft.boardTexture
+        : ""
+    };
+  }
+  return {};
+}
+
+function payloadFromDesignerDraft(draft) {
+  const categoryConfig = designerCategoryConfig(draft.category);
+  const name = String(draft.name || "").trim();
+  const slug = slugFromName(draft.slug || name);
+  const payload = {
+    slug,
+    name,
+    description: String(draft.description || "").trim(),
+    gameKey: "MONOPOLY",
+    category: categoryConfig.key,
+    slotKey: categoryConfig.slotKey,
+    rarity: draft.rarity,
+    priceUnits: Number(draft.priceUnits),
+    active: draft.active,
+    preview: draft.preview || (categoryConfig.key === "DICE" ? "D6" : categoryConfig.key === "DICE_FX" ? "FX" : "MAP"),
+    metadata: metadataFromDesignerDraft({ ...draft, category: categoryConfig.key }),
+    reason: draft.reason
+  };
+  if (draft.id) payload.id = String(draft.id).trim();
+  return payload;
+}
+
+function productFromDesignerDraft(draft) {
+  return {
+    id: draft.id || "designer-preview",
+    slug: draft.slug || slugFromName(draft.name),
+    name: draft.name || (draft.category === "DICE" ? "Dados custom" : draft.category === "DICE_FX" ? "FX custom" : "Tablero custom"),
+    description: draft.description || "Preview del estudio visual",
+    priceUnits: Number(draft.priceUnits || 0),
+    gameKey: "MONOPOLY",
+    category: draft.category,
+    slotKey: draft.slotKey || draft.category,
+    rarity: draft.rarity || "COMMON",
+    active: draft.active !== false,
+    preview: draft.preview || "*",
+    metadata: metadataFromDesignerDraft(draft)
+  };
+}
+
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -170,8 +591,14 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
     amount: 100,
     reason: ""
   });
-  const [selectedModelProductId, setSelectedModelProductId] = useState("");
+  const [selectedStoreProductId, setSelectedStoreProductId] = useState("");
+  const [productDraftMode, setProductDraftMode] = useState("create");
+  const [productDraft, setProductDraft] = useState(() => emptyProductDraft());
   const [modelDraft, setModelDraft] = useState(() => draftFromModelProduct(null));
+  const [designerCategory, setDesignerCategory] = useState("DICE");
+  const [designerDraftMode, setDesignerDraftMode] = useState("create");
+  const [selectedDesignerProductId, setSelectedDesignerProductId] = useState("");
+  const [designerDraft, setDesignerDraft] = useState(() => emptyDesignerDraft("DICE"));
   const [previewTokenColor, setPreviewTokenColor] = useState(previewColorPresets[0]);
   const [uploadDraft, setUploadDraft] = useState({
     file: null,
@@ -201,8 +628,9 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
         worldId: current.worldId || String(payload.currencies?.worlds?.[0]?.id || "")
       }));
       const firstModelProduct = payload.store?.model3d?.products?.[0]
-        || payload.store?.products?.find((product) => product.gameKey === "MONOPOLY" && product.category === "TOKEN");
-      setSelectedModelProductId((current) => current || String(firstModelProduct?.id || ""));
+        || payload.store?.products?.find((product) => product.gameKey === "MONOPOLY" && isTokenProduct(product));
+      const firstStoreProduct = firstModelProduct || payload.store?.products?.[0];
+      setSelectedStoreProductId((current) => current || String(firstStoreProduct?.id || ""));
     } catch (nextError) {
       setError(nextError.message || "No se pudo cargar administracion");
     } finally {
@@ -220,25 +648,75 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
   const logs = data?.logs || [];
   const stats = data?.stats || {};
   const store = data?.store || {};
+  const productCatalog = store.products || [];
   const model3d = store.model3d || {};
   const model3dProducts = model3d.products || (store.products || []).filter(
-    (product) => product.gameKey === "MONOPOLY" && product.category === "TOKEN"
+    (product) => product.gameKey === "MONOPOLY" && isTokenProduct(product)
   );
   const allowedModelAssets = model3d.allowedAssets || [];
   const fallbackModels = model3d.fallbackModels || [];
   const previewStatuses = model3d.previewStatuses || ["DRAFT", "READY", "NEEDS_REVIEW", "BROKEN"];
-  const seedWriteEnabled = Boolean(model3d.seedWriteEnabled);
   const selectedUser = useMemo(
     () => users.find((user) => String(user.id) === String(selectedUserId)) || users[0] || null,
     [selectedUserId, users]
   );
-  const selectedModelProduct = useMemo(
-    () => model3dProducts.find((product) => product.id === selectedModelProductId) || model3dProducts[0] || null,
-    [model3dProducts, selectedModelProductId]
+  const selectedStoreProduct = useMemo(
+    () => productCatalog.find((product) => product.id === selectedStoreProductId) || productCatalog[0] || null,
+    [productCatalog, selectedStoreProductId]
   );
-  const modelPreviewProduct = useMemo(
-    () => productWithModelDraft(selectedModelProduct, modelDraft),
-    [selectedModelProduct, modelDraft]
+  const productDraftPreview = useMemo(() => ({
+    id: productDraft.id || "preview-product",
+    slug: productDraft.slug || slugFromName(productDraft.name),
+    name: productDraft.name || "Nueva pieza",
+    description: productDraft.description || "Vista previa del customizable",
+    priceUnits: Number(productDraft.priceUnits || 0),
+    gameKey: productDraft.gameKey || "MONOPOLY",
+    category: productDraft.category || "TOKEN",
+    slotKey: productDraft.slotKey || productDraft.category || "TOKEN",
+    rarity: productDraft.rarity || "COMMON",
+    active: productDraft.active !== false,
+    preview: productDraft.preview || "*",
+    metadata: metadataFromProductDraft(productDraft, productDraftMode === "edit" ? selectedStoreProduct : null)
+  }), [productDraft, productDraftMode, selectedStoreProduct]);
+  const configuratorPreviewProduct = useMemo(
+    () => (isTokenProduct(productDraftPreview) && modelDraft.assetKey
+      ? productWithModelDraft(productDraftPreview, modelDraft)
+      : productDraftPreview),
+    [productDraftPreview, modelDraft]
+  );
+  const selectedModelAsset = useMemo(
+    () => allowedModelAssets.find((asset) => asset.assetKey === modelDraft.assetKey) || null,
+    [allowedModelAssets, modelDraft.assetKey]
+  );
+  const uploadedModelAssets = useMemo(
+    () => allowedModelAssets.filter((asset) => asset.source === "UPLOAD"),
+    [allowedModelAssets]
+  );
+  const usedModelAssetKeys = useMemo(
+    () => new Set(model3dProducts.map((product) => (
+      product.model3dSetting?.active === false ? null : product.model3dSetting?.assetKey
+    )).filter(Boolean)),
+    [model3dProducts]
+  );
+  const unlinkedUploadedAssets = useMemo(
+    () => uploadedModelAssets.filter((asset) => !usedModelAssetKeys.has(asset.assetKey)),
+    [uploadedModelAssets, usedModelAssetKeys]
+  );
+  const designerProducts = useMemo(
+    () => productCatalog.filter((product) => (
+      product.gameKey === "MONOPOLY" &&
+      product.category === designerCategory &&
+      visualDesignerCategories.some((item) => item.key === product.category)
+    )),
+    [productCatalog, designerCategory]
+  );
+  const selectedDesignerProduct = useMemo(
+    () => designerProducts.find((product) => product.id === selectedDesignerProductId) || null,
+    [designerProducts, selectedDesignerProductId]
+  );
+  const designerPreviewProduct = useMemo(
+    () => productFromDesignerDraft(designerDraft),
+    [designerDraft]
   );
 
   useEffect(() => {
@@ -256,9 +734,18 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
   }, [selectedUser?.id]);
 
   useEffect(() => {
-    if (!selectedModelProduct) return;
-    setModelDraft(draftFromModelProduct(selectedModelProduct, allowedModelAssets));
-  }, [selectedModelProduct?.id, selectedModelProduct?.model3dSetting?.updatedAt, allowedModelAssets.length]);
+    if (productDraftMode !== "edit" || !selectedStoreProduct) return;
+    setProductDraft(draftFromStoreProduct(selectedStoreProduct));
+    if (isTokenProduct(selectedStoreProduct)) {
+      setModelDraft(draftFromModelProduct(selectedStoreProduct, allowedModelAssets));
+    }
+  }, [productDraftMode, selectedStoreProduct?.id, selectedStoreProduct?.model3dSetting?.updatedAt, allowedModelAssets.length]);
+
+  useEffect(() => {
+    if (productDraftMode !== "create" || !isTokenDraft(productDraft) || modelDraft.assetKey) return;
+    const asset = likelyAssetForProduct(productDraft, allowedModelAssets);
+    if (asset) setModelDraft((current) => modelDraftWithAsset(current, asset));
+  }, [productDraftMode, productDraft.category, productDraft.name, productDraft.slug, modelDraft.assetKey, allowedModelAssets.length]);
 
   async function searchUsers(event) {
     event?.preventDefault();
@@ -369,30 +856,91 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
     }
   }
 
-  function patchStoreModel3d(payload) {
-    setData((current) => {
-      if (!current?.store) return current;
-      const nextProducts = (current.store.products || []).map((product) =>
-        payload.product && product.id === payload.product.id ? payload.product : product
-      );
-      const glbTokenCount = nextProducts.filter(
-        (product) => product.gameKey === "MONOPOLY"
-          && product.category === "TOKEN"
-          && product.metadata?.renderer === "gltf"
-      ).length;
-      return {
-        ...current,
-        store: {
-          ...current.store,
-          products: nextProducts,
-          model3d: payload.model3d || current.store.model3d,
-          summary: {
-            ...(current.store.summary || {}),
-            glbTokenCount,
-            model3dSettingCount: payload.model3d?.settings?.length ?? current.store.summary?.model3dSettingCount
-          }
-        }
-      };
+  async function refreshStoreSnapshot(selectedProductId = selectedStoreProductId) {
+    const payload = await api("/api/admin/store-analysis", { token });
+    const nextStore = payload.store || {};
+    setData((current) => current ? { ...current, store: nextStore } : current);
+    const nextProduct = (nextStore.products || []).find((product) => product.id === selectedProductId)
+      || nextStore.products?.[0]
+      || null;
+    if (nextProduct) {
+      setSelectedStoreProductId(nextProduct.id);
+      setProductDraftMode("edit");
+      setProductDraft(draftFromStoreProduct(nextProduct));
+      if (nextProduct.gameKey === "MONOPOLY" && isTokenProduct(nextProduct)) {
+        setModelDraft(draftFromModelProduct(nextProduct, nextStore.model3d?.allowedAssets || []));
+      }
+    }
+    return nextProduct;
+  }
+
+  function startNewProduct(category = "TOKEN") {
+    setProductDraftMode("create");
+    setSelectedStoreProductId("");
+    setProductDraft(emptyProductDraft(category));
+    setModelDraft(draftFromModelProduct(null, allowedModelAssets));
+    setUploadDraft({ file: null, label: "", fallbackModel: "hat", fitSize: 1.9, reason: "" });
+  }
+
+  function selectStoreProduct(product) {
+    if (!product) return;
+    setSelectedStoreProductId(product.id);
+    setProductDraftMode("edit");
+    setProductDraft(draftFromStoreProduct(product));
+    if (product.gameKey === "MONOPOLY" && isTokenProduct(product)) {
+      setModelDraft(draftFromModelProduct(product, allowedModelAssets));
+    }
+    setUploadDraft({ file: null, label: "", fallbackModel: "hat", fitSize: 1.9, reason: "" });
+  }
+
+  function startNewDesigner(category = designerCategory) {
+    const nextCategory = designerCategoryConfig(category).key;
+    setDesignerCategory(nextCategory);
+    setDesignerDraftMode("create");
+    setSelectedDesignerProductId("");
+    setDesignerDraft(emptyDesignerDraft(nextCategory));
+  }
+
+  function selectDesignerProduct(product) {
+    if (!product) return;
+    setDesignerCategory(product.category);
+    setDesignerDraftMode("edit");
+    setSelectedDesignerProductId(product.id);
+    setDesignerDraft(draftFromDesignerProduct(product, product.category));
+  }
+
+  function updateDesignerDraft(field, value) {
+    setDesignerDraft((current) => {
+      if (field === "name") {
+        const next = { ...current, name: value };
+        if (!current.slug) next.slug = slugFromName(value);
+        return next;
+      }
+      return { ...current, [field]: value };
+    });
+  }
+
+  function changeDesignerCategory(category) {
+    startNewDesigner(category);
+  }
+
+  function updateProductDraft(field, value) {
+    setProductDraft((current) => {
+      if (field === "name") {
+        const next = { ...current, name: value };
+        if (!current.slug) next.slug = slugFromName(value);
+        return next;
+      }
+      if (field === "category") {
+        const categoryConfig = monopolyProductCategories.find((item) => item.key === value) || monopolyProductCategories[0];
+        return {
+          ...current,
+          category: categoryConfig.key,
+          slotKey: categoryConfig.slotKey,
+          model: categoryConfig.key === "TOKEN" ? current.model : "hat"
+        };
+      }
+      return { ...current, [field]: value };
     });
   }
 
@@ -418,112 +966,220 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
     }));
   }
 
-  async function uploadModelAsset(event) {
+  function chooseModelAsset(assetKey) {
+    const asset = allowedModelAssets.find((item) => item.assetKey === assetKey);
+    setModelDraft((current) => modelDraftWithAsset(current, asset || null));
+  }
+
+  async function saveDesignerProduct(event) {
     event.preventDefault();
-    if (!uploadDraft.file) {
-      setError("Selecciona un archivo .glb");
+    const reason = String(designerDraft.reason || "").trim();
+    const productPayload = payloadFromDesignerDraft(designerDraft);
+    if (!productPayload.name || !productPayload.slug) {
+      setError("Nombre y slug son obligatorios para el preset visual.");
+      return;
+    }
+    if (!reason) {
+      setError("Agrega un motivo para guardar el preset visual.");
       return;
     }
     setBusy(true);
     try {
-      const fileBase64 = await fileToBase64(uploadDraft.file);
-      const payload = await api("/api/admin/model-3d-assets", {
-        method: "POST",
-        token,
-        body: {
-          fileName: uploadDraft.file.name,
-          label: uploadDraft.label || uploadDraft.file.name.replace(/\.glb$/i, ""),
-          fileBase64,
-          fallbackModel: uploadDraft.fallbackModel,
-          fitSize: Number(uploadDraft.fitSize),
-          reason: uploadDraft.reason
+      const product = await api(
+        designerDraftMode === "edit" && selectedDesignerProduct
+          ? `/api/admin/eycon/products/${selectedDesignerProduct.id}`
+          : "/api/admin/eycon/products",
+        {
+          method: designerDraftMode === "edit" && selectedDesignerProduct ? "PUT" : "POST",
+          token,
+          body: { ...productPayload, reason }
         }
-      });
-      setData((current) => current ? {
-        ...current,
-        store: {
-          ...(current.store || {}),
-          model3d: payload.model3d || current.store?.model3d,
-          summary: {
-            ...(current.store?.summary || {}),
-            allowedAssetCount: payload.model3d?.allowedAssets?.length ?? current.store?.summary?.allowedAssetCount
-          }
-        }
-      } : current);
-      setModelDraft((current) => ({
-        ...current,
-        assetKey: payload.asset?.assetKey || current.assetKey,
-        assetUrl: payload.asset?.assetUrl || current.assetUrl,
-        fallbackModel: payload.asset?.fallbackModel || current.fallbackModel,
-        fitSize: payload.asset?.fitSize ?? current.fitSize
-      }));
-      setUploadDraft({ file: null, label: "", fallbackModel: "hat", fitSize: 1.9, reason: "" });
-      setNotice(payload.seedWritten
-        ? "Modelo GLB cargado y seed Git actualizado."
-        : "Modelo GLB cargado en la DB local. Activa MODEL_3D_WRITE_SEED=1 para escribir el seed Git.");
+      );
+      await refreshStoreSnapshot(selectedStoreProductId);
+      setDesignerCategory(product.category);
+      setDesignerDraftMode("edit");
+      setSelectedDesignerProductId(product.id);
+      setDesignerDraft(draftFromDesignerProduct(product, product.category));
+      setNotice("Preset visual guardado en la tienda.");
       setError("");
     } catch (nextError) {
-      setError(nextError.message || "No se pudo cargar modelo GLB");
+      setError(nextError.message || "No se pudo guardar el preset visual");
     } finally {
       setBusy(false);
     }
   }
 
-  async function saveModel3d(event) {
-    event.preventDefault();
-    if (!selectedModelProduct) return;
+  async function deactivateDesignerProduct() {
+    if (!selectedDesignerProduct) return;
+    const reason = String(designerDraft.reason || "Desactivacion de preset visual").trim();
     setBusy(true);
     try {
-      const payload = await api(`/api/admin/model-3d-settings/${selectedModelProduct.id}`, {
+      const product = await api(`/api/admin/eycon/products/${selectedDesignerProduct.id}`, {
         method: "PUT",
         token,
         body: {
-          reason: modelDraft.reason,
-          settings: {
-            assetKey: modelDraft.assetKey,
-            fallbackModel: modelDraft.fallbackModel,
-            fitSize: Number(modelDraft.fitSize),
-            rotation: vectorFrom(modelDraft.rotation),
-            offset: vectorFrom(modelDraft.offset),
-            colorLocked: modelDraft.colorLocked,
-            tintable: modelDraft.tintable,
-            tintStrength: Number(modelDraft.tintStrength),
-            colorMode: modelDraft.colorMode,
-            previewStatus: modelDraft.previewStatus,
-            active: modelDraft.active
-          }
+          active: false,
+          reason
         }
       });
-      patchStoreModel3d(payload);
-      setModelDraft((current) => ({ ...current, reason: "" }));
-      setNotice(payload.seedWritten
-        ? "Modelo 3D guardado y seed Git actualizado."
-        : "Modelo 3D guardado en la DB. Activa MODEL_3D_WRITE_SEED=1 para llevarlo por Git.");
+      await refreshStoreSnapshot(selectedStoreProductId);
+      setDesignerDraft(draftFromDesignerProduct(product, product.category));
+      setNotice("Preset visual desactivado.");
       setError("");
     } catch (nextError) {
-      setError(nextError.message || "No se pudo guardar modelo 3D");
+      setError(nextError.message || "No se pudo desactivar el preset visual");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function uploadPendingModelAsset(reason) {
+    if (!uploadDraft.file) {
+      return null;
+    }
+    const fileBase64 = await fileToBase64(uploadDraft.file);
+    const payload = await api("/api/admin/model-3d-assets", {
+      method: "POST",
+      token,
+      body: {
+        fileName: uploadDraft.file.name,
+        label: uploadDraft.label || productDraft.name || uploadDraft.file.name.replace(/\.glb$/i, ""),
+        fileBase64,
+        fallbackModel: uploadDraft.fallbackModel,
+        fitSize: Number(uploadDraft.fitSize),
+        reason
+      }
+    });
+    return payload.asset || null;
+  }
+
+  async function savePieceConfigurator(event) {
+    event.preventDefault();
+    const reason = String(productDraft.reason || modelDraft.reason || uploadDraft.reason || "").trim();
+    const currentProduct = productDraftMode === "edit" ? selectedStoreProduct : null;
+    const productPayload = payloadFromProductDraft(productDraft, currentProduct);
+    if (!productPayload.name || !productPayload.slug) {
+      setError("Nombre y slug son obligatorios.");
+      return;
+    }
+    if (!reason) {
+      setError("Agrega un motivo para guardar el cambio.");
+      return;
+    }
+    if (productPayload.slotKey === "TOKEN" && !uploadDraft.file && !modelDraft.assetKey) {
+      setError("Elige un GLB aprobado o selecciona un archivo .glb para esta pieza.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const uploadedAsset = await uploadPendingModelAsset(reason);
+      const assetKey = uploadedAsset?.assetKey || modelDraft.assetKey;
+      const nextModelDraft = uploadedAsset
+        ? modelDraftWithAsset(modelDraft, uploadedAsset)
+        : modelDraft;
+
+      const product = await api(
+        productDraftMode === "edit" && selectedStoreProduct
+          ? `/api/admin/eycon/products/${selectedStoreProduct.id}`
+          : "/api/admin/eycon/products",
+        {
+          method: productDraftMode === "edit" && selectedStoreProduct ? "PUT" : "POST",
+          token,
+          body: { ...productPayload, reason }
+        }
+      );
+
+      if (isTokenProduct(product) && assetKey) {
+        await api(`/api/admin/model-3d-settings/${product.id}`, {
+          method: "PUT",
+          token,
+          body: {
+            reason,
+            settings: modelSettingsFromDraft(nextModelDraft, assetKey)
+          }
+        });
+      }
+
+      setUploadDraft({ file: null, label: "", fallbackModel: "hat", fitSize: 1.9, reason: "" });
+      await refreshStoreSnapshot(product.id);
+      setNotice(isTokenProduct(product)
+        ? "Pieza y modelo 3D guardados en un solo flujo."
+        : "Customizable guardado.");
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudo guardar la pieza completa");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deactivateProduct() {
+    if (!selectedStoreProduct) return;
+    const reason = productDraft.reason || "Desactivacion de producto EyCon";
+    setBusy(true);
+    try {
+      const product = await api(`/api/admin/eycon/products/${selectedStoreProduct.id}`, {
+        method: "PUT",
+        token,
+        body: {
+          active: false,
+          reason
+        }
+      });
+      await refreshStoreSnapshot(product.id);
+      setNotice("Customizable desactivado.");
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudo desactivar el customizable");
     } finally {
       setBusy(false);
     }
   }
 
   async function deleteModel3d() {
-    if (!selectedModelProduct) return;
+    if (!selectedStoreProduct) return;
+    const reason = productDraft.reason || modelDraft.reason || "Desactivacion de ajuste 3D";
     setBusy(true);
     try {
-      const payload = await api(`/api/admin/model-3d-settings/${selectedModelProduct.id}`, {
+      await api(`/api/admin/model-3d-settings/${selectedStoreProduct.id}`, {
         method: "DELETE",
         token,
-        body: { reason: modelDraft.reason }
+        body: { reason }
       });
-      patchStoreModel3d(payload);
+      await refreshStoreSnapshot(selectedStoreProduct.id);
       setModelDraft((current) => ({ ...current, active: false, reason: "" }));
-      setNotice(payload.seedWritten
-        ? "Ajuste 3D desactivado y seed Git actualizado."
-        : "Ajuste 3D desactivado en la DB. Activa MODEL_3D_WRITE_SEED=1 para llevarlo por Git.");
+      setNotice("Modelo 3D desactivado para esta pieza.");
       setError("");
     } catch (nextError) {
       setError(nextError.message || "No se pudo desactivar modelo 3D");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteModelAsset(assetKey) {
+    const reason = String(productDraft.reason || modelDraft.reason || uploadDraft.reason || "").trim();
+    if (!assetKey) return;
+    if (!reason) {
+      setError("Agrega un motivo antes de eliminar el asset.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api(`/api/admin/model-3d-assets/${encodeURIComponent(assetKey)}`, {
+        method: "DELETE",
+        token,
+        body: { reason }
+      });
+      if (modelDraft.assetKey === assetKey) {
+        setModelDraft((current) => modelDraftWithAsset(current, null));
+      }
+      await refreshStoreSnapshot(selectedStoreProductId);
+      setNotice(`Asset ${assetKey} eliminado de uploads aprobados.`);
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudo eliminar el asset");
     } finally {
       setBusy(false);
     }
@@ -546,10 +1202,13 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
   return (
     <main className="admin-shell">
       <header className="admin-topbar">
-        <div>
-          <span className="admin-eyebrow"><Shield size={15} /> Panel protegido</span>
-          <h1>Administracion</h1>
-          <p>Control de usuarios, monedas, tienda, estadisticas y auditoria.</p>
+        <div className="admin-topbar-brand">
+          <BrandLogo size="md" alt="EasyNo" />
+          <div>
+            <span className="admin-eyebrow"><Shield size={15} /> Panel protegido</span>
+            <h1>Administracion</h1>
+            <p>Control de usuarios, monedas, tienda, estadisticas y auditoria.</p>
+          </div>
         </div>
         <div className="admin-topbar-actions">
           <span className="admin-session-pill">
@@ -664,6 +1323,7 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
                 <strong>Roles</strong>
                 <label className="admin-check"><input type="checkbox" checked disabled /> user</label>
                 <label className="admin-check"><input type="checkbox" checked={roleDraft.roles.includes("admin")} onChange={() => toggleRole("admin")} /> admin</label>
+                <label className="admin-check"><input type="checkbox" checked={roleDraft.roles.includes("vip")} onChange={() => toggleRole("vip")} /> vip (nombre dorado)</label>
                 <label>Motivo<input value={roleDraft.reason} onChange={(event) => setRoleDraft((current) => ({ ...current, reason: event.target.value }))} placeholder="Obligatorio" /></label>
                 <button type="button" onClick={updateRoles} disabled={busy}><Shield size={16} /> Actualizar roles</button>
 
@@ -743,221 +1403,477 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
       {activeTab === "store" && (
         <section className="admin-grid">
           <article className="admin-metric"><span>Productos</span><strong>{metric(store.summary?.productCount)}</strong><small>{metric(store.summary?.activeProductCount)} activos</small></article>
-          <article className="admin-metric"><span>Piezas Monopoly</span><strong>{metric(store.summary?.monopolyTokenCount)}</strong><small>{metric(store.summary?.glbTokenCount)} GLB</small></article>
+          <article className="admin-metric"><span>Piezas BolowPoly</span><strong>{metric(store.summary?.monopolyTokenCount)}</strong><small>{metric(store.summary?.glbTokenCount)} GLB</small></article>
           <article className="admin-metric"><span>Ajustes 3D</span><strong>{metric(store.summary?.model3dSettingCount)}</strong><small>{metric(store.summary?.allowedAssetCount)} assets permitidos</small></article>
-          <section className="admin-panel">
-            <header><Boxes size={17} /> Estado actual</header>
-            <div className="admin-list">{(store.modelArchitecture?.currentState || []).map((item) => <span key={item}>{item}</span>)}</div>
-          </section>
-          <section className="admin-panel">
-            <header><Shield size={17} /> CRUD 3D implementado</header>
-            <div className="admin-list">{(store.modelArchitecture?.recommendation || []).map((item) => <span key={item}>{item}</span>)}</div>
-          </section>
-          <section className="admin-panel is-wide">
-            <header><Boxes size={17} /> Editor de modelos 3D</header>
-            <div className="admin-model-brief">
-              <span>
-                <strong>Localhost</strong>
-                <small>Guardar edita SQLite local. Para generar archivo Git usa MODEL_3D_WRITE_SEED=1.</small>
-              </span>
-              <span>
-                <strong>Seed Git</strong>
-                <small>{model3d.seedPath || "backend/model-3d-seed.json"} {seedWriteEnabled ? "se actualiza al guardar." : "esta en solo lectura."}</small>
-              </span>
-              <span>
-                <strong>Modo de color</strong>
-                <small>TINTE/FORZAR usan el color activo del jugador; no guardan un color propio.</small>
-              </span>
-            </div>
-            {selectedModelProduct ? (
-              <div className="admin-model-workbench">
-                <form className="admin-model-upload" onSubmit={uploadModelAsset}>
-                  <div>
-                    <strong><Upload size={15} /> Cargar GLB nuevo</strong>
-                    <small>Se guarda en backend y aparece como asset aprobado.</small>
-                  </div>
-                  <input type="file" accept=".glb,model/gltf-binary" onChange={(event) => setUploadDraft((current) => ({ ...current, file: event.target.files?.[0] || null }))} />
-                  <input value={uploadDraft.label} onChange={(event) => setUploadDraft((current) => ({ ...current, label: event.target.value }))} placeholder="Nombre visible del modelo" />
+          <section className="admin-panel is-wide admin-piece-console">
+            <header>
+              <span><Boxes size={17} /> Configurador de piezas BolowPoly</span>
+              <button type="button" onClick={() => startNewProduct("TOKEN")} disabled={busy}>
+                <Upload size={16} /> Nueva pieza
+              </button>
+            </header>
+
+            <div className="admin-piece-layout">
+              <aside className="admin-piece-list" aria-label="Piezas BolowPoly">
+                <div className="admin-piece-list-head">
+                  <strong>Piezas</strong>
+                  <small>{model3dProducts.length} registros</small>
+                </div>
+                <div className="admin-piece-items">
+                  {model3dProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      className={productDraftMode === "edit" && selectedStoreProduct?.id === product.id ? "is-selected" : ""}
+                      onClick={() => selectStoreProduct(product)}
+                    >
+                      <span>
+                        <strong>{product.name}</strong>
+                        <small>{product.id}</small>
+                      </span>
+                      <em className={product.metadata?.renderer === "gltf" ? "tone-ready" : product.active ? "tone-draft" : "tone-off"}>
+                        {product.metadata?.renderer === "gltf" ? "GLB" : product.active ? "Base" : "Off"}
+                      </em>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              <form className="admin-form-stack admin-piece-form" onSubmit={savePieceConfigurator}>
+                <div className="admin-piece-section">
+                  <span className="admin-section-kicker">{productDraftMode === "edit" ? "Pieza seleccionada" : "Alta de pieza"}</span>
                   <div className="admin-inline-fields">
-                    <select value={uploadDraft.fallbackModel} onChange={(event) => setUploadDraft((current) => ({ ...current, fallbackModel: event.target.value }))}>
-                      {fallbackModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                    </select>
-                    <input type="number" min="0.1" max="5" step="0.01" value={uploadDraft.fitSize} onChange={(event) => setUploadDraft((current) => ({ ...current, fitSize: event.target.value }))} />
+                    <label>
+                      <strong>Nombre</strong>
+                      <input value={productDraft.name} onChange={(event) => updateProductDraft("name", event.target.value)} placeholder="Minecraft Bee" />
+                    </label>
+                    <label>
+                      <strong>Slug</strong>
+                      <input value={productDraft.slug} onChange={(event) => updateProductDraft("slug", slugFromName(event.target.value))} placeholder="minecraft-bee" />
+                    </label>
                   </div>
-                  <input value={uploadDraft.reason} onChange={(event) => setUploadDraft((current) => ({ ...current, reason: event.target.value }))} placeholder="Motivo obligatorio de carga" />
-                  <button type="submit" disabled={busy || !uploadDraft.file}><Upload size={16} /> Subir asset</button>
-                </form>
-
-                <div className="admin-model-editor">
-                  <form className="admin-form-stack admin-model-settings-form" onSubmit={saveModel3d}>
-                    <div className="admin-model-section">
-                      <span className="admin-section-kicker">Producto y asset</span>
+                  {productDraftMode === "create" && (
                     <label>
-                      <strong>1. Producto a personalizar</strong>
-                      <small>Selecciona la pieza EyCon que recibira este modelo.</small>
-                      <select value={selectedModelProduct.id} onChange={(event) => setSelectedModelProductId(event.target.value)}>
-                        {model3dProducts.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.name} - {product.rarity} - {product.model3dSetting?.active === false ? "3D inactivo" : product.metadata?.renderer === "gltf" ? "GLB" : "Primitivo"}
-                          </option>
-                        ))}
+                      <strong>ID</strong>
+                      <input value={productDraft.id} onChange={(event) => updateProductDraft("id", event.target.value)} placeholder="monopoly-token-minecraft-bee" />
+                    </label>
+                  )}
+                  <label>
+                    <strong>Descripcion</strong>
+                    <input value={productDraft.description} onChange={(event) => updateProductDraft("description", event.target.value)} placeholder="Pieza coleccionable para BolowPoly." />
+                  </label>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Rareza</strong>
+                      <select value={productDraft.rarity} onChange={(event) => updateProductDraft("rarity", event.target.value)}>
+                        {productRarities.map((rarityKey) => <option key={rarityKey} value={rarityKey}>{rarityKey}</option>)}
                       </select>
                     </label>
                     <label>
-                      <strong>2. Modelo GLB aprobado</strong>
-                      <small>Debe existir en assets aprobados. Si subes uno nuevo en local, committea tambien el .glb.</small>
-                      <select
-                        value={modelDraft.assetKey}
-                        onChange={(event) => {
-                          const asset = allowedModelAssets.find((item) => item.assetKey === event.target.value);
-                          setModelDraft((current) => ({
-                            ...current,
-                            assetKey: event.target.value,
-                            assetUrl: asset?.assetUrl || null,
-                            fallbackModel: asset?.fallbackModel || current.fallbackModel,
-                            fitSize: asset?.fitSize ?? current.fitSize
-                          }));
-                        }}
-                      >
-                        {allowedModelAssets.map((asset) => (
-                          <option key={asset.assetKey} value={asset.assetKey}>{asset.label} - {asset.source}</option>
-                        ))}
+                      <strong>Precio</strong>
+                      <input type="number" min="0" max="100000" step="1" value={productDraft.priceUnits} onChange={(event) => updateProductDraft("priceUnits", event.target.value)} />
+                    </label>
+                  </div>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Fallback</strong>
+                      <select value={productDraft.model} onChange={(event) => updateProductDraft("model", event.target.value)}>
+                        {(fallbackModels.length ? fallbackModels : ["hat"]).map((model) => <option key={model} value={model}>{model}</option>)}
                       </select>
                     </label>
-                    </div>
-
-                    <div className="admin-color-mode admin-model-section">
-                      <strong><Palette size={15} /> 3. Modo de color</strong>
-                      <div className="admin-segmented">
-                        {["ORIGINAL", "TINT", "FORCE"].map((mode) => (
-                          <button
-                            key={mode}
-                            type="button"
-                            className={modelDraft.colorMode === mode ? "is-active" : ""}
-                            onClick={() => setModelColorMode(mode)}
-                          >
-                            {mode === "ORIGINAL" ? "Original" : mode === "TINT" ? "Tinte" : "Forzar"}
-                          </button>
-                        ))}
-                      </div>
-                      <small>{colorModeCopy[modelDraft.colorMode || DEFAULT_MODEL_COLOR_MODE]}</small>
-                    </div>
-
-                    <div className="admin-model-section">
-                      <span className="admin-section-kicker">Render y publicacion</span>
-                    <div className="admin-inline-fields">
-                      <label>
-                        <strong>Fallback</strong>
-                        <small>Modelo simple si el GLB falla.</small>
-                        <select value={modelDraft.fallbackModel} onChange={(event) => updateModelDraft("fallbackModel", event.target.value)}>
-                          {fallbackModels.map((model) => <option key={model} value={model}>{model}</option>)}
-                        </select>
-                      </label>
-                      <label>
-                        <strong>Estado preview</strong>
-                        <small>Control interno para QA visual.</small>
-                        <select value={modelDraft.previewStatus} onChange={(event) => updateModelDraft("previewStatus", event.target.value)}>
-                          {previewStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
-                        </select>
-                      </label>
-                    </div>
-                    <div className="admin-inline-fields">
-                      <label>
-                        <strong>Escala</strong>
-                        <small>Tamano relativo en tablero y previews.</small>
-                        <input type="number" min="0.1" max="5" step="0.01" value={modelDraft.fitSize} onChange={(event) => updateModelDraft("fitSize", event.target.value)} />
-                      </label>
-                      <label>
-                        <strong>Fuerza de tinte: {formatPercent(modelDraft.tintStrength)}</strong>
-                        <small>Default recomendado {formatPercent(DEFAULT_MODEL_TINT_STRENGTH)}.</small>
-                        <input type="range" min="0" max="1" step="0.01" value={modelDraft.tintStrength} onChange={(event) => updateModelDraft("tintStrength", event.target.value)} disabled={modelDraft.colorMode !== "TINT"} />
-                      </label>
-                    </div>
-                    </div>
-                    <div className="admin-model-section">
-                      <span className="admin-section-kicker">Ajuste fino</span>
-                    <div className="admin-vector-pair">
-                      <div className="admin-vector-group">
-                        <strong>Rotacion XYZ</strong>
-                        {[0, 1, 2].map((index) => (
-                          <input key={`rotation-${index}`} type="number" step="0.01" value={modelDraft.rotation[index]} onChange={(event) => updateModelVector("rotation", index, event.target.value)} />
-                        ))}
-                      </div>
-                      <div className="admin-vector-group">
-                        <strong>Offset XYZ</strong>
-                        {[0, 1, 2].map((index) => (
-                          <input key={`offset-${index}`} type="number" step="0.01" value={modelDraft.offset[index]} onChange={(event) => updateModelVector("offset", index, event.target.value)} />
-                        ))}
-                      </div>
-                    </div>
-                    </div>
-                    <div className="admin-model-section">
-                    <label className="admin-check"><input type="checkbox" checked={modelDraft.active} onChange={(event) => updateModelDraft("active", event.target.checked)} /> Publicar ajuste 3D</label>
                     <label>
-                      <strong>Motivo</strong>
-                      <small>Obligatorio para auditoria.</small>
-                      <input value={modelDraft.reason} onChange={(event) => updateModelDraft("reason", event.target.value)} placeholder="Cambio visual, prueba de escala, baja temporal..." />
+                      <strong>Estado</strong>
+                      <select value={productDraft.active ? "1" : "0"} onChange={(event) => updateProductDraft("active", event.target.value === "1")}>
+                        <option value="1">Activo</option>
+                        <option value="0">Inactivo</option>
+                      </select>
                     </label>
-                    <div className="admin-form-actions">
-                      <button type="submit" disabled={busy || !modelDraft.assetKey}><CheckCircle2 size={16} /> Guardar 3D</button>
-                      <button type="button" className="is-danger" onClick={deleteModel3d} disabled={busy}><Trash2 size={16} /> Desactivar</button>
-                    </div>
-                    </div>
-                  </form>
-
-                  <div className="admin-model-preview">
-                    <div className="admin-preview-tools">
-                      <strong><Palette size={15} /> Color de jugador simulado</strong>
-                      <small>Este color simula el color activo que usara la pieza en tienda y Monopoly.</small>
-                      <div className="admin-color-swatches">
-                        {previewColorPresets.map((preset) => (
-                          <button
-                            key={preset.key}
-                            type="button"
-                            className={previewTokenColor.key === preset.key ? "is-active" : ""}
-                            style={{ "--swatch": preset.bg }}
-                            onClick={() => setPreviewTokenColor(preset)}
-                            title={preset.label}
-                          />
-                        ))}
-                      </div>
-                      <div className="admin-inline-fields">
-                        <input type="color" value={previewTokenColor.bg} onChange={(event) => setPreviewTokenColor((current) => ({ ...current, key: "custom", bg: event.target.value }))} />
-                        <input type="color" value={previewTokenColor.ring} onChange={(event) => setPreviewTokenColor((current) => ({ ...current, key: "custom", ring: event.target.value }))} />
-                      </div>
-                    </div>
-                    <EyconProductPreview3D product={modelPreviewProduct} tokenColor={previewTokenColor} />
-                    <div className="admin-list">
-                      <span><strong>{selectedModelProduct.name}</strong><small>{modelDraft.assetKey || "Sin asset"} - {modelDraft.colorMode || "ORIGINAL"} - {modelDraft.previewStatus}</small></span>
-                      <span><strong>Archivo</strong><small>{allowedModelAssets.find((asset) => asset.assetKey === modelDraft.assetKey)?.filePath || "No seleccionado"}</small></span>
-                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="admin-list"><em>No hay piezas Monopoly disponibles para configurar.</em></div>
-            )}
+
+                <div className="admin-piece-section">
+                  <span className="admin-section-kicker">Modelo GLB</span>
+                  <label>
+                    <strong>Asset aprobado</strong>
+                    <select value={modelDraft.assetKey} onChange={(event) => chooseModelAsset(event.target.value)}>
+                      <option value="">Sin GLB</option>
+                      {allowedModelAssets.map((asset) => (
+                        <option key={asset.assetKey} value={asset.assetKey}>{asset.label} - {asset.assetKey}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="is-danger"
+                    onClick={() => deleteModelAsset(modelDraft.assetKey)}
+                    disabled={
+                      busy ||
+                      !selectedModelAsset ||
+                      selectedModelAsset.source !== "UPLOAD" ||
+                      usedModelAssetKeys.has(selectedModelAsset.assetKey)
+                    }
+                  >
+                    <Trash2 size={16} /> Borrar asset seleccionado
+                  </button>
+                  <div className="admin-model-drop">
+                    <input type="file" accept=".glb,model/gltf-binary" onChange={(event) => setUploadDraft((current) => ({ ...current, file: event.target.files?.[0] || null }))} />
+                    <span>
+                      <strong>{uploadDraft.file?.name || "Sin archivo nuevo"}</strong>
+                      <small>{uploadDraft.file ? "Se subira al guardar" : selectedModelAsset?.filePath || "Selecciona asset o archivo"}</small>
+                    </span>
+                  </div>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Etiqueta upload</strong>
+                      <input value={uploadDraft.label} onChange={(event) => setUploadDraft((current) => ({ ...current, label: event.target.value }))} placeholder={productDraft.name || "Nombre visible"} />
+                    </label>
+                    <label>
+                      <strong>Fallback upload</strong>
+                      <select value={uploadDraft.fallbackModel} onChange={(event) => setUploadDraft((current) => ({ ...current, fallbackModel: event.target.value }))}>
+                        {(fallbackModels.length ? fallbackModels : ["hat"]).map((model) => <option key={model} value={model}>{model}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="admin-piece-section">
+                  <span className="admin-section-kicker">Render</span>
+                  <div className="admin-color-mode">
+                    <strong><Palette size={15} /> Color</strong>
+                    <div className="admin-segmented">
+                      {["ORIGINAL", "TINT", "FORCE"].map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={modelDraft.colorMode === mode ? "is-active" : ""}
+                          onClick={() => setModelColorMode(mode)}
+                        >
+                          {mode === "ORIGINAL" ? "Original" : mode === "TINT" ? "Tinte" : "Forzar"}
+                        </button>
+                      ))}
+                    </div>
+                    <small>{colorModeCopy[modelDraft.colorMode || DEFAULT_MODEL_COLOR_MODE]}</small>
+                  </div>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Escala</strong>
+                      <input type="number" min="0.1" max="5" step="0.01" value={modelDraft.fitSize} onChange={(event) => updateModelDraft("fitSize", event.target.value)} />
+                    </label>
+                    <label>
+                      <strong>Tinte {formatPercent(modelDraft.tintStrength)}</strong>
+                      <input type="range" min="0" max="1" step="0.01" value={modelDraft.tintStrength} onChange={(event) => updateModelDraft("tintStrength", event.target.value)} disabled={modelDraft.colorMode !== "TINT"} />
+                    </label>
+                  </div>
+                  <div className="admin-vector-pair">
+                    <div className="admin-vector-group">
+                      <strong>Rotacion</strong>
+                      {[0, 1, 2].map((index) => (
+                        <input key={`rotation-${index}`} type="number" step="0.01" value={modelDraft.rotation[index]} onChange={(event) => updateModelVector("rotation", index, event.target.value)} />
+                      ))}
+                    </div>
+                    <div className="admin-vector-group">
+                      <strong>Offset</strong>
+                      {[0, 1, 2].map((index) => (
+                        <input key={`offset-${index}`} type="number" step="0.01" value={modelDraft.offset[index]} onChange={(event) => updateModelVector("offset", index, event.target.value)} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Preview QA</strong>
+                      <select value={modelDraft.previewStatus} onChange={(event) => updateModelDraft("previewStatus", event.target.value)}>
+                        {previewStatuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <strong>Publicacion 3D</strong>
+                      <select value={modelDraft.active ? "1" : "0"} onChange={(event) => updateModelDraft("active", event.target.value === "1")}>
+                        <option value="1">Publicado</option>
+                        <option value="0">Oculto</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="admin-piece-section">
+                  <label>
+                    <strong>Motivo</strong>
+                    <input value={productDraft.reason} onChange={(event) => updateProductDraft("reason", event.target.value)} placeholder="Alta de pieza, modelo nuevo, ajuste visual..." />
+                  </label>
+                  <div className="admin-form-actions">
+                    <button type="submit" disabled={busy || !productDraft.name}>
+                      <CheckCircle2 size={16} /> Guardar pieza completa
+                    </button>
+                    <button type="button" className="is-danger" onClick={deactivateProduct} disabled={busy || productDraftMode !== "edit" || !selectedStoreProduct?.active}>
+                      <Trash2 size={16} /> Desactivar pieza
+                    </button>
+                  </div>
+                  <button type="button" className="is-danger" onClick={deleteModel3d} disabled={busy || productDraftMode !== "edit" || !selectedStoreProduct?.model3dSetting}>
+                    <Trash2 size={16} /> Quitar solo GLB
+                  </button>
+                </div>
+              </form>
+
+              <aside className="admin-piece-preview">
+                <div className="admin-preview-tools">
+                  <strong><Palette size={15} /> Color de jugador</strong>
+                  <div className="admin-color-swatches">
+                    {previewColorPresets.map((preset) => (
+                      <button
+                        key={preset.key}
+                        type="button"
+                        className={previewTokenColor.key === preset.key ? "is-active" : ""}
+                        style={{ "--swatch": preset.bg }}
+                        onClick={() => setPreviewTokenColor(preset)}
+                        title={preset.label}
+                      />
+                    ))}
+                  </div>
+                  <div className="admin-inline-fields">
+                    <input type="color" value={previewTokenColor.bg} onChange={(event) => setPreviewTokenColor((current) => ({ ...current, key: "custom", bg: event.target.value }))} />
+                    <input type="color" value={previewTokenColor.ring} onChange={(event) => setPreviewTokenColor((current) => ({ ...current, key: "custom", ring: event.target.value }))} />
+                  </div>
+                </div>
+                <EyconProductPreview3D product={configuratorPreviewProduct} tokenColor={isTokenDraft(productDraft) ? previewTokenColor : null} />
+                <div className="admin-list">
+                  <span><strong>{productDraft.name || "Nueva pieza"}</strong><small>{modelDraft.assetKey || "Sin GLB"} - {modelDraft.previewStatus}</small></span>
+                  <span><strong>Archivo</strong><small>{uploadDraft.file?.name || selectedModelAsset?.filePath || "No seleccionado"}</small></span>
+                  <span><strong>Uploads libres</strong><small>{unlinkedUploadedAssets.map((asset) => asset.assetKey).join(", ") || "Ninguno"}</small></span>
+                </div>
+                {unlinkedUploadedAssets.length > 0 && (
+                  <div className="admin-asset-picks">
+                    {unlinkedUploadedAssets.slice(0, 6).map((asset) => (
+                      <article key={asset.assetKey}>
+                        <span>
+                          <strong>{asset.label}</strong>
+                          <small>{asset.assetKey}</small>
+                        </span>
+                        <button type="button" onClick={() => chooseModelAsset(asset.assetKey)} disabled={busy}>
+                          Usar
+                        </button>
+                        <button type="button" className="is-danger" onClick={() => deleteModelAsset(asset.assetKey)} disabled={busy}>
+                          <Trash2 size={14} />
+                        </button>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </aside>
+            </div>
           </section>
-          <section className="admin-panel is-wide">
-            <header><Gem size={17} /> Catalogo EyCon</header>
-            <div className="admin-table-wrap">
-              <table>
-                <thead><tr><th>ID</th><th>Juego</th><th>Tipo</th><th>Rareza</th><th>Precio</th><th>Estado</th><th>Renderer</th><th>Asset</th></tr></thead>
-                <tbody>
-                  {(store.products || []).map((product) => (
-                    <tr key={product.id}>
-                      <td>{product.id}</td>
-                      <td>{product.gameKey}</td>
-                      <td>{product.category}</td>
-                      <td>{product.rarity}</td>
-                      <td>{formatEycon(product.priceUnits)}</td>
-                      <td>{product.active ? "Activo" : "Inactivo"}</td>
-                      <td>{product.metadata?.renderer || "material"}</td>
-                      <td>{product.model3dSetting?.assetKey || product.metadata?.assetKey || "-"}</td>
-                    </tr>
+
+          <section className="admin-panel is-wide admin-visual-studio">
+            <header>
+              <span><Palette size={17} /> Estudio visual BolowPoly</span>
+              <button type="button" onClick={() => startNewDesigner(designerCategory)} disabled={busy}>
+                <Upload size={16} /> Nuevo preset
+              </button>
+            </header>
+
+            <div className="admin-designer-tabs" aria-label="Tipos de customizables visuales">
+              {visualDesignerCategories.map((category) => (
+                <button
+                  key={category.key}
+                  type="button"
+                  className={designerCategory === category.key ? "is-active" : ""}
+                  onClick={() => changeDesignerCategory(category.key)}
+                >
+                  {category.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="admin-designer-layout">
+              <aside className="admin-designer-list" aria-label="Presets visuales">
+                <div className="admin-piece-list-head">
+                  <strong>{designerCategoryConfig(designerCategory).label}</strong>
+                  <small>{designerProducts.length} presets</small>
+                </div>
+                <div className="admin-designer-items">
+                  {designerProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      className={designerDraftMode === "edit" && selectedDesignerProduct?.id === product.id ? "is-selected" : ""}
+                      onClick={() => selectDesignerProduct(product)}
+                    >
+                      <span>
+                        <strong>{product.name}</strong>
+                        <small>{product.slug}</small>
+                      </span>
+                      <em className={product.active ? "tone-ready" : "tone-off"}>{product.active ? product.rarity : "Off"}</em>
+                    </button>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </aside>
+
+              <form className="admin-form-stack admin-designer-form" onSubmit={saveDesignerProduct}>
+                <div className="admin-piece-section">
+                  <span className="admin-section-kicker">{designerDraftMode === "edit" ? "Editar preset" : "Crear preset"}</span>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Nombre</strong>
+                      <input value={designerDraft.name} onChange={(event) => updateDesignerDraft("name", event.target.value)} placeholder="Flamas reales, dados cyber, tablero lava..." />
+                    </label>
+                    <label>
+                      <strong>Slug</strong>
+                      <input value={designerDraft.slug} onChange={(event) => updateDesignerDraft("slug", slugFromName(event.target.value))} placeholder="flamas-reales" />
+                    </label>
+                  </div>
+                  {designerDraftMode === "create" && (
+                    <label>
+                      <strong>ID opcional</strong>
+                      <input value={designerDraft.id} onChange={(event) => updateDesignerDraft("id", event.target.value)} placeholder={`monopoly-${designerDraft.category.toLowerCase()}-${designerDraft.slug || "nuevo"}`} />
+                    </label>
+                  )}
+                  <label>
+                    <strong>Descripcion</strong>
+                    <input value={designerDraft.description} onChange={(event) => updateDesignerDraft("description", event.target.value)} placeholder="Como se vera en la tienda." />
+                  </label>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Rareza</strong>
+                      <select value={designerDraft.rarity} onChange={(event) => updateDesignerDraft("rarity", event.target.value)}>
+                        {productRarities.map((rarityKey) => <option key={rarityKey} value={rarityKey}>{rarityKey}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <strong>Precio</strong>
+                      <input type="number" min="0" max="100000" step="1" value={designerDraft.priceUnits} onChange={(event) => updateDesignerDraft("priceUnits", event.target.value)} />
+                    </label>
+                  </div>
+                  <div className="admin-inline-fields">
+                    <label>
+                      <strong>Preview corto</strong>
+                      <input value={designerDraft.preview} onChange={(event) => updateDesignerDraft("preview", event.target.value.slice(0, 16))} />
+                    </label>
+                    <label>
+                      <strong>Estado</strong>
+                      <select value={designerDraft.active ? "1" : "0"} onChange={(event) => updateDesignerDraft("active", event.target.value === "1")}>
+                        <option value="1">Activo</option>
+                        <option value="0">Inactivo</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                {designerDraft.category === "DICE" && (
+                  <div className="admin-piece-section">
+                    <span className="admin-section-kicker">Paint de dados</span>
+                    <div className="admin-paint-grid">
+                      <label><strong>Base</strong><input type="color" value={designerDraft.baseColor} onChange={(event) => updateDesignerDraft("baseColor", event.target.value)} /></label>
+                      <label><strong>Puntos</strong><input type="color" value={designerDraft.pipColor} onChange={(event) => updateDesignerDraft("pipColor", event.target.value)} /></label>
+                      <label><strong>Acento</strong><input type="color" value={designerDraft.accentColor} onChange={(event) => updateDesignerDraft("accentColor", event.target.value)} /></label>
+                      <label><strong>Borde</strong><input type="color" value={designerDraft.edgeColor} onChange={(event) => updateDesignerDraft("edgeColor", event.target.value)} /></label>
+                    </div>
+                    <div className="admin-inline-fields">
+                      <label>
+                        <strong>Patron</strong>
+                        <select value={designerDraft.pattern} onChange={(event) => updateDesignerDraft("pattern", event.target.value)}>
+                          {dicePatternOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <strong>Puntos</strong>
+                        <select value={designerDraft.pipShape} onChange={(event) => updateDesignerDraft("pipShape", event.target.value)}>
+                          {pipShapeOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="admin-paint-grid is-sliders">
+                      <label><strong>Rugosidad {Number(designerDraft.roughness).toFixed(2)}</strong><input type="range" min="0" max="1" step="0.01" value={designerDraft.roughness} onChange={(event) => updateDesignerDraft("roughness", event.target.value)} /></label>
+                      <label><strong>Metal {Number(designerDraft.metalness).toFixed(2)}</strong><input type="range" min="0" max="1" step="0.01" value={designerDraft.metalness} onChange={(event) => updateDesignerDraft("metalness", event.target.value)} /></label>
+                      <label><strong>Opacidad {Number(designerDraft.opacity).toFixed(2)}</strong><input type="range" min="0.25" max="1" step="0.01" value={designerDraft.opacity} onChange={(event) => updateDesignerDraft("opacity", event.target.value)} /></label>
+                      <label><strong>Pip scale {Number(designerDraft.pipScale).toFixed(2)}</strong><input type="range" min="0.45" max="1.9" step="0.01" value={designerDraft.pipScale} onChange={(event) => updateDesignerDraft("pipScale", event.target.value)} /></label>
+                      <label><strong>Contraste {Number(designerDraft.faceContrast).toFixed(2)}</strong><input type="range" min="0" max="1" step="0.01" value={designerDraft.faceContrast} onChange={(event) => updateDesignerDraft("faceContrast", event.target.value)} /></label>
+                    </div>
+                  </div>
+                )}
+
+                {designerDraft.category === "DICE_FX" && (
+                  <div className="admin-piece-section">
+                    <span className="admin-section-kicker">Editor de FX</span>
+                    <label>
+                      <strong>Tipo de efecto</strong>
+                      <select value={designerDraft.effect} onChange={(event) => updateDesignerDraft("effect", event.target.value)}>
+                        {diceFxEffectOptions.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                      </select>
+                    </label>
+                    <div className="admin-paint-grid">
+                      <label><strong>Color A</strong><input type="color" value={designerDraft.color} onChange={(event) => updateDesignerDraft("color", event.target.value)} /></label>
+                      <label><strong>Color B</strong><input type="color" value={designerDraft.secondaryColor} onChange={(event) => updateDesignerDraft("secondaryColor", event.target.value)} /></label>
+                    </div>
+                    <div className="admin-paint-grid is-sliders">
+                      <label><strong>Intensidad {Number(designerDraft.intensity).toFixed(2)}</strong><input type="range" min="0.1" max="3" step="0.01" value={designerDraft.intensity} onChange={(event) => updateDesignerDraft("intensity", event.target.value)} /></label>
+                      <label><strong>Velocidad {Number(designerDraft.speed).toFixed(2)}</strong><input type="range" min="0.1" max="4" step="0.01" value={designerDraft.speed} onChange={(event) => updateDesignerDraft("speed", event.target.value)} /></label>
+                      <label><strong>Dispersion {Number(designerDraft.spread).toFixed(2)}</strong><input type="range" min="0.1" max="3.5" step="0.01" value={designerDraft.spread} onChange={(event) => updateDesignerDraft("spread", event.target.value)} /></label>
+                      <label><strong>Tamano particula {Number(designerDraft.particleSize).toFixed(2)}</strong><input type="range" min="0.35" max="3" step="0.01" value={designerDraft.particleSize} onChange={(event) => updateDesignerDraft("particleSize", event.target.value)} /></label>
+                      <label><strong>Anillos {Number(designerDraft.ringScale).toFixed(2)}</strong><input type="range" min="0.2" max="3.5" step="0.01" value={designerDraft.ringScale} onChange={(event) => updateDesignerDraft("ringScale", event.target.value)} /></label>
+                      <label><strong>Jitter beam {Number(designerDraft.beamJitter).toFixed(2)}</strong><input type="range" min="0" max="3" step="0.01" value={designerDraft.beamJitter} onChange={(event) => updateDesignerDraft("beamJitter", event.target.value)} /></label>
+                      <label><strong>Gravedad {Number(designerDraft.gravity).toFixed(2)}</strong><input type="range" min="0" max="2" step="0.01" value={designerDraft.gravity} onChange={(event) => updateDesignerDraft("gravity", event.target.value)} /></label>
+                      <label><strong>Sparkle {Number(designerDraft.sparkle).toFixed(2)}</strong><input type="range" min="0" max="1.8" step="0.01" value={designerDraft.sparkle} onChange={(event) => updateDesignerDraft("sparkle", event.target.value)} /></label>
+                      <label><strong>Densidad {Number(designerDraft.density).toFixed(2)}</strong><input type="range" min="0.15" max="1" step="0.01" value={designerDraft.density} onChange={(event) => updateDesignerDraft("density", event.target.value)} /></label>
+                    </div>
+                  </div>
+                )}
+
+                {designerDraft.category === "BOARD_THEME" && (
+                  <div className="admin-piece-section">
+                    <span className="admin-section-kicker">Pintura de tablero</span>
+                    <p className="admin-section-hint">
+                      Dibuja el diseno del tablero como si fuera Paint. Lo que pintes aqui es exactamente lo que se vera
+                      como fondo y centro del tablero en la partida real (sin elementos 3D extra que no existen en el juego).
+                    </p>
+                    <BoardThemePainter
+                      key={designerDraftMode === "edit" ? (selectedDesignerProduct?.id || "edit") : "new"}
+                      value={designerDraft.boardTexture}
+                      onChange={(dataUrl) => updateDesignerDraft("boardTexture", dataUrl)}
+                      disabled={busy}
+                    />
+                    <div className="admin-paint-grid">
+                      <label><strong>Acento (aro central)</strong><input type="color" value={designerDraft.accentColor} onChange={(event) => updateDesignerDraft("accentColor", event.target.value)} /></label>
+                    </div>
+                    <div className="admin-paint-grid is-sliders">
+                      <label><strong>Rugosidad {Number(designerDraft.roughness).toFixed(2)}</strong><input type="range" min="0" max="1" step="0.01" value={designerDraft.roughness} onChange={(event) => updateDesignerDraft("roughness", event.target.value)} /></label>
+                      <label><strong>Metal {Number(designerDraft.metalness).toFixed(2)}</strong><input type="range" min="0" max="1" step="0.01" value={designerDraft.metalness} onChange={(event) => updateDesignerDraft("metalness", event.target.value)} /></label>
+                      <label><strong>Glow del aro {Number(designerDraft.glow).toFixed(2)}</strong><input type="range" min="0" max="1.8" step="0.01" value={designerDraft.glow} onChange={(event) => updateDesignerDraft("glow", event.target.value)} /></label>
+                    </div>
+                  </div>
+                )}
+
+                <div className="admin-piece-section">
+                  <label>
+                    <strong>Motivo</strong>
+                    <input value={designerDraft.reason} onChange={(event) => updateDesignerDraft("reason", event.target.value)} placeholder="Nuevo FX, ajuste de textura, balance visual..." />
+                  </label>
+                  <div className="admin-form-actions">
+                    <button type="submit" disabled={busy || !designerDraft.name}>
+                      <CheckCircle2 size={16} /> Guardar preset
+                    </button>
+                    <button type="button" className="is-danger" onClick={deactivateDesignerProduct} disabled={busy || designerDraftMode !== "edit" || !selectedDesignerProduct?.active}>
+                      <Trash2 size={16} /> Desactivar
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <aside className="admin-designer-preview">
+                <EyconProductPreview3D product={designerPreviewProduct} />
+                <div className="admin-list">
+                  <span><strong>{designerPreviewProduct.name}</strong><small>{designerPreviewProduct.category} - {designerPreviewProduct.rarity}</small></span>
+                  <span>
+                    <strong>Render</strong>
+                    <small>
+                      {designerDraft.category === "DICE_FX"
+                        ? designerDraft.effect
+                        : designerDraft.category === "BOARD_THEME"
+                          ? (designerDraft.boardTexture ? "Pintado a mano" : "Sin pintura (colores base)")
+                          : designerDraft.pattern}
+                    </small>
+                  </span>
+                  <span><strong>Metadata</strong><small>{Object.keys(designerPreviewProduct.metadata || {}).length} controles activos</small></span>
+                </div>
+              </aside>
             </div>
           </section>
         </section>

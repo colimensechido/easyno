@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { allProducts, gameDefinitions } = require("./eycon-catalog");
+const { displayName: BOLOWPOLY_NAME } = require("../shared/bolowpoly-brand");
 
 const EYCON_SCALE = 100;
 const BLACKJACK_DAILY_CAP_UNITS = 100;
@@ -515,14 +516,14 @@ function createEyconService({ get, run, all, io, userRoom }) {
     await clearSavedModel3dTintColors();
 
     const managedTokenIds = allProducts
-      .filter((product) => product.gameKey === "MONOPOLY" && product.category === "TOKEN")
+      .filter((product) => product.gameKey === "MONOPOLY" && product.slotKey === "TOKEN")
       .map((product) => product.id);
     if (managedTokenIds.length) {
       await run(
         `UPDATE eycon_products
          SET active = 0, updated_at = CURRENT_TIMESTAMP
          WHERE game_key = 'MONOPOLY'
-           AND category = 'TOKEN'
+           AND slot_key = 'TOKEN'
            AND id LIKE 'monopoly-token-%'
            AND id NOT IN (${managedTokenIds.map(() => "?").join(", ")})`,
         managedTokenIds
@@ -844,7 +845,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           movementType: "MONOPOLY_REWARD",
           gameKey: "MONOPOLY",
           referenceId: tableId,
-          description: `Victoria valida de Monopoly tras ${turns} turnos en mundo ${worldId}`,
+          description: `Victoria valida de ${BOLOWPOLY_NAME} tras ${turns} turnos en mundo ${worldId}`,
           idempotencyKey
         });
         await run("COMMIT");
@@ -939,6 +940,74 @@ function createEyconService({ get, run, all, io, userRoom }) {
     });
     await emitBalance(userId);
     return result;
+  }
+
+  async function creditReward({
+    userId,
+    amountUnits,
+    movementType,
+    gameKey = null,
+    referenceId = null,
+    description = "",
+    idempotencyKey
+  }) {
+    const safeAmount = Math.round(Number(amountUnits) || 0);
+    if (!Number.isInteger(safeAmount) || safeAmount === 0) {
+      throw clientError("Monto de movimiento EyCon invalido");
+    }
+    const result = await serialize(async () => {
+      await run("BEGIN IMMEDIATE");
+      try {
+        const movement = await applyMovement({
+          userId,
+          amountUnits: safeAmount,
+          movementType,
+          gameKey,
+          referenceId,
+          description,
+          idempotencyKey
+        });
+        await run("COMMIT");
+        return movement;
+      } catch (error) {
+        await run("ROLLBACK").catch(() => {});
+        throw error;
+      }
+    });
+    await emitBalance(userId);
+    return result;
+  }
+
+  async function reservePvpStake({ userId, referenceId, amountUnits, gameKey, description }) {
+    const safeAmount = Number(amountUnits);
+    if (!Number.isInteger(safeAmount) || safeAmount < 1 || safeAmount > 10000) {
+      throw clientError("Apuesta EyCon invalida");
+    }
+    return creditReward({
+      userId,
+      amountUnits: -safeAmount,
+      movementType: "PVP_STAKE",
+      gameKey,
+      referenceId,
+      description: description || `Apuesta EyCon PvP en ${gameKey}`,
+      idempotencyKey: `pvp-stake:${referenceId}:${userId}`
+    });
+  }
+
+  async function settlePvpStake({ userId, referenceId, payoutUnits, gameKey, outcome = "payout", description }) {
+    const safePayout = Math.max(0, Math.round(Number(payoutUnits) || 0));
+    if (safePayout <= 0) {
+      return { balanceUnits: (await ensureAccount(userId)).balanceUnits, skipped: true };
+    }
+    return creditReward({
+      userId,
+      amountUnits: safePayout,
+      movementType: outcome === "refund" ? "PVP_REFUND" : "PVP_PAYOUT",
+      gameKey,
+      referenceId,
+      description: description || (outcome === "refund" ? "Reembolso de apuesta PvP EyCon" : `Premio de apuesta PvP EyCon en ${gameKey}`),
+      idempotencyKey: `pvp-payout:${referenceId}:${userId}`
+    });
   }
 
   async function getPublicEquipment(userIds = [], gameKey = "MONOPOLY") {
@@ -1040,6 +1109,23 @@ function createEyconService({ get, run, all, io, userRoom }) {
       : value;
     if (!Array.isArray(source)) return fallback;
     return [0, 1, 2].map((index) => clampNumber(source[index], fallback[index] || 0, min, max));
+  }
+
+  function normalizeProductSlug(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 80);
+  }
+
+  function normalizeProductRarity(value) {
+    const rarity = String(value || "COMMON").toUpperCase();
+    if (!["COMMON", "RARE", "EPIC", "LEGENDARY"].includes(rarity)) {
+      throw clientError("Rareza invalida");
+    }
+    return rarity;
   }
 
   async function ensureEyconMetaTable() {
@@ -1151,11 +1237,11 @@ function createEyconService({ get, run, all, io, userRoom }) {
       const assetKey = String(setting.assetKey || "").trim();
       if (!productId || !assetKey) continue;
       const product = await get(
-        `SELECT id, game_key AS gameKey, category FROM eycon_products WHERE id = ?`,
+      `SELECT id, game_key AS gameKey, category, slot_key AS slotKey FROM eycon_products WHERE id = ?`,
         [productId]
       );
       const asset = await getModel3dAsset(assetKey);
-      if (!product || product.gameKey !== "MONOPOLY" || product.category !== "TOKEN" || !asset) continue;
+    if (!product || product.gameKey !== "MONOPOLY" || product.slotKey !== "TOKEN" || !asset) continue;
 
       const colorMode = normalizeColorMode(setting.colorMode);
       const tintStrength = colorMode === "FORCE"
@@ -1315,7 +1401,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
        FROM eycon_products p
        LEFT JOIN model_3d_settings m3d ON m3d.product_id = p.id
        LEFT JOIN model_3d_assets a ON a.asset_key = m3d.asset_key
-       WHERE p.game_key = 'MONOPOLY' AND p.category = 'TOKEN'
+       WHERE p.game_key = 'MONOPOLY' AND p.slot_key = 'TOKEN'
        ORDER BY p.rarity DESC, p.name ASC`
     );
     const publicProducts = products.map(publicProduct);
@@ -1376,14 +1462,51 @@ function createEyconService({ get, run, all, io, userRoom }) {
     };
   }
 
+  async function adminDeleteModel3dAsset({ assetKey }) {
+    const safeAssetKey = String(assetKey || "").trim();
+    const asset = await get(
+      `SELECT asset_key AS assetKey, label, file_path AS filePath, source,
+              fallback_model AS fallbackModel, fit_size AS fitSize, active
+       FROM model_3d_assets
+       WHERE asset_key = ?`,
+      [safeAssetKey]
+    );
+    if (!asset) throw clientError("Asset 3D no encontrado", 404);
+    if (asset.source !== "UPLOAD") throw clientError("Solo se pueden eliminar assets subidos");
+
+    const activeUse = await get(
+      `SELECT p.id, p.name
+       FROM model_3d_settings m
+       JOIN eycon_products p ON p.id = m.product_id
+       WHERE m.asset_key = ? AND m.active = 1
+       LIMIT 1`,
+      [safeAssetKey]
+    );
+    if (activeUse) {
+      throw clientError(`Asset en uso por ${activeUse.name}. Quita el GLB de esa pieza primero.`, 409);
+    }
+
+    await run(
+      `UPDATE model_3d_assets
+       SET active = 0, updated_at = CURRENT_TIMESTAMP
+       WHERE asset_key = ?`,
+      [safeAssetKey]
+    );
+    return {
+      asset: { ...asset, active: false, fitSize: Number(asset.fitSize || 1.9) },
+      model3d: await adminModel3dOverview(),
+      filePath: asset.filePath
+    };
+  }
+
   async function adminUpsertModel3dSetting({ adminId, productId, settings = {} }) {
     const product = await get(
-      `SELECT id, game_key AS gameKey, category FROM eycon_products WHERE id = ?`,
+      `SELECT id, game_key AS gameKey, category, slot_key AS slotKey FROM eycon_products WHERE id = ?`,
       [productId]
     );
     if (!product) throw clientError("Producto EyCon no encontrado", 404);
-    if (product.gameKey !== "MONOPOLY" || product.category !== "TOKEN") {
-      throw clientError("Solo se pueden configurar modelos 3D para piezas de Monopoly");
+    if (product.gameKey !== "MONOPOLY" || product.slotKey !== "TOKEN") {
+      throw clientError(`Solo se pueden configurar modelos 3D para piezas de ${BOLOWPOLY_NAME}`);
     }
 
     const assetKey = String(settings.assetKey || "").trim();
@@ -1501,11 +1624,40 @@ function createEyconService({ get, run, all, io, userRoom }) {
     return result;
   }
 
-  async function adminUpdateProduct({ productId, priceUnits, active, rarity }) {
+  async function adminUpdateProduct({
+    productId,
+    slug,
+    name,
+    description,
+    priceUnits,
+    gameKey,
+    category,
+    slotKey,
+    active,
+    rarity,
+    preview,
+    metadata
+  }) {
     const product = await get(`SELECT id FROM eycon_products WHERE id = ?`, [productId]);
     if (!product) throw clientError("Producto no encontrado", 404);
     const updates = [];
     const params = [];
+    if (slug !== undefined) {
+      const safeSlug = normalizeProductSlug(slug);
+      if (!safeSlug) throw clientError("Slug de producto invalido");
+      updates.push("slug = ?");
+      params.push(safeSlug);
+    }
+    if (name !== undefined) {
+      const safeName = String(name || "").trim().slice(0, 80);
+      if (!safeName) throw clientError("Nombre de producto requerido");
+      updates.push("name = ?");
+      params.push(safeName);
+    }
+    if (description !== undefined) {
+      updates.push("description = ?");
+      params.push(String(description || "").slice(0, 300));
+    }
     if (priceUnits !== undefined) {
       const safePrice = Number(priceUnits);
       if (!Number.isInteger(safePrice) || safePrice < 0 || safePrice > 100000) {
@@ -1514,17 +1666,40 @@ function createEyconService({ get, run, all, io, userRoom }) {
       updates.push("price_units = ?");
       params.push(safePrice);
     }
+    if (gameKey !== undefined) {
+      const safeGameKey = String(gameKey || "").trim().toUpperCase();
+      if (!gameDefinitions.some((game) => game.key === safeGameKey)) throw clientError("Minijuego invalido");
+      updates.push("game_key = ?");
+      params.push(safeGameKey);
+    }
+    if (category !== undefined) {
+      const safeCategory = String(category || "").trim().toUpperCase();
+      if (!safeCategory) throw clientError("Categoria requerida");
+      updates.push("category = ?");
+      params.push(safeCategory);
+    }
+    if (slotKey !== undefined) {
+      const safeSlotKey = String(slotKey || "").trim().toUpperCase();
+      if (!safeSlotKey) throw clientError("Slot requerido");
+      updates.push("slot_key = ?");
+      params.push(safeSlotKey);
+    }
     if (active !== undefined) {
       updates.push("active = ?");
       params.push(active ? 1 : 0);
     }
     if (rarity !== undefined) {
-      const safeRarity = String(rarity).toUpperCase();
-      if (!["COMMON", "RARE", "EPIC", "LEGENDARY"].includes(safeRarity)) {
-        throw clientError("Rareza invalida");
-      }
+      const safeRarity = normalizeProductRarity(rarity);
       updates.push("rarity = ?");
       params.push(safeRarity);
+    }
+    if (preview !== undefined) {
+      updates.push("preview = ?");
+      params.push(String(preview || "*").slice(0, 16));
+    }
+    if (metadata !== undefined) {
+      updates.push("metadata_json = ?");
+      params.push(JSON.stringify(metadata && typeof metadata === "object" ? metadata : {}));
     }
     if (!updates.length) throw clientError("No hay cambios para guardar");
     params.push(productId);
@@ -1532,20 +1707,20 @@ function createEyconService({ get, run, all, io, userRoom }) {
       `UPDATE eycon_products SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       params
     );
-    return get(`SELECT id, price_units AS priceUnits, active, rarity FROM eycon_products WHERE id = ?`, [productId]);
+    return getProductWithModel3d(productId);
   }
 
   async function adminCreateProduct(product = {}) {
     const gameKey = String(product.gameKey || "").toUpperCase();
     const category = String(product.category || "").toUpperCase();
     const slotKey = String(product.slotKey || category).toUpperCase();
-    const rarity = String(product.rarity || "COMMON").toUpperCase();
+    const rarity = normalizeProductRarity(product.rarity);
     const name = String(product.name || "").trim().slice(0, 80);
-    const slug = String(product.slug || name.toLowerCase().replace(/[^a-z0-9]+/g, "-")).replace(/^-|-$/g, "").slice(0, 80);
+    const slug = normalizeProductSlug(product.slug || name);
     const priceUnits = Number(product.priceUnits);
     if (!name || !slug || !gameKey || !category || !slotKey) throw clientError("Datos de producto incompletos");
+    if (!gameDefinitions.some((game) => game.key === gameKey)) throw clientError("Minijuego invalido");
     if (!Number.isInteger(priceUnits) || priceUnits < 0 || priceUnits > 100000) throw clientError("Precio EyCon invalido");
-    if (!["COMMON", "RARE", "EPIC", "LEGENDARY"].includes(rarity)) throw clientError("Rareza invalida");
     const id = String(product.id || `${gameKey.toLowerCase()}-${category.toLowerCase()}-${slug}`).slice(0, 120);
     await run(
       `INSERT INTO eycon_products (
@@ -1563,11 +1738,11 @@ function createEyconService({ get, run, all, io, userRoom }) {
         slotKey,
         rarity,
         product.active === false ? 0 : 1,
-        String(product.preview || "✦").slice(0, 16),
+        String(product.preview || "*").slice(0, 16),
         JSON.stringify(product.metadata && typeof product.metadata === "object" ? product.metadata : {})
       ]
     );
-    return { id };
+    return getProductWithModel3d(id);
   }
 
   async function adminGrantProduct({ userId, productId }) {
@@ -1597,11 +1772,15 @@ function createEyconService({ get, run, all, io, userRoom }) {
     awardMonopolyWinner,
     placeWager,
     settleWager,
+    creditReward,
+    reservePvpStake,
+    settlePvpStake,
     getPublicEquipment,
     history,
     adminOverview,
     adminModel3dOverview,
     adminCreateModel3dAsset,
+    adminDeleteModel3dAsset,
     adminUpsertModel3dSetting,
     adminDeleteModel3dSetting,
     adminAdjust,

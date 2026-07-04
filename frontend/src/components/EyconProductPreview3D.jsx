@@ -1,21 +1,25 @@
-import { MousePointer2, RotateCcw, ScanSearch } from "lucide-react";
+import { Compass, Map, MousePointer2, RotateCcw, ScanSearch } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { createBoard3D, disposeObject3D } from "./monopoly3d/Board3D";
 import {
   animateDice3D,
   createDice3D,
   syncDice3D
 } from "./monopoly3d/Dice3D";
 import { createCosmeticTokenModel3D } from "./monopoly3d/CosmeticToken3D";
+import { PREVIEW_BOARD_SPACES } from "./monopoly3d/previewBoardSpaces";
 
-function material(color, { metalness = 0.18, roughness = 0.38, opacity = 1 } = {}) {
+function material(color, { metalness = 0.18, roughness = 0.38, opacity = 1, emissive = null, emissiveIntensity = 0 } = {}) {
   return new THREE.MeshStandardMaterial({
     color,
     metalness,
     roughness,
     opacity,
-    transparent: opacity < 1
+    transparent: opacity < 1,
+    emissive: emissive || "#000000",
+    emissiveIntensity
   });
 }
 
@@ -26,6 +30,10 @@ function mesh(geometry, meshMaterial, position = [0, 0, 0], rotation = [0, 0, 0]
   result.castShadow = true;
   result.receiveShadow = true;
   return result;
+}
+
+function isTokenPreview(product) {
+  return product?.slotKey === "TOKEN" || product?.category === "TOKEN" || String(product?.category || "").startsWith("TOKEN_");
 }
 
 function createTokenPreview(product, tokenColor = null) {
@@ -71,47 +79,22 @@ function createDicePreview(product) {
 }
 
 function createBoardPreview(product) {
-  const metadata = product?.metadata || {};
-  const baseColor = metadata.baseColor || "#2d2418";
-  const centerColor = metadata.centerColor || "#1f6f59";
-  const accentColor = metadata.accentColor || "#f4d45d";
-  const roughness = Number(metadata.roughness ?? 0.58);
-  const metalness = Number(metadata.metalness ?? 0.16);
-  const group = new THREE.Group();
-  const baseMaterial = material(baseColor, { roughness, metalness });
-  const centerMaterial = material(centerColor, { roughness: Math.max(0.12, roughness - 0.08), metalness });
-  const accentMaterial = material(accentColor, { roughness: 0.28, metalness: Math.max(0.35, metalness) });
-  const tileMaterial = material("#f8f1dc", { roughness: 0.68, metalness: 0.04 });
+  const model = createBoard3D({
+    board: PREVIEW_BOARD_SPACES,
+    players: [],
+    boardTheme: product,
+    hideCenterDecks: true
+  });
 
-  group.add(
-    mesh(new THREE.BoxGeometry(3.35, 0.22, 3.35), baseMaterial, [0, 0.05, 0]),
-    mesh(new THREE.BoxGeometry(2.15, 0.12, 2.15), centerMaterial, [0, 0.22, 0]),
-    mesh(new THREE.TorusGeometry(0.72, 0.035, 10, 48), accentMaterial, [0, 0.32, 0], [Math.PI / 2, 0, 0])
-  );
-
-  const tileSize = 0.42;
-  for (let side = 0; side < 4; side += 1) {
-    for (let index = -3; index <= 3; index += 1) {
-      const coordinate = index * 0.43;
-      const position = side === 0
-        ? [coordinate, 0.23, 1.43]
-        : side === 1
-          ? [1.43, 0.23, coordinate]
-          : side === 2
-            ? [coordinate, 0.23, -1.43]
-            : [-1.43, 0.23, coordinate];
-      const tile = mesh(new THREE.BoxGeometry(tileSize, 0.11, tileSize), tileMaterial, position);
-      const band = mesh(
-        new THREE.BoxGeometry(side % 2 ? 0.08 : 0.3, 0.025, side % 2 ? 0.3 : 0.08),
-        index % 3 === 0 ? accentMaterial : centerMaterial,
-        [position[0], 0.3, position[2]]
-      );
-      group.add(tile, band);
-    }
+  if (model.selectionBillboard) {
+    model.group.remove(model.selectionBillboard);
+    disposeObject3D(model.selectionBillboard);
   }
-  group.rotation.x = -0.12;
+  if (model.playerLayer) model.group.remove(model.playerLayer);
+
+  const group = model.group;
   group.userData.animatePreview = (delta) => {
-    group.rotation.y += delta * 0.22;
+    group.rotation.y += delta * 0.12;
   };
   return group;
 }
@@ -140,10 +123,22 @@ function createGenericPreview(product) {
 }
 
 function createProductObject(product, tokenColor = null) {
-  if (product?.category === "TOKEN") return createTokenPreview(product, tokenColor);
+  if (isTokenPreview(product)) return createTokenPreview(product, tokenColor);
   if (product?.category === "DICE" || product?.category === "DICE_FX") return createDicePreview(product);
   if (product?.category === "BOARD_THEME") return createBoardPreview(product);
   return createGenericPreview(product);
+}
+
+const DEFAULT_VIEW_DIR = new THREE.Vector3(0.62, 0.52, 0.82).normalize();
+const FRONTAL_VIEW_DIR = new THREE.Vector3(0, 0.3, 1).normalize();
+const BOARD_VIEW_DIR = new THREE.Vector3(0.45, 0.88, 0.45).normalize();
+
+function isBoardPreview(product) {
+  return product?.category === "BOARD_THEME";
+}
+
+function defaultViewForProduct(product) {
+  return isBoardPreview(product) ? BOARD_VIEW_DIR : DEFAULT_VIEW_DIR;
 }
 
 function disposeObject(object) {
@@ -164,18 +159,20 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
   const sceneStateRef = useRef(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [renderError, setRenderError] = useState(false);
-  const previewBadgeLabel = product?.metadata?.renderer === "gltf" ? "Modelo 3D" : "Vista conceptual 3D";
+  const previewBadgeLabel = product?.metadata?.renderer === "gltf"
+    ? "Modelo 3D"
+    : product?.category === "BOARD_THEME"
+      ? "Vista previa del tablero"
+      : "Vista conceptual 3D";
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#101d1a");
-    scene.fog = new THREE.Fog("#101d1a", 11, 24);
+    scene.background = new THREE.Color("#081b26");
 
-    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 40);
-    camera.position.set(3.35, 2.45, 4.05);
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 120);
 
     let renderer;
     try {
@@ -197,11 +194,10 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.075;
     controls.enablePan = false;
-    controls.minDistance = 2.35;
-    controls.maxDistance = 8.2;
-    controls.minPolarAngle = 0.45;
-    controls.maxPolarAngle = 1.48;
-    controls.target.set(0, 0.54, 0);
+    controls.minDistance = 1.4;
+    controls.maxDistance = 28;
+    controls.minPolarAngle = 0.35;
+    controls.maxPolarAngle = 1.5;
     controls.autoRotateSpeed = 1.15;
 
     scene.add(new THREE.HemisphereLight("#fff8dc", "#223b33", 1.85));
@@ -216,20 +212,6 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
     warmLight.position.set(3, 1.5, -3);
     scene.add(warmLight);
 
-    const floor = mesh(
-      new THREE.CylinderGeometry(2.35, 2.55, 0.08, 64),
-      material("#1b2c26", { metalness: 0.12, roughness: 0.62, opacity: 0.78 }),
-      [0, -0.09, 0]
-    );
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    const grid = new THREE.GridHelper(5.4, 14, "#5f7659", "#264239");
-    grid.position.y = -0.035;
-    grid.material.transparent = true;
-    grid.material.opacity = 0.24;
-    scene.add(grid);
-
     const previewRoot = new THREE.Group();
     scene.add(previewRoot);
 
@@ -239,6 +221,7 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      frameCurrentObject();
     };
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(container);
@@ -256,7 +239,7 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
       renderer.render(scene, camera);
     };
 
-    sceneStateRef.current = { autoRotate, camera, controls, previewRoot };
+    sceneStateRef.current = { autoRotate, camera, controls, previewRoot, framing: null, product: null };
     animate();
 
     return () => {
@@ -275,19 +258,62 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
   }, [autoRotate]);
 
   useEffect(() => {
-    const previewRoot = sceneStateRef.current?.previewRoot;
+    const state = sceneStateRef.current;
+    const previewRoot = state?.previewRoot;
     if (!previewRoot) return;
     previewRoot.children.forEach(disposeObject);
     previewRoot.clear();
+    if (state) state.product = product || null;
     if (product) previewRoot.add(createProductObject(product, tokenColor));
+    frameCurrentObject();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, tokenColor]);
 
-  function resetCamera() {
+  function frameCurrentObject() {
+    const state = sceneStateRef.current;
+    const object = state?.previewRoot?.children?.[0];
+    if (!state || !object) return;
+
+    const isBoard = isBoardPreview(state.product);
+
+    state.previewRoot.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(object);
+    if (box.isEmpty()) return;
+
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(size.x, size.y, size.z) * 0.5;
+
+    const verticalFov = (state.camera.fov * Math.PI) / 180;
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * state.camera.aspect);
+    const distanceForHeight = radius / Math.sin(verticalFov / 2);
+    const distanceForWidth = radius / Math.sin(horizontalFov / 2);
+    const fitPadding = isBoard ? 0.94 : 1.15;
+    const fitDistance = isBoard
+      ? distanceForWidth * fitPadding
+      : Math.min(distanceForHeight, distanceForWidth) * fitPadding;
+    const distance = THREE.MathUtils.clamp(
+      fitDistance,
+      state.controls.minDistance,
+      isBoard ? state.controls.maxDistance : 9.5
+    );
+
+    state.framing = { center, distance };
+
+    setCameraView(defaultViewForProduct(state.product));
+  }
+
+  function setCameraView(direction, distanceMultiplier = 1) {
     const state = sceneStateRef.current;
     if (!state) return;
-    state.camera.position.set(3.35, 2.45, 4.05);
-    state.controls.target.set(0, 0.54, 0);
+    const framing = state.framing || { center: new THREE.Vector3(0, 0.5, 0), distance: 5.2 };
+    state.camera.position.copy(framing.center).addScaledVector(direction, framing.distance * distanceMultiplier);
+    state.controls.target.copy(framing.center);
     state.controls.update();
+  }
+
+  function resetCamera() {
+    setCameraView(defaultViewForProduct(sceneStateRef.current?.product));
   }
 
   return (
@@ -308,6 +334,12 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
             </button>
             <button type="button" onClick={resetCamera} title="Restablecer cámara">
               <RotateCcw size={14} /> Centrar
+            </button>
+            <button type="button" onClick={() => setCameraView(FRONTAL_VIEW_DIR, 0.9)} title="Vista frontal">
+              <Compass size={14} /> Frontal
+            </button>
+            <button type="button" onClick={() => setCameraView(BOARD_VIEW_DIR, 1.05)} title="Vista tablero">
+              <Map size={14} /> Tablero
             </button>
           </div>
           <small>Arrastra para rotar · rueda para acercar</small>

@@ -1,3 +1,5 @@
+require("dotenv").config();
+
 const path = require("path");
 const http = require("http");
 const crypto = require("crypto");
@@ -9,7 +11,11 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const { Server } = require("socket.io");
 const { createMonopolyService } = require("./monopoly-service");
+const { displayName: BOLOWPOLY_NAME, defaultTableName: BOLOWPOLY_DEFAULT_TABLE } = require("../shared/bolowpoly-brand");
 const { createEyconService } = require("./eycon-service");
+const { createProgressionService } = require("./progression-service");
+const { createPaymentsService } = require("./payments-service");
+const mercadopagoService = require("./mercadopago-service");
 const { isExplicitAdminUsername, resolveEffectiveRoles } = require("./admin-roles");
 
 const app = express();
@@ -26,9 +32,12 @@ const PVP_REMATCH_WINDOW_MS = 20000;
 const TABLE_MAX_PLAYERS = 12;
 const AI_TABLE_MIN_BET = 25;
 const AI_TABLE_MAX_BET = 500;
+const EYCON_PVP_MIN_UNITS = 1;
+const EYCON_PVP_MAX_UNITS = 100;
+const MONOPOLY_MIN_TURNS_FOR_ACTIVITY = 10;
 const USERNAME_PATTERN = /^[a-z0-9_]{3,16}$/;
 const PASSWORD_MIN_LENGTH = 8;
-const ROLE_KEYS = new Set(["user", "admin"]);
+const ROLE_KEYS = new Set(["user", "admin", "vip"]);
 const WORLD_KIND_MAIN = "MAIN";
 const WORLD_KIND_PRIVATE = "PRIVATE";
 const MAIN_WORLD_NAME = "MAIN";
@@ -68,6 +77,99 @@ const worldPresence = new Map();
 const multiplayerBlackjackTables = new Map();
 const playerOnlyTables = new Map();
 const eyconService = createEyconService({ get, run, all, io, userRoom });
+const progressionService = createProgressionService({
+  get,
+  run,
+  all,
+  creditReward: eyconService.creditReward
+});
+const paymentsService = createPaymentsService({
+  get,
+  run,
+  all,
+  creditReward: eyconService.creditReward,
+  grantRole: (userId, roleKey, options) => grantRole(userId, roleKey, options),
+  mercadopago: mercadopagoService
+});
+
+function recordPlayActivity(userId, gameKey, extra = {}) {
+  progressionService.recordActivity({ userId, gameKey, ...extra }).catch((error) => {
+    console.error("No se pudo registrar actividad de progresion", error);
+  });
+}
+
+async function chargeBolowPolyEyconStakes(tableId, userIds, amountUnits) {
+  const charged = [];
+  try {
+    for (const userId of userIds) {
+      const account = await eyconService.ensureAccount(userId);
+      if (Number(account.balanceUnits) < amountUnits) {
+        throw new Error("Uno de los jugadores no tiene saldo EyCon suficiente para la apuesta");
+      }
+      await eyconService.reservePvpStake({
+        userId,
+        referenceId: `monopoly:${tableId}`,
+        amountUnits,
+        gameKey: "MONOPOLY_PVP"
+      });
+      charged.push(userId);
+    }
+  } catch (error) {
+    for (const userId of charged) {
+      await eyconService.settlePvpStake({
+        userId,
+        referenceId: `monopoly:${tableId}`,
+        payoutUnits: amountUnits,
+        gameKey: "MONOPOLY_PVP",
+        outcome: "refund"
+      }).catch(() => {});
+    }
+    throw error;
+  }
+}
+
+async function refundBolowPolyEyconStakes(tableId, userIds, amountUnits) {
+  for (const userId of userIds) {
+    await eyconService.settlePvpStake({
+      userId,
+      referenceId: `monopoly:${tableId}`,
+      payoutUnits: amountUnits,
+      gameKey: "MONOPOLY_PVP",
+      outcome: "refund"
+    }).catch((error) => {
+      console.error("No se pudo reembolsar apuesta EyCon de BolowPoly", error);
+    });
+  }
+}
+
+async function settleBolowPolyEyconStake({ tableId, state, config }) {
+  const stakeUnits = Number(config?.eyconStakeUnits || 0);
+  const participants = Array.isArray(config?.eyconStakeParticipants)
+    ? [...new Set(config.eyconStakeParticipants.map(Number))]
+    : [];
+  if (stakeUnits <= 0 || participants.length < 2) return;
+
+  const potUnits = stakeUnits * participants.length;
+  const winnerId = Number(state?.winnerId) || null;
+  const winnerInPot = winnerId && participants.includes(winnerId);
+
+  for (const userId of participants) {
+    const payoutUnits = winnerInPot
+      ? (userId === winnerId ? potUnits : 0)
+      : Math.floor(potUnits / participants.length);
+    if (payoutUnits <= 0) continue;
+    await eyconService.settlePvpStake({
+      userId,
+      referenceId: `monopoly:${tableId}`,
+      payoutUnits,
+      gameKey: "MONOPOLY_PVP",
+      outcome: winnerInPot ? "payout" : "refund"
+    }).catch((error) => {
+      console.error(`No se pudo liquidar apuesta EyCon de BolowPoly para usuario ${userId}`, error);
+    });
+  }
+}
+
 const monopolyService = createMonopolyService({
   get,
   run,
@@ -75,8 +177,32 @@ const monopolyService = createMonopolyService({
   io,
   roomName,
   getEquippedCosmetics: (userIds) => eyconService.getPublicEquipment(userIds, "MONOPOLY"),
-  onGameFinished: ({ tableId, worldId, state }) =>
-    eyconService.awardMonopolyWinner({ tableId, worldId, state })
+  chargeEyconStakes: chargeBolowPolyEyconStakes,
+  refundEyconStakes: refundBolowPolyEyconStakes,
+  recordPlayActivity: (userId, extra) => recordPlayActivity(userId, "MONOPOLY", extra),
+  onGameFinished: async ({ tableId, worldId, state, config }) => {
+    if (config?.eyconRewardEligible) {
+      await eyconService.awardMonopolyWinner({ tableId, worldId, state }).catch((error) => {
+        console.error("No se pudo entregar recompensa EyCon de BolowPoly", error);
+      });
+    }
+    await settleBolowPolyEyconStake({ tableId, state, config }).catch((error) => {
+      console.error("No se pudo liquidar apuesta EyCon de BolowPoly", error);
+    });
+    const participantIds = Array.isArray(state?.players)
+      ? state.players.map((player) => Number(player.id)).filter(Number.isInteger)
+      : [];
+    const alreadyCredited = new Set(
+      Array.isArray(config?.activityCreditedIds) ? config.activityCreditedIds.map(Number) : []
+    );
+    const turns = Number(state?.turn?.number || 0);
+    if (turns >= MONOPOLY_MIN_TURNS_FOR_ACTIVITY) {
+      for (const userId of participantIds) {
+        if (alreadyCredited.has(userId)) continue;
+        recordPlayActivity(userId, "MONOPOLY", { monopolyTurns: turns });
+      }
+    }
+  }
 });
 
 app.use(
@@ -312,6 +438,8 @@ async function initDatabase() {
   await ensureRoleSeeds();
   await bootstrapAdminRoles();
   await eyconService.initSchema();
+  await progressionService.initSchema();
+  await paymentsService.initSchema();
 }
 
 async function syncSeededModelUploads() {
@@ -384,7 +512,8 @@ async function ensureRoleSeeds() {
   await run(
     `INSERT OR IGNORE INTO roles (key, label, description) VALUES
       ('user', 'Usuario', 'Acceso normal a juegos y tienda'),
-      ('admin', 'Administrador', 'Acceso al panel administrativo de plataforma')`
+      ('admin', 'Administrador', 'Acceso al panel administrativo de plataforma'),
+      ('vip', 'VIP', 'Recarga el 100% de EyCon; nombre dorado en las tablas de jugadores')`
   );
   await run(
     `INSERT OR IGNORE INTO user_roles (user_id, role_key, source)
@@ -478,6 +607,7 @@ async function loadAuthUser(userId) {
     active: Boolean(row.active),
     roles: safeRoles,
     isAdmin: safeRoles.includes("admin"),
+    isVip: safeRoles.includes("vip"),
     createdAt: row.createdAt,
     lastLoginAt: row.lastLoginAt
   };
@@ -782,7 +912,7 @@ const MONOPOLY_TOKEN_COLORS = [
   "#ec4899", "#0ea5e9", "#f97316", "#65a30d", "#c026d3", "#fef3c7"
 ];
 
-function sanitizeMonopolyToken(input) {
+function sanitizeBolowPolyToken(input) {
   const token = input && typeof input === "object" ? input : {};
   const clean = {
     label: String(token.label || "").trim().slice(0, 4).toUpperCase(),
@@ -800,10 +930,10 @@ function sanitizeMonopolyToken(input) {
   return clean;
 }
 
-function parseStoredMonopolyToken(value) {
+function parseStoredBolowPolyToken(value) {
   if (!value) return null;
   try {
-    return sanitizeMonopolyToken(JSON.parse(value));
+    return sanitizeBolowPolyToken(JSON.parse(value));
   } catch {
     return null;
   }
@@ -1006,7 +1136,11 @@ async function emitWorldPresence(worldId) {
         users.id AS userId,
         users.username AS username,
         users.monopoly_token_json AS tokenJson,
-        economies.balance AS balance
+        economies.balance AS balance,
+        EXISTS(
+          SELECT 1 FROM user_roles
+          WHERE user_roles.user_id = users.id AND user_roles.role_key = 'vip'
+        ) AS isVip
       FROM users
       JOIN economies
         ON economies.user_id = users.id
@@ -1023,7 +1157,8 @@ async function emitWorldPresence(worldId) {
       userId: row.userId,
       username: row.username,
       balance: row.balance,
-      token: parseStoredMonopolyToken(row.tokenJson)
+      isVip: Boolean(row.isVip),
+      token: parseStoredBolowPolyToken(row.tokenJson)
     }))
   });
 }
@@ -1082,6 +1217,7 @@ async function settleBlackjackSession(session, outcome) {
   }
   blackjackSessions.set(session.id, session);
   await broadcastEconomyChange(session.userId, session.worldId, economy.balance);
+  recordPlayActivity(session.userId, "BLACKJACK", { won: outcome === "win" });
   return session;
 }
 
@@ -1466,6 +1602,7 @@ async function settleMultiplayerTable(worldId) {
 
   for (const userId of table.order) {
     const player = table.players.get(userId);
+    recordPlayActivity(userId, "BLACKJACK", { won: player?.outcome === "win" });
     if (player?.outcome !== "win") continue;
     try {
       const reward = await eyconService.awardBlackjackWin({
@@ -1572,6 +1709,7 @@ function publicPlayerTables(worldId) {
       name: table.name,
       status: table.status,
       buyIn: table.buyIn,
+      currency: table.currency || "NORMAL",
       maxSeats: table.maxSeats,
       hostId: table.hostId,
       createdAt: table.createdAt,
@@ -1668,7 +1806,17 @@ function clearPlayerTableTimers(table) {
   }
 }
 
-async function refundPlayerTableSeat(seat, worldId, buyIn) {
+async function refundPlayerTableSeat(seat, worldId, buyIn, currency = "NORMAL", tableId = null) {
+  if (currency === "EYCON") {
+    await eyconService.settlePvpStake({
+      userId: seat.userId,
+      referenceId: `bj-pvp:${tableId}`,
+      payoutUnits: buyIn,
+      gameKey: "BLACKJACK_PVP",
+      outcome: "refund"
+    });
+    return;
+  }
   await run("UPDATE economies SET balance = balance + ? WHERE user_id = ? AND world_id = ?", [
     buyIn,
     seat.userId,
@@ -1943,39 +2091,63 @@ async function settlePvpTable(worldId, tableId) {
   const payout = winners.length ? Math.floor(pot / winners.length) : 0;
 
   table.winners = winners.map((seat) => seat.userId);
+  const isEycon = table.currency === "EYCON";
   table.message = winners.length
-    ? `Ganador: ${winners.map((seat) => seat.username).join(", ")}. El anfitrion puede pedir revancha.`
-    : "Todos se pasaron. El anfitrion puede pedir revancha.";
+    ? `Ganador: ${winners.map((seat) => seat.username).join(", ")}.${isEycon ? "" : " El anfitrion puede pedir revancha."}`
+    : `Todos se pasaron.${isEycon ? "" : " El anfitrion puede pedir revancha."}`;
 
-  await run("BEGIN IMMEDIATE");
-
-  try {
+  if (isEycon) {
     for (const seat of table.seats) {
       const won = table.winners.includes(seat.userId);
       const nextPayout = won ? payout : 0;
-      const economy = await getEconomyOrFail(seat.userId, worldId);
-      const nextBalance = economy.balance + nextPayout;
-
-      await run("UPDATE economies SET balance = ? WHERE user_id = ? AND world_id = ?", [
-        nextBalance,
-        seat.userId,
-        worldId
-      ]);
-
       seat.status = "done";
       seat.outcome = won ? "win" : "lose";
       seat.payout = nextPayout;
+      if (nextPayout > 0) {
+        await eyconService.settlePvpStake({
+          userId: seat.userId,
+          referenceId: `bj-pvp:${table.id}`,
+          payoutUnits: nextPayout,
+          gameKey: "BLACKJACK_PVP",
+          outcome: "payout"
+        }).catch((error) => {
+          console.error(`No se pudo liquidar apuesta EyCon PvP para usuario ${seat.userId}`, error);
+        });
+      }
+      recordPlayActivity(seat.userId, "BLACKJACK", { won });
+    }
+  } else {
+    await run("BEGIN IMMEDIATE");
+
+    try {
+      for (const seat of table.seats) {
+        const won = table.winners.includes(seat.userId);
+        const nextPayout = won ? payout : 0;
+        const economy = await getEconomyOrFail(seat.userId, worldId);
+        const nextBalance = economy.balance + nextPayout;
+
+        await run("UPDATE economies SET balance = ? WHERE user_id = ? AND world_id = ?", [
+          nextBalance,
+          seat.userId,
+          worldId
+        ]);
+
+        seat.status = "done";
+        seat.outcome = won ? "win" : "lose";
+        seat.payout = nextPayout;
+      }
+
+      await run("COMMIT");
+    } catch (error) {
+      await run("ROLLBACK").catch(() => {});
+      throw error;
     }
 
-    await run("COMMIT");
-  } catch (error) {
-    await run("ROLLBACK").catch(() => {});
-    throw error;
-  }
-
-  for (const seat of table.seats) {
-    const economy = await getEconomyOrFail(seat.userId, worldId);
-    io.to(userRoom(seat.userId)).emit("balance_update", { worldId, balance: economy.balance });
+    for (const seat of table.seats) {
+      const economy = await getEconomyOrFail(seat.userId, worldId);
+      io.to(userRoom(seat.userId)).emit("balance_update", { worldId, balance: economy.balance });
+      recordPlayActivity(seat.userId, "BLACKJACK", { won: table.winners.includes(seat.userId) });
+    }
   }
 
   await emitWorldPresence(worldId);
@@ -2010,7 +2182,7 @@ async function handlePlayerLeftPlayerTables(userId, worldId) {
     }
 
     if (table.phase === "waiting" && leavingSeat) {
-      await refundPlayerTableSeat(leavingSeat, worldId, table.buyIn);
+      await refundPlayerTableSeat(leavingSeat, worldId, table.buyIn, table.currency, table.id);
     }
 
     const nextSeats = table.seats.filter((seat) => seat.userId !== userId);
@@ -2140,6 +2312,7 @@ async function listAdminUsers(query = "") {
       active: Boolean(row.active),
       roles: roles.length ? roles : ["user"],
       isAdmin: roles.includes("admin"),
+      isVip: roles.includes("vip"),
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       lastLoginAt: row.lastLoginAt,
@@ -2502,7 +2675,7 @@ async function getAdminStoreAnalysis() {
     eyconService.adminModel3dOverview()
   ]);
   const products = overview.products || [];
-  const monopolyTokens = products.filter((product) => product.gameKey === "MONOPOLY" && product.category === "TOKEN");
+  const monopolyTokens = products.filter((product) => product.gameKey === "MONOPOLY" && product.slotKey === "TOKEN");
   const glbTokens = monopolyTokens.filter((product) => product.metadata?.renderer === "gltf");
   return {
     products,
@@ -2526,7 +2699,7 @@ async function getAdminStoreAnalysis() {
       ],
       recommendation: [
         "Sube un .glb en Cargar GLB nuevo para agregarlo a model_3d_assets.",
-        "Elige un producto Monopoly TOKEN y asignale un asset aprobado.",
+        "Elige un producto BolowPoly TOKEN y asignale un asset aprobado.",
         "Usa Tinte 75% como base y ajusta escala, rotacion u offset con la vista previa.",
         "Guarda con motivo; en localhost activa MODEL_3D_WRITE_SEED=1 para llevar cambios por Git."
       ]
@@ -2557,7 +2730,14 @@ app.post("/api/auth/register", async (req, res) => {
     await grantRole(result.id, "user", { source: "register" });
 
     const effectiveRoles = resolveEffectiveRoles(["user"], username);
-    const user = { id: result.id, username, active: true, roles: effectiveRoles, isAdmin: effectiveRoles.includes("admin") };
+    const user = {
+      id: result.id,
+      username,
+      active: true,
+      roles: effectiveRoles,
+      isAdmin: effectiveRoles.includes("admin"),
+      isVip: effectiveRoles.includes("vip")
+    };
     return res.status(201).json({ user, token: signToken(user) });
   } catch (error) {
     if (error && error.code === "SQLITE_CONSTRAINT") {
@@ -2864,6 +3044,77 @@ app.get("/api/eycon/health", (req, res) => {
   });
 });
 
+app.get("/api/payments/packages", (req, res) => {
+  return res.json({ packages: paymentsService.listPackages() });
+});
+
+app.post("/api/payments/checkout", authRequired, async (req, res) => {
+  try {
+    const packageId = String(req.body.packageId || "");
+    const result = await paymentsService.createCheckout({ userId: req.user.id, packageId });
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.status ? error.message : "No se pudo iniciar la compra"
+    });
+  }
+});
+
+app.post("/api/payments/return-sync", authRequired, async (req, res) => {
+  try {
+    const paymentIntentId = req.body.paymentIntentId ? String(req.body.paymentIntentId) : null;
+    const paymentId = req.body.paymentId || req.body.collectionId || null;
+    const externalReference = req.body.externalReference ? String(req.body.externalReference) : null;
+    const paymentIntent = await paymentsService.returnSync({
+      userId: req.user.id,
+      paymentIntentId,
+      paymentId,
+      externalReference
+    });
+    const eycon = await eyconService.ensureAccount(req.user.id);
+    return res.json({
+      paymentIntent,
+      eyconBalanceUnits: eycon.balanceUnits,
+      isVip: (await getUserRoles(req.user.id)).includes("vip")
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({
+      error: error.status ? error.message : "No se pudo sincronizar el pago"
+    });
+  }
+});
+
+app.get("/api/payments/history", authRequired, async (req, res) => {
+  try {
+    return res.json({ payments: await paymentsService.listUserHistory(req.user.id) });
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: "No se pudo cargar el historial de pagos" });
+  }
+});
+
+app.post("/api/payments/webhook", async (req, res) => {
+  try {
+    const result = await paymentsService.handleWebhook({ query: req.query, payload: req.body || {} });
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Error procesando webhook de Mercado Pago", error);
+    return res.status(200).json({ processed: false });
+  }
+});
+
+app.get("/api/payments/webhook", async (req, res) => {
+  try {
+    const result = await paymentsService.handleWebhook({ query: req.query, payload: {} });
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("Error procesando webhook de Mercado Pago", error);
+    return res.status(200).json({ processed: false });
+  }
+});
+
 app.get("/api/eycon/games", authRequired, async (req, res) => {
   try {
     return res.json(await eyconService.listGames(req.user.id));
@@ -2890,6 +3141,33 @@ app.get("/api/eycon/history", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar el historial EyCon" });
+  }
+});
+
+app.get("/api/progression/overview", authRequired, async (req, res) => {
+  try {
+    return res.json(await progressionService.getOverview(req.user.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar el progreso" });
+  }
+});
+
+app.post("/api/progression/battlepass/claim", authRequired, async (req, res) => {
+  try {
+    return res.json(await progressionService.claimBattlePass(req.user.id));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.status ? error.message : "No se pudo reclamar el pase de batalla" });
+  }
+});
+
+app.post("/api/progression/missions/:key/claim", authRequired, async (req, res) => {
+  try {
+    return res.json(await progressionService.claimMission(req.user.id, req.params.key));
+  } catch (error) {
+    console.error(error);
+    return res.status(error.status || 500).json({ error: error.status ? error.message : "No se pudo reclamar la mision" });
   }
 });
 
@@ -3250,6 +3528,44 @@ app.post("/api/admin/model-3d-assets", authRequired, async (req, res) => {
   }
 });
 
+app.delete("/api/admin/model-3d-assets/:assetKey", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const reason = cleanAdminReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: "El motivo es obligatorio" });
+
+    const result = await eyconService.adminDeleteModel3dAsset({
+      assetKey: req.params.assetKey
+    });
+
+    let fileDeleted = false;
+    const filePath = String(result.filePath || "");
+    if (filePath.startsWith("/uploads/models3d/")) {
+      const targetPath = path.resolve(modelUploadsDir, path.basename(filePath));
+      const uploadsRoot = path.resolve(modelUploadsDir);
+      if (targetPath.startsWith(`${uploadsRoot}${path.sep}`)) {
+        await fs.promises.unlink(targetPath).then(() => {
+          fileDeleted = true;
+        }).catch((error) => {
+          if (error.code !== "ENOENT") throw error;
+        });
+      }
+    }
+
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "MODEL_3D_ASSET_DELETE",
+      targetType: "model_3d_asset",
+      targetId: result.asset.assetKey,
+      reason,
+      metadata: { asset: result.asset, fileDeleted }
+    });
+    return res.json({ ...result, fileDeleted });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo eliminar asset 3D" });
+  }
+});
+
 app.put("/api/admin/model-3d-settings/:productId", authRequired, async (req, res) => {
   try {
     await requirePlatformAdmin(req.user.id);
@@ -3330,9 +3646,17 @@ app.put("/api/admin/eycon/products/:productId", authRequired, async (req, res) =
     const productId = String(req.params.productId);
     const result = await eyconService.adminUpdateProduct({
       productId,
+      slug: req.body?.slug,
+      name: req.body?.name,
+      description: req.body?.description,
       priceUnits: req.body?.priceUnits,
+      gameKey: req.body?.gameKey,
+      category: req.body?.category,
+      slotKey: req.body?.slotKey,
       active: req.body?.active,
-      rarity: req.body?.rarity
+      rarity: req.body?.rarity,
+      preview: req.body?.preview,
+      metadata: req.body?.metadata
     });
     await writeAdminLog({
       adminUserId: req.user.id,
@@ -3402,7 +3726,7 @@ app.get("/api/monopoly/token", authRequired, async (req, res) => {
 
 app.put("/api/monopoly/token", authRequired, async (req, res) => {
   try {
-    const token = sanitizeMonopolyToken(req.body?.token);
+    const token = sanitizeBolowPolyToken(req.body?.token);
     const activeRows = await all(
       `SELECT config_json AS configJson
        FROM monopoly_tables
@@ -3430,12 +3754,12 @@ app.put("/api/monopoly/token", authRequired, async (req, res) => {
         );
         const colorTaken = otherPlayers.some((player) => {
           const seatIndex = (config.seatedPlayerIds || []).map(Number).indexOf(Number(player.id));
-          const occupiedColor = parseStoredMonopolyToken(player.tokenJson)?.bg
+          const occupiedColor = parseStoredBolowPolyToken(player.tokenJson)?.bg
             || MONOPOLY_TOKEN_COLORS[Math.max(0, seatIndex) % MONOPOLY_TOKEN_COLORS.length];
           return occupiedColor?.toLowerCase() === token.bg.toLowerCase();
         });
         if (colorTaken) {
-          return res.status(409).json({ error: "Ese color ya está ocupado en tu mesa de Monopoly" });
+          return res.status(409).json({ error: "Ese color ya está ocupado en tu mesa de BolowPoly" });
         }
       }
     }
@@ -3471,7 +3795,7 @@ app.get("/api/monopoly/tables", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.status ? error.message : "No se pudieron obtener las mesas de Monopoly"
+      error: error.status ? error.message : "No se pudieron obtener las mesas de BolowPoly"
     });
   }
 });
@@ -3486,7 +3810,7 @@ app.get("/api/monopoly/state", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.status ? error.message : "No se pudo obtener el estado de Monopoly"
+      error: error.status ? error.message : "No se pudo obtener el estado de BolowPoly"
     });
   }
 });
@@ -3494,13 +3818,14 @@ app.get("/api/monopoly/state", authRequired, async (req, res) => {
 app.post("/api/monopoly/create", authRequired, async (req, res) => {
   try {
     const worldId = Number(req.body.worldId);
-    const name = String(req.body.name || "Mesa Monopoly");
+    const name = String(req.body.name || "Mesa BolowPoly");
     const mode = String(req.body.mode || "NORMAL");
     const timedMinutes = Number(req.body.timedMinutes || 60);
     const turnTimeSeconds = Number(req.body.turnTimeSeconds || 60);
     const maxPlayers = Number(req.body.maxPlayers || 4);
     const isPrivate = Boolean(req.body.isPrivate);
     const password = String(req.body.password || "");
+    const eyconStake = Number(req.body.eyconStake || 0);
 
     await ensureWorldMembership(req.user.id, worldId);
     const state = await monopolyService.createTable({
@@ -3512,13 +3837,14 @@ app.post("/api/monopoly/create", authRequired, async (req, res) => {
       turnTimeSeconds,
       maxPlayers,
       isPrivate,
-      password
+      password,
+      eyconStake
     });
     return res.status(201).json(state);
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo crear la mesa Monopoly"
+      error: error.message || "No se pudo crear la mesa BolowPoly"
     });
   }
 });
@@ -3539,7 +3865,7 @@ app.post("/api/monopoly/join", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo unir a la mesa Monopoly"
+      error: error.message || "No se pudo unir a la mesa BolowPoly"
     });
   }
 });
@@ -3559,7 +3885,7 @@ app.post("/api/monopoly/start", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo iniciar Monopoly"
+      error: error.message || "No se pudo iniciar BolowPoly"
     });
   }
 });
@@ -3583,7 +3909,7 @@ app.post("/api/monopoly/action", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo ejecutar la accion de Monopoly"
+      error: error.message || "No se pudo ejecutar la accion de BolowPoly"
     });
   }
 });
@@ -3602,7 +3928,7 @@ app.post("/api/monopoly/leave", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo salir de la mesa Monopoly"
+      error: error.message || "No se pudo salir de la mesa BolowPoly"
     });
   }
 });
@@ -3621,7 +3947,7 @@ app.post("/api/monopoly/surrender", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo rendir la partida de Monopoly"
+      error: error.message || "No se pudo rendir la partida de BolowPoly"
     });
   }
 });
@@ -3640,7 +3966,7 @@ app.post("/api/monopoly/close", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({
-      error: error.message || "No se pudo cerrar la mesa Monopoly"
+      error: error.message || "No se pudo cerrar la mesa BolowPoly"
     });
   }
 });
@@ -3672,6 +3998,7 @@ app.post("/api/game/reward-dishes", authRequired, async (req, res) => {
 
     const economy = await getEconomyOrFail(req.user.id, worldId);
     await broadcastEconomyChange(req.user.id, worldId, economy.balance);
+    recordPlayActivity(req.user.id, "OTHER");
     return res.json({ reward, balance: economy.balance });
   } catch (error) {
     console.error(error);
@@ -3998,7 +4325,7 @@ io.on("connection", (socket) => {
       }
     } catch (error) {
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudieron obtener las mesas de Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudieron obtener las mesas de BolowPoly" });
       }
     }
   });
@@ -4026,7 +4353,7 @@ io.on("connection", (socket) => {
       }
     } catch (error) {
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo obtener Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo obtener BolowPoly" });
       }
     }
   });
@@ -4034,13 +4361,14 @@ io.on("connection", (socket) => {
   socket.on("create_monopoly_table", async (payload, callback) => {
     try {
       const worldId = Number(payload && payload.worldId);
-      const name = String((payload && payload.name) || "Mesa Monopoly");
+      const name = String((payload && payload.name) || "Mesa BolowPoly");
       const mode = String((payload && payload.mode) || "NORMAL");
       const timedMinutes = Number((payload && payload.timedMinutes) || 60);
       const turnTimeSeconds = Number((payload && payload.turnTimeSeconds) || 60);
       const maxPlayers = Number((payload && payload.maxPlayers) || 4);
       const isPrivate = Boolean(payload && payload.isPrivate);
       const password = String((payload && payload.password) || "");
+      const eyconStake = Number((payload && payload.eyconStake) || 0);
 
       if (!socket.data.worldId || socket.data.worldId !== worldId) {
         throw new Error("Primero debes entrar a este mundo");
@@ -4055,17 +4383,18 @@ io.on("connection", (socket) => {
         turnTimeSeconds,
         maxPlayers,
         isPrivate,
-        password
+        password,
+        eyconStake
       });
 
       if (typeof callback === "function") {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo crear la mesa Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo crear la mesa BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo crear la mesa Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo crear la mesa BolowPoly" });
       }
     }
   });
@@ -4092,10 +4421,10 @@ io.on("connection", (socket) => {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo entrar a la mesa Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo entrar a la mesa BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo entrar a la mesa Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo entrar a la mesa BolowPoly" });
       }
     }
   });
@@ -4120,10 +4449,10 @@ io.on("connection", (socket) => {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo iniciar Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo iniciar BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo iniciar Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo iniciar BolowPoly" });
       }
     }
   });
@@ -4180,10 +4509,10 @@ io.on("connection", (socket) => {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo ejecutar la accion de Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo ejecutar la accion de BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo ejecutar la accion de Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo ejecutar la accion de BolowPoly" });
       }
     }
   });
@@ -4370,10 +4699,10 @@ io.on("connection", (socket) => {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo salir de la mesa Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo salir de la mesa BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo salir de la mesa Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo salir de la mesa BolowPoly" });
       }
     }
   });
@@ -4398,10 +4727,10 @@ io.on("connection", (socket) => {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo rendir la partida de Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo rendir la partida de BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo rendir la partida de Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo rendir la partida de BolowPoly" });
       }
     }
   });
@@ -4426,10 +4755,10 @@ io.on("connection", (socket) => {
         callback({ ok: true, state });
       }
     } catch (error) {
-      socket.emit("monopoly_error", { message: error.message || "No se pudo cerrar la mesa Monopoly" });
+      socket.emit("monopoly_error", { message: error.message || "No se pudo cerrar la mesa BolowPoly" });
 
       if (typeof callback === "function") {
-        callback({ ok: false, error: error.message || "No se pudo cerrar la mesa Monopoly" });
+        callback({ ok: false, error: error.message || "No se pudo cerrar la mesa BolowPoly" });
       }
     }
   });
@@ -4437,21 +4766,25 @@ io.on("connection", (socket) => {
   socket.on("create_player_table", async (payload, callback) => {
     try {
       const worldId = Number(payload && payload.worldId);
-      const buyIn = Number(payload && payload.buyIn);
+      const currency = String((payload && payload.currency) || "NORMAL").toUpperCase();
       const name = String((payload && payload.name) || "Mesa PvP").trim().slice(0, 32);
 
       if (!socket.data.worldId || socket.data.worldId !== worldId) {
         throw new Error("Primero debes entrar a este mundo");
       }
 
-      if (!Number.isInteger(buyIn) || buyIn < AI_TABLE_MIN_BET) {
-        throw new Error(`Las mesas PvP aceptan buy-in desde $${AI_TABLE_MIN_BET}, sin limite fijo`);
+      if (!["NORMAL", "EYCON"].includes(currency)) {
+        throw new Error("Divisa de mesa invalida");
       }
 
-      const economy = await getEconomyOrFail(socket.user.id, worldId);
+      const buyIn = Number(payload && payload.buyIn);
 
-      if (economy.balance < buyIn) {
-        throw new Error("Saldo insuficiente para sentarte");
+      if (currency === "EYCON") {
+        if (!Number.isInteger(buyIn) || buyIn < EYCON_PVP_MIN_UNITS || buyIn > EYCON_PVP_MAX_UNITS) {
+          throw new Error("Las mesas EyCon aceptan apuestas de 0.01 a 1.00 EyCon");
+        }
+      } else if (!Number.isInteger(buyIn) || buyIn < AI_TABLE_MIN_BET) {
+        throw new Error(`Las mesas PvP aceptan buy-in desde $${AI_TABLE_MIN_BET}, sin limite fijo`);
       }
 
       const tables = getPlayerTableMap(worldId);
@@ -4463,16 +4796,36 @@ io.on("connection", (socket) => {
         throw new Error("Ya estas sentado en una mesa PvP");
       }
 
-      const nextBalance = await reservePlayerTableBuyIn(socket.user.id, worldId, buyIn);
-      await broadcastEconomyChange(socket.user.id, worldId, nextBalance);
+      const tableId = crypto.randomUUID();
+
+      if (currency === "EYCON") {
+        const account = await eyconService.ensureAccount(socket.user.id);
+        if (Number(account.balanceUnits) < buyIn) {
+          throw new Error("Saldo EyCon insuficiente para sentarte");
+        }
+        await eyconService.reservePvpStake({
+          userId: socket.user.id,
+          referenceId: `bj-pvp:${tableId}`,
+          amountUnits: buyIn,
+          gameKey: "BLACKJACK_PVP"
+        });
+      } else {
+        const economy = await getEconomyOrFail(socket.user.id, worldId);
+        if (economy.balance < buyIn) {
+          throw new Error("Saldo insuficiente para sentarte");
+        }
+        const nextBalance = await reservePlayerTableBuyIn(socket.user.id, worldId, buyIn);
+        await broadcastEconomyChange(socket.user.id, worldId, nextBalance);
+      }
 
       const table = {
-        id: crypto.randomUUID(),
+        id: tableId,
         name: name || "Mesa PvP",
         status: "waiting",
         phase: "waiting",
         message: "Esperando jugadores",
         buyIn,
+        currency,
         maxSeats: TABLE_MAX_PLAYERS,
         hostId: socket.user.id,
         createdAt: new Date().toISOString(),
@@ -4533,8 +4886,21 @@ io.on("connection", (socket) => {
         throw new Error("Mesa llena");
       }
 
-      const nextBalance = await reservePlayerTableBuyIn(socket.user.id, worldId, table.buyIn);
-      await broadcastEconomyChange(socket.user.id, worldId, nextBalance);
+      if (table.currency === "EYCON") {
+        const account = await eyconService.ensureAccount(socket.user.id);
+        if (Number(account.balanceUnits) < table.buyIn) {
+          throw new Error("Saldo EyCon insuficiente para sentarte");
+        }
+        await eyconService.reservePvpStake({
+          userId: socket.user.id,
+          referenceId: `bj-pvp:${table.id}`,
+          amountUnits: table.buyIn,
+          gameKey: "BLACKJACK_PVP"
+        });
+      } else {
+        const nextBalance = await reservePlayerTableBuyIn(socket.user.id, worldId, table.buyIn);
+        await broadcastEconomyChange(socket.user.id, worldId, nextBalance);
+      }
 
       table.seats.push(createPlayerTableSeat(socket.user));
       table.message = `${socket.user.username} se sento`;
@@ -4587,7 +4953,7 @@ io.on("connection", (socket) => {
       }
 
       if (table.phase === "waiting") {
-        await refundPlayerTableSeat(leavingSeat, worldId, table.buyIn);
+        await refundPlayerTableSeat(leavingSeat, worldId, table.buyIn, table.currency, table.id);
       }
 
       table.seats = table.seats.filter((seat) => seat.userId !== socket.user.id);
@@ -4731,6 +5097,10 @@ io.on("connection", (socket) => {
       const tableId = String((payload && payload.tableId) || "");
       const { table } = findPlayerTable(worldId, tableId);
 
+      if (table.currency === "EYCON") {
+        throw new Error("Las mesas con apuesta EyCon no permiten revancha. Crea una nueva mesa para volver a apostar.");
+      }
+
       if (table.phase !== "settled") {
         throw new Error("La revancha solo se puede pedir al terminar la ronda");
       }
@@ -4767,6 +5137,10 @@ io.on("connection", (socket) => {
       const worldId = Number(payload && payload.worldId);
       const tableId = String((payload && payload.tableId) || "");
       const { table } = findPlayerTable(worldId, tableId);
+
+      if (table.currency === "EYCON") {
+        throw new Error("Las mesas con apuesta EyCon no permiten revancha. Crea una nueva mesa para volver a apostar.");
+      }
 
       if (table.phase !== "settled") {
         throw new Error("La revancha ya no esta disponible");

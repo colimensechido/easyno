@@ -56,6 +56,14 @@ function formatMoney(value) {
   return `$${Math.max(0, Number(value) || 0).toLocaleString("en-US")}`;
 }
 
+function formatEycon(units) {
+  return `${(Math.max(0, Number(units) || 0) / 100).toFixed(2)} EyCon`;
+}
+
+function formatStake(value, currency) {
+  return currency === "EYCON" ? formatEycon(value) : formatMoney(value);
+}
+
 function cardPoints(card) {
   if (!card || card.hidden) return 0;
   if (card.rank === "A") return 11;
@@ -461,7 +469,7 @@ function SeatFooter({ total, outcome, payout, formatPayout, hideTotal = false })
   );
 }
 
-function PvpSeat({ seat, currentUserId, active, buyIn, phase }) {
+function PvpSeat({ seat, currentUserId, active, buyIn, phase, currency = "NORMAL" }) {
   const isCurrentUser = seat.userId === currentUserId;
   const cards = seat.cards || [];
   const connected = seat.connected !== false;
@@ -505,13 +513,13 @@ function PvpSeat({ seat, currentUserId, active, buyIn, phase }) {
         </div>
         <div className="flex shrink-0 items-center gap-1 rounded-md border border-amber-300/40 bg-amber-300/15 px-2.5 py-1 text-xs font-extrabold text-amber-100 shadow-goldSoft">
           <Coins size={12} />
-          {formatMoney(buyIn)}
+          {formatStake(buyIn, currency)}
         </div>
       </div>
 
       <HandFan cards={cards} hideFirstOnly={hideRivalInfo} spotlight={spotlightHand || active} />
 
-      <SeatFooter total={seat.total} outcome={seat.outcome} payout={seat.payout} formatPayout={(p) => `+${formatMoney(p)}`} hideTotal={hideRivalInfo} />
+      <SeatFooter total={seat.total} outcome={seat.outcome} payout={seat.payout} formatPayout={(p) => `+${formatStake(p, currency)}`} hideTotal={hideRivalInfo} />
     </article>
   );
 }
@@ -575,11 +583,11 @@ function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, o
       <div className="grid gap-3 md:grid-cols-4">
         <div className="rounded-lg border border-emerald-300/20 bg-emerald-300/10 p-4">
           <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-emerald-200/60">Pozo</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-emerald-200">{formatMoney(table.pot)}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-emerald-200">{formatStake(table.pot, table.currency)}</p>
         </div>
         <div className="rounded-lg border border-amber-300/20 bg-amber-300/10 p-4">
           <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/60">Buy-in</p>
-          <p className="mt-2 font-display text-2xl font-extrabold text-amber-200">{formatMoney(table.buyIn)}</p>
+          <p className="mt-2 font-display text-2xl font-extrabold text-amber-200">{formatStake(table.buyIn, table.currency)}</p>
         </div>
         <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/10 p-4">
           <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-cyan-200/60">Activos</p>
@@ -610,6 +618,7 @@ function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, o
               active={seat.userId === table.currentTurnUserId}
               buyIn={table.buyIn}
               phase={table.phase}
+              currency={table.currency}
             />
           ))}
         </div>
@@ -633,7 +642,17 @@ function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, o
         </div>
       )}
 
-      {table.phase === "settled" && (
+      {table.phase === "settled" && table.currency === "EYCON" && (
+        <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4">
+          <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/70">Apuesta liquidada</p>
+          <h4 className="mt-2 font-display text-xl font-extrabold text-white">Sin revancha en mesas EyCon</h4>
+          <p className="mt-2 text-sm font-bold text-zinc-300">
+            El pozo en EyCon ya se repartio. Crea una nueva mesa si quieren volver a apostar.
+          </p>
+        </div>
+      )}
+
+      {table.phase === "settled" && table.currency !== "EYCON" && (
         <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
           <div className="rounded-lg border border-amber-300/25 bg-amber-300/10 p-4">
             <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-amber-200/70">Revancha</p>
@@ -678,14 +697,21 @@ function PvpArena({ table, currentUser, turnSeconds, rematchSeconds, onAction, o
   );
 }
 
-function PlayerTablesLobby({ socket, world, currentUser, balance, state, now, onNotice }) {
+const EYCON_PVP_MIN_UNITS = 1;
+const EYCON_PVP_MAX_UNITS = 100;
+
+function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUnits = 0, state, now, onNotice }) {
   const [name, setName] = useState("Mesa PvP");
+  const [currency, setCurrency] = useState("NORMAL");
   const [buyIn, setBuyIn] = useState(100);
+  const [eyconBuyIn, setEyconBuyIn] = useState(20);
   const [error, setError] = useState("");
   const lastResultKey = useRef("");
   const limits = state.betLimits || { min: 25, max: null };
   const hasMax = Number.isFinite(limits.max);
-  const buyInValue = Math.max(limits.min, Math.floor(Number(buyIn) || limits.min));
+  const buyInValue = currency === "EYCON"
+    ? Math.max(EYCON_PVP_MIN_UNITS, Math.min(EYCON_PVP_MAX_UNITS, Math.floor(Number(eyconBuyIn) || EYCON_PVP_MIN_UNITS)))
+    : Math.max(limits.min, Math.floor(Number(buyIn) || limits.min));
   const myTable = state.tables.find((table) => table.seats.some((seat) => seat.userId === currentUser.id));
   const showCreatePanel = !myTable || myTable.phase === "waiting";
   const openTables = state.tables.filter((table) => table.phase === "waiting").length;
@@ -717,7 +743,7 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, state, now, on
   }, [currentUser.id, onNotice, state.tables]);
 
   function createTable() {
-    socket.emit("create_player_table", { worldId: world.id, name, buyIn: buyInValue }, (response) => {
+    socket.emit("create_player_table", { worldId: world.id, name, buyIn: buyInValue, currency }, (response) => {
       if (!response?.ok) {
         setError(response?.error || "No se pudo crear la mesa");
         return;
@@ -832,7 +858,8 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, state, now, on
                 const startSeconds = table.startEndsAt ? Math.max(0, Math.ceil((table.startEndsAt - now) / 1000)) : 0;
                 const turnSeconds = table.turnEndsAt ? Math.max(0, Math.ceil((table.turnEndsAt - now) / 1000)) : 0;
                 const rematchSeconds = table.rematchEndsAt ? Math.max(0, Math.ceil((table.rematchEndsAt - now) / 1000)) : 0;
-                const canJoin = table.phase === "waiting" && !seated && !full && balance >= table.buyIn && !myTable;
+                const availableForTable = table.currency === "EYCON" ? eyconBalanceUnits : balance;
+                const canJoin = table.phase === "waiting" && !seated && !full && availableForTable >= table.buyIn && !myTable;
                 const canLeave = seated && table.phase !== "settled";
 
                 return (
@@ -852,6 +879,11 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, state, now, on
                           >
                             {table.phase === "playing" ? "En juego" : table.phase === "settled" ? "Finalizada" : "Lobby"}
                           </span>
+                          {table.currency === "EYCON" && (
+                            <span className="rounded-md border border-fuchsia-300/40 bg-fuchsia-300/10 px-2 py-1 text-xs font-extrabold uppercase tracking-[0.12em] text-fuchsia-200">
+                              Apuesta EyCon
+                            </span>
+                          )}
                         </div>
                         <p className="mt-2 text-sm font-bold text-zinc-500">
                           {table.message || `${table.seats.length}/${table.maxSeats} sentados`}
@@ -861,11 +893,11 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, state, now, on
                       <div className="grid grid-cols-3 gap-2 sm:min-w-[300px]">
                         <div className="rounded-md border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-center">
                           <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-amber-200/60">Buy-in</p>
-                          <p className="font-display text-lg font-extrabold text-amber-200">{formatMoney(table.buyIn)}</p>
+                          <p className="font-display text-lg font-extrabold text-amber-200">{formatStake(table.buyIn, table.currency)}</p>
                         </div>
                         <div className="rounded-md border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-center">
                           <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-200/60">Pozo</p>
-                          <p className="font-display text-lg font-extrabold text-emerald-200">{formatMoney(table.pot)}</p>
+                          <p className="font-display text-lg font-extrabold text-emerald-200">{formatStake(table.pot, table.currency)}</p>
                         </div>
                         <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-center">
                           <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-cyan-200/60">Sillas</p>
@@ -940,41 +972,94 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, state, now, on
       {showCreatePanel && (
         <aside className="arcade-panel p-5">
           <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-amber-200">Crear mesa</p>
-          <h3 className="mt-1 font-display text-xl font-extrabold text-white">Buy-in sin limite</h3>
+          <h3 className="mt-1 font-display text-xl font-extrabold text-white">
+            {currency === "EYCON" ? "Apuesta con EyCon" : "Buy-in sin limite"}
+          </h3>
           <div className="mt-4 grid gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                className={currency === "NORMAL" ? "arcade-button w-full" : "ghost-button w-full"}
+                onClick={() => setCurrency("NORMAL")}
+              >
+                <Coins size={16} />
+                Monedas
+              </button>
+              <button
+                type="button"
+                className={currency === "EYCON" ? "arcade-button w-full" : "ghost-button w-full"}
+                onClick={() => setCurrency("EYCON")}
+              >
+                <BadgeDollarSign size={16} />
+                EyCon
+              </button>
+            </div>
             <label className="grid gap-2">
               <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Nombre</span>
               <input className="arcade-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={32} />
             </label>
-            <label className="grid gap-2">
-              <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Buy-in</span>
-              <input
-                className="arcade-input"
-                type="number"
-                min={limits.min}
-                max={hasMax ? limits.max : undefined}
-                value={buyIn}
-                onChange={(event) => setBuyIn(event.target.value)}
-              />
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[100, 500, 1000].map((chip) => (
-                <button key={chip} className="ghost-button px-2" onClick={() => setBuyIn(chip)}>
-                  {formatMoney(chip)}
-                </button>
-              ))}
-            </div>
+            {currency === "EYCON" ? (
+              <>
+                <label className="grid gap-2">
+                  <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">
+                    Apuesta EyCon (0.01 - 1.00)
+                  </span>
+                  <input
+                    className="arcade-input"
+                    type="number"
+                    min={EYCON_PVP_MIN_UNITS}
+                    max={EYCON_PVP_MAX_UNITS}
+                    value={eyconBuyIn}
+                    onChange={(event) => setEyconBuyIn(event.target.value)}
+                  />
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[10, 50, 100].map((chip) => (
+                    <button key={chip} className="ghost-button px-2" onClick={() => setEyconBuyIn(chip)}>
+                      {formatEycon(chip)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <label className="grid gap-2">
+                  <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Buy-in</span>
+                  <input
+                    className="arcade-input"
+                    type="number"
+                    min={limits.min}
+                    max={hasMax ? limits.max : undefined}
+                    value={buyIn}
+                    onChange={(event) => setBuyIn(event.target.value)}
+                  />
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[100, 500, 1000].map((chip) => (
+                    <button key={chip} className="ghost-button px-2" onClick={() => setBuyIn(chip)}>
+                      {formatMoney(chip)}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             <button
               className="arcade-button w-full"
               onClick={createTable}
-              disabled={!socket?.connected || buyInValue > balance || (hasMax && buyInValue > limits.max) || !!myTable}
+              disabled={
+                !socket?.connected ||
+                !!myTable ||
+                (currency === "EYCON" ? buyInValue > eyconBalanceUnits : buyInValue > balance || (hasMax && buyInValue > limits.max))
+              }
             >
               <Plus size={18} />
               Abrir mesa
             </button>
           </div>
           <div className="mt-4 rounded-md border border-white/10 bg-black/35 px-3 py-3 text-sm font-bold leading-6 text-zinc-400">
-            El buy-in se descuenta al sentarte. Si sales antes de que empiece, vuelve a tu saldo; si la ronda empieza, se reparte el pozo al final.
+            {currency === "EYCON"
+              ? "La apuesta EyCon se descuenta al sentarte y se reparte al ganador al terminar la ronda. Las mesas EyCon no permiten revancha."
+              : "El buy-in se descuenta al sentarte. Si sales antes de que empiece, vuelve a tu saldo; si la ronda empieza, se reparte el pozo al final."}
           </div>
           {error && (
             <div className="mt-4 rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-200">
@@ -1089,7 +1174,7 @@ function TableSelection({ balance, onSelect }) {
   );
 }
 
-export default function BlackjackTable({ socket, currentUser, world, balance }) {
+export default function BlackjackTable({ socket, currentUser, world, balance, eyconBalanceUnits = 0 }) {
   const [mode, setMode] = useState(null);
   const [bet, setBet] = useState(100);
   const [table, setTable] = useState({
@@ -1310,6 +1395,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance }) 
           world={world}
           currentUser={currentUser}
           balance={balance}
+          eyconBalanceUnits={eyconBalanceUnits}
           state={playerTables}
           now={now}
           onNotice={setNotice}

@@ -29,7 +29,11 @@ const TABLE_STATUS = Object.freeze({
   FINISHED: "FINISHED"
 });
 
+const MONOPOLY_MIN_TURNS_FOR_ACTIVITY = 10;
+
 let modulePromise = null;
+
+const { displayName: BOLOWPOLY_NAME, defaultTableName: BOLOWPOLY_DEFAULT_TABLE } = require("../shared/bolowpoly-brand");
 
 function resolveMonopolyModulePath() {
   const engineFromEnv = process.env.MONOPOLY_ENGINE_PATH;
@@ -49,7 +53,7 @@ function resolveMonopolyModulePath() {
   throw new Error(`No se encontro el motor de Monopoly. Rutas probadas: ${candidates.map((candidate) => path.resolve(candidate)).join(", ")}`);
 }
 
-function asClientError(error, fallbackMessage = "No se pudo completar la accion de Monopoly", status = 400) {
+function asClientError(error, fallbackMessage = `No se pudo completar la accion de ${BOLOWPOLY_NAME}`, status = 400) {
   if (error instanceof Error) {
     if (!error.status) {
       error.status = status;
@@ -78,7 +82,10 @@ function createMonopolyService({
   io,
   roomName,
   getEquippedCosmetics = async () => new Map(),
-  onGameFinished = async () => null
+  onGameFinished = async () => null,
+  chargeEyconStakes = null,
+  refundEyconStakes = null,
+  recordPlayActivity = null
 }) {
   const queues = new Map();
   const turnTimers = new Map();
@@ -178,6 +185,13 @@ function createMonopolyService({
       turnOrderStartedAt: typeof config.turnOrderStartedAt === "string" ? config.turnOrderStartedAt : null,
       turnOrderCompletedAt: typeof config.turnOrderCompletedAt === "string" ? config.turnOrderCompletedAt : null,
       eyconRewardEligible: config.eyconRewardEligible !== false,
+      eyconStakeUnits: Math.max(0, Math.min(100, Math.floor(Number(config.eyconStakeUnits) || 0))),
+      eyconStakeParticipants: Array.isArray(config.eyconStakeParticipants)
+        ? config.eyconStakeParticipants.map(Number).filter(Number.isInteger)
+        : [],
+      activityCreditedIds: Array.isArray(config.activityCreditedIds)
+        ? config.activityCreditedIds.map(Number).filter(Number.isInteger)
+        : [],
       createdAt: config.createdAt || row.createdAt
     };
   }
@@ -296,6 +310,7 @@ function createMonopolyService({
     config.turnOrderRolls = [];
     config.turnOrderStartedAt = null;
     config.turnOrderCompletedAt = null;
+    config.activityCreditedIds = [];
   }
 
   function clampMaxPlayers(value) {
@@ -426,6 +441,7 @@ function createMonopolyService({
       isPrivate: config.isPrivate,
       hasPassword: config.isPrivate && Boolean(config.password),
       hostId: config.hostId,
+      eyconStakeUnits: config.eyconStakeUnits,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
       createdAt: row.createdAt,
@@ -508,6 +524,7 @@ function createMonopolyService({
         hasPassword: config.isPrivate && Boolean(config.password),
         turnDeadlineAt: turnTimers.get(row.id)?.deadlineAt || null,
         hostId: config.hostId,
+        eyconStakeUnits: config.eyconStakeUnits,
         createdBy: row.createdBy,
         updatedBy: row.updatedBy,
         createdAt: row.createdAt,
@@ -576,7 +593,7 @@ function createMonopolyService({
         config.seatedPlayerIds.includes(actorId) &&
         [TABLE_STATUS.WAITING, TABLE_STATUS.ORDERING, TABLE_STATUS.PLAYING].includes(row.status)
       ) {
-        throw asClientError(new Error("Ya estas sentado en otra mesa de Monopoly de este mundo"));
+        throw asClientError(new Error(`Ya estas sentado en otra mesa de ${BOLOWPOLY_NAME} de este mundo`));
       }
     }
   }
@@ -780,15 +797,14 @@ function createMonopolyService({
 
           await emitAll(freshRow.worldId, freshRow.id);
           if (freshRow.status === TABLE_STATUS.FINISHED) {
-            if (parseConfig(freshRow).eyconRewardEligible) {
-              await onGameFinished({
-                tableId: freshRow.id,
-                worldId: freshRow.worldId,
-                state: engine.getState()
-              }).catch((error) => {
-                console.error("No se pudo entregar recompensa EyCon de Monopoly", error);
-              });
-            }
+            await onGameFinished({
+              tableId: freshRow.id,
+              worldId: freshRow.worldId,
+              state: engine.getState(),
+              config: parseConfig(freshRow)
+            }).catch((error) => {
+              console.error("No se pudo finalizar recompensas de Monopoly", error);
+            });
             scheduleFinishedCleanup(freshRow);
           } else {
             await scheduleTurnTimeoutForRow(freshRow);
@@ -868,6 +884,19 @@ function createMonopolyService({
     engine.checkGameEnd(Date.now());
   }
 
+  function creditMonopolyActivityIfEligible(config, actorId, turns) {
+    if (typeof recordPlayActivity !== "function") return;
+    if (!Number.isInteger(actorId)) return;
+    if (Number(turns || 0) < MONOPOLY_MIN_TURNS_FOR_ACTIVITY) return;
+    if (!Array.isArray(config.activityCreditedIds)) {
+      config.activityCreditedIds = [];
+    }
+    if (config.activityCreditedIds.includes(actorId)) return;
+
+    config.activityCreditedIds.push(actorId);
+    recordPlayActivity(actorId, { monopolyTurns: turns });
+  }
+
   function removePlayerFromTableConfig(config, actorId) {
     config.seatedPlayerIds = config.seatedPlayerIds.filter((playerId) => playerId !== actorId);
     if (config.hostId === actorId) {
@@ -904,7 +933,7 @@ function createMonopolyService({
       };
     },
 
-    async createTable({ worldId, actorId, name, mode, timedMinutes, turnTimeSeconds, maxPlayers, isPrivate, password }) {
+    async createTable({ worldId, actorId, name, mode, timedMinutes, turnTimeSeconds, maxPlayers, isPrivate, password, eyconStake }) {
       return queueByKey(`monopoly-world:${worldId}`, async () => {
         await assertPlayerCanSeat(worldId, actorId);
 
@@ -912,6 +941,11 @@ function createMonopolyService({
         const cleanPassword = wantsPrivate ? String(password || "").trim().slice(0, 32) : "";
         if (wantsPrivate && !cleanPassword) {
           throw asClientError(new Error("Una sala privada necesita contraseña"));
+        }
+
+        const stakeUnits = Math.max(0, Math.min(100, Math.floor(Number(eyconStake) || 0)));
+        if (stakeUnits > 0 && stakeUnits < 1) {
+          throw asClientError(new Error("La apuesta EyCon minima es 0.01"));
         }
 
         const tableId = crypto.randomUUID();
@@ -928,6 +962,8 @@ function createMonopolyService({
           turnOrderStartedAt: null,
           turnOrderCompletedAt: null,
           eyconRewardEligible: true,
+          eyconStakeUnits: stakeUnits,
+          eyconStakeParticipants: [],
           createdAt: new Date().toISOString()
         };
 
@@ -949,7 +985,7 @@ function createMonopolyService({
           [
             tableId,
             worldId,
-            String(name || "Mesa Monopoly").trim().slice(0, 48) || "Mesa Monopoly",
+            String(name || BOLOWPOLY_DEFAULT_TABLE).trim().slice(0, 48) || BOLOWPOLY_DEFAULT_TABLE,
             TABLE_STATUS.WAITING,
             JSON.stringify(config),
             actorId,
@@ -967,7 +1003,7 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         const config = parseConfig(row);
@@ -1011,7 +1047,7 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         const config = parseConfig(row);
@@ -1053,7 +1089,7 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         const config = parseConfig(row);
@@ -1062,10 +1098,19 @@ function createMonopolyService({
         }
 
         if (row.status !== TABLE_STATUS.PLAYING || !row.stateJson) {
+          const wasOrdering = row.status === TABLE_STATUS.ORDERING;
           removePlayerFromTableConfig(config, actorId);
-          if (row.status === TABLE_STATUS.ORDERING) {
+          if (wasOrdering) {
             resetTurnOrderConfig(config);
             row.status = TABLE_STATUS.WAITING;
+            if (config.eyconStakeParticipants.length && typeof refundEyconStakes === "function") {
+              const toRefund = config.eyconStakeParticipants;
+              const stakeAmount = Number(config.eyconStakeUnits || 0);
+              config.eyconStakeParticipants = [];
+              await refundEyconStakes(tableId, toRefund, stakeAmount).catch((error) => {
+                console.error("No se pudo reembolsar la apuesta EyCon de Monopoly", error);
+              });
+            }
           }
 
           if (config.seatedPlayerIds.length === 0) {
@@ -1092,6 +1137,7 @@ function createMonopolyService({
           throw asClientError(error, "No se pudo abandonar la partida");
         }
 
+        creditMonopolyActivityIfEligible(config, actorId, engine.getState().turn?.number);
         removePlayerFromTableConfig(config, actorId);
         syncRowStatusFromEngine(row, engine);
 
@@ -1110,6 +1156,14 @@ function createMonopolyService({
         const response = await emitAll(worldId, tableId);
         const nextRow = await getTableRow(tableId);
         if (nextRow?.status === TABLE_STATUS.FINISHED) {
+          await onGameFinished({
+            tableId,
+            worldId,
+            state: engine.getState(),
+            config: parseConfig(nextRow)
+          }).catch((error) => {
+            console.error("No se pudo finalizar recompensas de Monopoly", error);
+          });
           scheduleFinishedCleanup(nextRow);
         } else if (nextRow) {
           await scheduleTurnTimeoutForRow(nextRow);
@@ -1124,12 +1178,18 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         await assertHost(row, actorId);
         if (row.status === TABLE_STATUS.PLAYING) {
           throw asClientError(new Error("No puedes cerrar una mesa con la partida en curso"));
+        }
+        const config = parseConfig(row);
+        if (config.eyconStakeParticipants.length && typeof refundEyconStakes === "function") {
+          await refundEyconStakes(tableId, config.eyconStakeParticipants, Number(config.eyconStakeUnits || 0)).catch((error) => {
+            console.error("No se pudo reembolsar la apuesta EyCon al cerrar la mesa", error);
+          });
         }
         await deleteTableRow(tableId);
         return emitAll(worldId, null);
@@ -1141,7 +1201,7 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         await assertHost(row, actorId);
@@ -1160,6 +1220,19 @@ function createMonopolyService({
 
         if (players.length < 2) {
           throw asClientError(new Error("Necesitas al menos 2 jugadores sentados"));
+        }
+
+        const stakeUnits = Number(config.eyconStakeUnits || 0);
+        if (stakeUnits > 0) {
+          if (typeof chargeEyconStakes !== "function") {
+            throw asClientError(new Error("Las apuestas EyCon no estan disponibles en este momento"));
+          }
+          try {
+            await chargeEyconStakes(tableId, config.seatedPlayerIds, stakeUnits);
+          } catch (error) {
+            throw asClientError(error, "No se pudo cobrar la apuesta EyCon a todos los jugadores");
+          }
+          config.eyconStakeParticipants = [...config.seatedPlayerIds];
         }
 
         resetTurnOrderConfig(config);
@@ -1182,7 +1255,7 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         if (row.status !== TABLE_STATUS.ORDERING) {
@@ -1265,7 +1338,7 @@ function createMonopolyService({
         const row = await getTableRow(tableId);
 
         if (!row || row.worldId !== worldId) {
-          throw asClientError(new Error("Mesa Monopoly no encontrada"), "Mesa no encontrada", 404);
+          throw asClientError(new Error(`Mesa ${BOLOWPOLY_NAME} no encontrada`), "Mesa no encontrada", 404);
         }
 
         if (row.status !== TABLE_STATUS.PLAYING || !row.stateJson) {
@@ -1284,7 +1357,7 @@ function createMonopolyService({
           ensurePlayerCanAct(engine, actorId, actionName, payload);
           engine.ejecutarAccion(actionName, payload);
         } catch (error) {
-          throw asClientError(error, "La accion de Monopoly no es valida");
+          throw asClientError(error, `La accion de ${BOLOWPOLY_NAME} no es valida`);
         }
 
         syncRowStatusFromEngine(row, engine);
@@ -1299,15 +1372,14 @@ function createMonopolyService({
         const nextRow = await getTableRow(tableId);
         const response = await emitAll(worldId, tableId);
         if (nextRow?.status === TABLE_STATUS.FINISHED) {
-          if (parseConfig(nextRow).eyconRewardEligible) {
-            await onGameFinished({
-              tableId,
-              worldId,
-              state: engine.getState()
-            }).catch((error) => {
-              console.error("No se pudo entregar recompensa EyCon de Monopoly", error);
-            });
-          }
+          await onGameFinished({
+            tableId,
+            worldId,
+            state: engine.getState(),
+            config: parseConfig(nextRow)
+          }).catch((error) => {
+            console.error("No se pudo finalizar recompensas de Monopoly", error);
+          });
           scheduleFinishedCleanup(nextRow);
         } else if (nextRow) {
           await scheduleTurnTimeoutForRow(nextRow);

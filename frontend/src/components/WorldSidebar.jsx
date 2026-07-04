@@ -25,15 +25,17 @@ function gradientFor(username = "") {
   return AVATAR_GRADIENTS[h];
 }
 
-function playerTone(balance) {
+function playerTone(balance, isVip) {
+  if (isVip) return { border: "border-amber-300/70", bg: "bg-amber-300/20", text: "text-amber-100" };
   if (balance <= 0) return { border: "border-rose-400/40", bg: "bg-rose-500/15", text: "text-rose-100" };
   if (balance >= 10000) return { border: "border-amber-300/50", bg: "bg-amber-300/15", text: "text-amber-100" };
   return { border: "border-emerald-300/30", bg: "bg-emerald-300/10", text: "text-emerald-100" };
 }
 
-function playerStatusInfo(balance) {
+function playerStatusInfo(balance, isVip) {
+  if (isVip) return { label: "VIP", Icon: Crown, color: "text-amber-300" };
   if (balance <= 0) return { label: "Quebrado", Icon: Skull, color: "text-rose-300" };
-  if (balance >= 10000) return { label: "VIP", Icon: Crown, color: "text-amber-300" };
+  if (balance >= 10000) return { label: "Destacado", Icon: Crown, color: "text-amber-300" };
   return { label: "Activo", Icon: Sparkles, color: "text-emerald-300" };
 }
 
@@ -119,24 +121,31 @@ export default function WorldSidebar({
           )}
 
           {sortedPlayers.map((player, index) => {
-            const tone = playerTone(player.balance);
-            const status = playerStatusInfo(player.balance);
+            const isVip = Boolean(player.isVip);
+            const tone = playerTone(player.balance, isVip);
+            const status = playerStatusInfo(player.balance, isVip);
             const isMe = player.userId === currentUser.id;
             const isLeader = index === 0;
             return (
               <div
                 key={player.userId}
                 className={`relative flex items-center gap-3 rounded-lg border-2 p-2.5 transition animate-slide-up-fade ${
-                  isMe
-                    ? "border-amber-300/40 bg-amber-300/10 shadow-goldSoft"
-                    : "border-white/10 bg-black/40 hover:border-amber-300/30"
+                  isVip
+                    ? "border-amber-300/60 bg-amber-300/15 shadow-goldSoft"
+                    : isMe
+                      ? "border-amber-300/40 bg-amber-300/10 shadow-goldSoft"
+                      : "border-white/10 bg-black/40 hover:border-amber-300/30"
                 }`}
               >
                 <Avatar username={player.username} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    {isLeader && <Crown size={14} className="text-amber-300 animate-sparkle" />}
-                    <p className="truncate text-sm font-extrabold text-white">
+                    {isVip ? (
+                      <Crown size={14} className="text-amber-300 animate-sparkle" />
+                    ) : (
+                      isLeader && <Crown size={14} className="text-amber-300 animate-sparkle" />
+                    )}
+                    <p className={`truncate text-sm font-extrabold ${isVip ? "vip-username" : "text-white"}`}>
                       {player.username}
                       {isMe ? " (tu)" : ""}
                     </p>

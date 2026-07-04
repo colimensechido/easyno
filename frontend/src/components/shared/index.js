@@ -6,3 +6,4 @@ export { GameModal } from "./GameModal.jsx";
 export { AnimatedButton } from "./AnimatedButton.jsx";
 export { Dice, DicePair } from "./Dice.jsx";
 export { GameLayout } from "./GameLayout.jsx";
+export { default as BrandLogo } from "./BrandLogo.jsx";

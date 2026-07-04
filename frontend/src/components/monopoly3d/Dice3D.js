@@ -26,6 +26,8 @@ const GRAVITY = 18;
 const PHYSICS_STEP_SECONDS = 1 / 120;
 const MAX_PHYSICS_STEPS_PER_FRAME = 6;
 const MAX_PHYSICS_DURATION_SECONDS = 4.2;
+const RESULT_SETTLE_AIR_HEIGHT = 0.28;
+const RESULT_SETTLE_ALIGNMENT_DISTANCE = 0.00008;
 const RESULT_STAGES = new Set(["diceResult", "highlightDestination", "tokenMoving", "settle"]);
 
 function pipLayout(value) {
@@ -40,10 +42,223 @@ function pipLayout(value) {
   }
 }
 
+function safeColor(value, fallback) {
+  const color = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color : fallback;
+}
+
+function normalizedNumber(value, fallback, min, max) {
+  return THREE.MathUtils.clamp(safeNumber(value, fallback), min, max);
+}
+
+function deterministicNoise(seed) {
+  const value = Math.sin(seed * 12.9898) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function drawStarPath(context, x, y, outerRadius, innerRadius = outerRadius * 0.48, points = 5) {
+  context.beginPath();
+  for (let index = 0; index < points * 2; index += 1) {
+    const radius = index % 2 === 0 ? outerRadius : innerRadius;
+    const angle = -Math.PI / 2 + (index * Math.PI) / points;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (index === 0) context.moveTo(px, py);
+    else context.lineTo(px, py);
+  }
+  context.closePath();
+}
+
+function drawPip(context, x, y, shape, radius) {
+  context.beginPath();
+  if (shape === "square") {
+    context.rect(x - radius, y - radius, radius * 2, radius * 2);
+    context.fill();
+    return;
+  }
+  if (shape === "diamond") {
+    context.moveTo(x, y - radius * 1.2);
+    context.lineTo(x + radius * 1.2, y);
+    context.lineTo(x, y + radius * 1.2);
+    context.lineTo(x - radius * 1.2, y);
+    context.closePath();
+    context.fill();
+    return;
+  }
+  if (shape === "ring") {
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.lineWidth = Math.max(4, radius * 0.34);
+    context.stroke();
+    return;
+  }
+  if (shape === "star") {
+    drawStarPath(context, x, y, radius * 1.25, radius * 0.54, 5);
+    context.fill();
+    return;
+  }
+  context.arc(x, y, radius, 0, Math.PI * 2);
+  context.fill();
+}
+
+function paintDicePattern(context, value, metadata) {
+  const baseColor = safeColor(metadata.baseColor, "#fffdf6");
+  const accentColor = safeColor(metadata.accentColor, baseColor);
+  const pattern = metadata.pattern || "solid";
+  const contrast = normalizedNumber(metadata.faceContrast, 0.35, 0, 1);
+
+  if (pattern === "radial") {
+    const gradient = context.createRadialGradient(128, 110, 18, 128, 128, 170);
+    gradient.addColorStop(0, accentColor);
+    gradient.addColorStop(0.52, baseColor);
+    gradient.addColorStop(1, baseColor);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 256);
+    return;
+  }
+
+  context.fillStyle = baseColor;
+  context.fillRect(0, 0, 256, 256);
+
+  if (pattern === "split") {
+    context.globalAlpha = 0.82;
+    context.fillStyle = accentColor;
+    context.beginPath();
+    context.moveTo(0, 0);
+    context.lineTo(256, 0);
+    context.lineTo(0, 256);
+    context.closePath();
+    context.fill();
+    context.globalAlpha = 1;
+  } else if (pattern === "stripes" || pattern === "danger") {
+    context.save();
+    context.translate(128, 128);
+    context.rotate(pattern === "danger" ? -Math.PI / 4 : Math.PI / 5);
+    context.globalAlpha = pattern === "danger" ? 0.86 : 0.22 + contrast * 0.5;
+    context.fillStyle = accentColor;
+    for (let offset = -260; offset <= 260; offset += pattern === "danger" ? 42 : 32) {
+      context.fillRect(offset, -220, pattern === "danger" ? 20 : 12, 440);
+    }
+    context.restore();
+    context.globalAlpha = 1;
+  } else if (pattern === "checker") {
+    context.globalAlpha = 0.22 + contrast * 0.45;
+    context.fillStyle = accentColor;
+    for (let y = 0; y < 8; y += 1) {
+      for (let x = 0; x < 8; x += 1) {
+        if ((x + y + value) % 2 === 0) context.fillRect(x * 32, y * 32, 32, 32);
+      }
+    }
+    context.globalAlpha = 1;
+  } else if (pattern === "speckles") {
+    context.globalAlpha = 0.18 + contrast * 0.38;
+    context.fillStyle = accentColor;
+    for (let index = 0; index < 96; index += 1) {
+      const x = 18 + deterministicNoise(value * 40 + index) * 220;
+      const y = 18 + deterministicNoise(value * 70 + index * 1.7) * 220;
+      const radius = 1.4 + deterministicNoise(index * 3.1) * 4.8;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.globalAlpha = 1;
+  } else if (pattern === "circuit") {
+    context.globalAlpha = 0.5 + contrast * 0.38;
+    context.strokeStyle = accentColor;
+    context.lineWidth = 3;
+    for (let index = 0; index < 8; index += 1) {
+      const x = 24 + index * 30;
+      context.beginPath();
+      context.moveTo(x, 20);
+      context.lineTo(x, 62 + (index % 3) * 28);
+      context.lineTo(222 - index * 18, 62 + (index % 3) * 28);
+      context.stroke();
+      context.beginPath();
+      context.arc(222 - index * 18, 62 + (index % 3) * 28, 5, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.globalAlpha = 1;
+  } else if (pattern === "stars") {
+    context.globalAlpha = 0.26 + contrast * 0.5;
+    context.fillStyle = accentColor;
+    for (let index = 0; index < 28; index += 1) {
+      const x = 22 + deterministicNoise(value * 9 + index * 2.3) * 212;
+      const y = 22 + deterministicNoise(value * 13 + index * 3.7) * 212;
+      drawStarPath(context, x, y, 3 + deterministicNoise(index) * 5, 1.6 + deterministicNoise(index + 7) * 2.4, 5);
+      context.fill();
+    }
+    context.globalAlpha = 1;
+  } else if (pattern === "marble") {
+    context.globalAlpha = 0.2 + contrast * 0.36;
+    context.strokeStyle = accentColor;
+    context.lineWidth = 7;
+    for (let row = 0; row < 8; row += 1) {
+      context.beginPath();
+      for (let x = -10; x <= 266; x += 14) {
+        const y = 25 + row * 28 + Math.sin(x * 0.035 + row + value) * 12;
+        if (x === -10) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.stroke();
+    }
+    context.globalAlpha = 1;
+  }
+}
+
+function diceSkinSignature(skin) {
+  const metadata = skin?.metadata || {};
+  return [
+    skin?.id || "default",
+    metadata.baseColor || "",
+    metadata.pipColor || "",
+    metadata.accentColor || "",
+    metadata.edgeColor || "",
+    metadata.pattern || "",
+    metadata.pipShape || "",
+    metadata.pipScale ?? "",
+    metadata.faceContrast ?? "",
+    metadata.roughness ?? "",
+    metadata.metalness ?? "",
+    metadata.opacity ?? ""
+  ].join(":");
+}
+
+function diceFxSignature(fx) {
+  const metadata = fx?.metadata || {};
+  return [
+    fx?.id || "",
+    metadata.effect || "",
+    metadata.color || "",
+    metadata.secondaryColor || "",
+    metadata.intensity ?? "",
+    metadata.speed ?? "",
+    metadata.spread ?? "",
+    metadata.particleSize ?? "",
+    metadata.ringScale ?? "",
+    metadata.beamJitter ?? "",
+    metadata.gravity ?? "",
+    metadata.sparkle ?? "",
+    metadata.density ?? ""
+  ].join(":");
+}
+
 function makeFaceTexture(value, skin = null) {
-  const baseColor = skin?.metadata?.baseColor || "#fffdf6";
-  const pipColor = skin?.metadata?.pipColor || "#3f2b17";
-  const cacheKey = `${value}:${baseColor}:${pipColor}`;
+  const metadata = skin?.metadata || {};
+  const baseColor = safeColor(metadata.baseColor, "#fffdf6");
+  const pipColor = safeColor(metadata.pipColor, "#3f2b17");
+  const edgeColor = safeColor(metadata.edgeColor, "#d8c39a");
+  const pipShape = metadata.pipShape || "dot";
+  const pipScale = normalizedNumber(metadata.pipScale, 1, 0.45, 1.9);
+  const cacheKey = [
+    value,
+    baseColor,
+    pipColor,
+    safeColor(metadata.accentColor, baseColor),
+    edgeColor,
+    metadata.pattern || "solid",
+    pipShape,
+    pipScale,
+    metadata.faceContrast ?? ""
+  ].join(":");
   if (faceTextureCache.has(cacheKey)) {
     return faceTextureCache.get(cacheKey);
   }
@@ -52,20 +267,15 @@ function makeFaceTexture(value, skin = null) {
   canvas.width = 256;
   canvas.height = 256;
   const context = canvas.getContext("2d");
-  const gradient = context.createLinearGradient(0, 0, 0, 256);
-  gradient.addColorStop(0, baseColor);
-  gradient.addColorStop(1, baseColor);
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 256, 256);
-  context.strokeStyle = "#d8c39a";
+  paintDicePattern(context, value, metadata);
+  context.strokeStyle = edgeColor;
   context.lineWidth = 10;
   context.strokeRect(8, 8, 240, 240);
   context.fillStyle = pipColor;
+  context.strokeStyle = pipColor;
 
   pipLayout(value).forEach(([x, y]) => {
-    context.beginPath();
-    context.arc(128 + x * 150, 128 + y * 150, 20, 0, Math.PI * 2);
-    context.fill();
+    drawPip(context, 128 + x * 150, 128 + y * 150, pipShape, 20 * pipScale);
   });
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -80,9 +290,7 @@ function materialForFace(value, skin = null) {
   const metadata = skin?.metadata || {};
   const cacheKey = [
     value,
-    skin?.id || "default",
-    metadata.baseColor || "",
-    metadata.pipColor || "",
+    diceSkinSignature(skin),
     metadata.roughness ?? "",
     metadata.metalness ?? "",
     metadata.opacity ?? ""
@@ -114,6 +322,23 @@ function diceResultKey(diceFaces = []) {
 
 function quaternionDistanceToTarget(die) {
   return 1 - Math.abs(die.quaternion.dot(die.userData.targetQuaternion));
+}
+
+function settlePhysicalDieTowardResult(die, delta) {
+  const velocity = die.userData.velocity;
+  const angularVelocity = die.userData.angularVelocity;
+  const heightAboveFloor = Math.max(0, die.position.y - DIE_FLOOR_Y);
+  const floorProximity = THREE.MathUtils.clamp(1 - heightAboveFloor / RESULT_SETTLE_AIR_HEIGHT, 0, 1);
+  if (floorProximity <= 0) return;
+
+  const linearSpeed = velocity.length();
+  const spinSpeed = angularVelocity.length();
+  const calm = THREE.MathUtils.clamp(1 - (linearSpeed + spinSpeed * 0.12 - 0.35) / 2.4, 0, 1);
+  if (calm <= 0) return;
+
+  const settleRate = 3.2 + calm * 10.5;
+  const alpha = 1 - Math.exp(-settleRate * floorProximity * calm * delta);
+  die.quaternion.slerp(die.userData.targetQuaternion, alpha);
 }
 
 function finishResultSettling(group) {
@@ -499,14 +724,14 @@ export function syncDice3D(group, {
   group.userData.rollingDice = rollingDice;
   group.userData.cinematicPhase = cinematicPhase;
   group.userData.visualStage = visualStage;
-  const nextSkinId = diceSkin?.id || "default";
+  const nextSkinId = diceSkin ? diceSkinSignature(diceSkin) : "default";
   if (group.userData.skinId !== nextSkinId) {
     group.userData.skinId = nextSkinId;
     group.userData.dice.forEach((die) => {
       die.material = Array.from({ length: 6 }, (_, index) => materialForFace(index + 1, diceSkin));
     });
   }
-  const nextFxId = diceFx?.id || "";
+  const nextFxId = diceFx ? diceFxSignature(diceFx) : "";
   if (group.userData.fxId !== nextFxId) {
     group.userData.fxId = nextFxId;
     group.userData.fxMetadata = diceFx?.metadata || null;
@@ -755,12 +980,15 @@ function animatePhysicalDiceStep(group, delta, settleToResult) {
     }
 
     if (settleToResult) {
-      die.quaternion.slerp(die.userData.targetQuaternion, Math.min(1, delta * 13));
+      settlePhysicalDieTowardResult(die, delta);
     }
 
     const linearSpeed = velocity.length();
     const spinSpeed = angularVelocity.length();
-    if (die.position.y <= DIE_FLOOR_Y + 0.001 && linearSpeed < 0.14 && spinSpeed < 0.18) {
+    const resultAligned =
+      !settleToResult ||
+      quaternionDistanceToTarget(die) <= RESULT_SETTLE_ALIGNMENT_DISTANCE;
+    if (die.position.y <= DIE_FLOOR_Y + 0.001 && linearSpeed < 0.14 && spinSpeed < 0.18 && resultAligned) {
       die.userData.physicsActive = false;
       die.userData.sleeping = true;
       die.position.y = DIE_FLOOR_Y;
@@ -771,6 +999,9 @@ function animatePhysicalDiceStep(group, delta, settleToResult) {
       }
       velocity.set(0, 0, 0);
       angularVelocity.set(0, 0, 0);
+    } else if (settleToResult && die.position.y <= DIE_FLOOR_Y + 0.001 && linearSpeed < 0.18 && spinSpeed < 0.24) {
+      velocity.set(0, 0, 0);
+      angularVelocity.multiplyScalar(0.25);
     }
   });
 
@@ -853,68 +1084,143 @@ function animateDiceFx(group, elapsed) {
   }
 
   const effect = metadata.effect || "sparks";
-  const intensity = Number(metadata.intensity || 1);
+  const intensity = normalizedNumber(metadata.intensity, 1, 0.1, 3);
+  const speed = normalizedNumber(metadata.speed, 1, 0.1, 4);
+  const spread = normalizedNumber(metadata.spread, 1, 0.1, 3.5);
+  const particleSize = normalizedNumber(metadata.particleSize, 1, 0.35, 3);
+  const ringScale = normalizedNumber(metadata.ringScale, 1, 0.2, 3.5);
+  const beamJitter = normalizedNumber(metadata.beamJitter, 1, 0, 3);
+  const gravity = normalizedNumber(metadata.gravity, 0.55, 0, 2);
+  const sparkle = normalizedNumber(metadata.sparkle, 0.55, 0, 1.8);
+  const density = normalizedNumber(metadata.density, 1, 0.15, 1);
   const positions = points.geometry.attributes.position.array;
   const [left, right] = group.userData.dice;
   const midpointX = (left.position.x + right.position.x) * 0.5;
   const midpointY = (left.position.y + right.position.y) * 0.5;
   const midpointZ = (left.position.z + right.position.z) * 0.5;
   const resultStage = group.userData.visualStage === "diceResult";
-  for (let index = 0; index < positions.length / 3; index += 1) {
+  const particleCount = positions.length / 3;
+  const activeParticleCount = Math.max(1, Math.floor(particleCount * density));
+  for (let index = 0; index < particleCount; index += 1) {
+    if (index >= activeParticleCount) {
+      positions[index * 3] = midpointX;
+      positions[index * 3 + 1] = -100;
+      positions[index * 3 + 2] = midpointZ;
+      continue;
+    }
     const die = index % 2 === 0 ? left : right;
     const seed = index * 12.9898;
-    const phase = elapsed * (2 + intensity * 0.7) + seed;
-    const radius = 0.18 + (index % 9) * 0.045;
+    const phase = elapsed * speed * (2 + intensity * 0.7) + seed;
+    const radius = (0.18 + (index % 9) * 0.045) * spread;
     let x = die.position.x + Math.sin(phase * 1.7) * radius;
     let y = die.position.y + ((index % 9) / 9) * 0.8 + Math.cos(phase) * 0.08;
     let z = die.position.z + Math.cos(phase * 1.35) * radius;
 
     if (effect === "sparks") {
-      const fall = (elapsed * 2.8 + (index % 11) / 11) % 1;
-      x = die.position.x + Math.sin(seed) * (0.18 + fall * 0.55);
-      y = die.position.y + 0.72 - fall * 1.05;
-      z = die.position.z + Math.cos(seed * 1.4) * (0.18 + fall * 0.55);
+      const fall = (elapsed * speed * 2.8 + (index % 11) / 11) % 1;
+      x = die.position.x + Math.sin(seed) * (0.18 + fall * 0.55 * spread);
+      y = die.position.y + 0.72 - fall * (0.72 + gravity * 0.6);
+      z = die.position.z + Math.cos(seed * 1.4) * (0.18 + fall * 0.55 * spread);
     } else if (effect === "trail") {
       const tail = (index % 18) / 18;
-      x = die.position.x - Math.cos(elapsed * 4 + index) * tail * 0.65;
-      y = die.position.y - 0.2 + Math.sin(seed + elapsed * 8) * 0.16 + tail * 0.22;
-      z = die.position.z - Math.sin(elapsed * 3.4 + index) * tail * 0.65;
+      x = die.position.x - Math.cos(elapsed * speed * 4 + index) * tail * 0.65 * spread;
+      y = die.position.y - 0.2 + Math.sin(seed + elapsed * speed * 8) * 0.16 + tail * 0.22;
+      z = die.position.z - Math.sin(elapsed * speed * 3.4 + index) * tail * 0.65 * spread;
     } else if (effect === "flakes") {
-      const drift = (elapsed * 0.7 + (index % 13) / 13) % 1;
-      x = die.position.x + Math.sin(seed + elapsed) * (0.25 + drift * 0.6);
-      y = die.position.y + 0.65 - drift * 0.9;
-      z = die.position.z + Math.cos(seed * 0.7 + elapsed) * (0.25 + drift * 0.6);
+      const drift = (elapsed * speed * 0.7 + (index % 13) / 13) % 1;
+      x = die.position.x + Math.sin(seed + elapsed) * (0.25 + drift * 0.6 * spread);
+      y = die.position.y + 0.65 - drift * (0.5 + gravity * 0.45);
+      z = die.position.z + Math.cos(seed * 0.7 + elapsed) * (0.25 + drift * 0.6 * spread);
     } else if (effect === "glitch") {
-      const tick = Math.floor(elapsed * 14 + index);
-      x = die.position.x + (((tick * 17) % 7) - 3) * 0.11;
-      y = die.position.y + (((tick * 13) % 8) - 2) * 0.1;
-      z = die.position.z + (((tick * 11) % 7) - 3) * 0.11;
+      const tick = Math.floor(elapsed * speed * 14 + index);
+      x = die.position.x + (((tick * 17) % 7) - 3) * 0.11 * spread;
+      y = die.position.y + (((tick * 13) % 8) - 2) * 0.1 * spread;
+      z = die.position.z + (((tick * 11) % 7) - 3) * 0.11 * spread;
     } else if (effect === "waves") {
-      const wave = (elapsed * 1.45 + (index % 18) / 18) % 1;
+      const wave = (elapsed * speed * 1.45 + (index % 18) / 18) % 1;
       const angle = seed;
-      x = midpointX + Math.cos(angle) * wave * 1.8;
+      x = midpointX + Math.cos(angle) * wave * 1.8 * spread;
       y = 0.13 + Math.sin(wave * Math.PI) * 0.06;
-      z = midpointZ + Math.sin(angle) * wave * 1.8;
+      z = midpointZ + Math.sin(angle) * wave * 1.8 * spread;
     } else if (effect === "electric") {
       const t = (index % 36) / 35;
       x = THREE.MathUtils.lerp(left.position.x, right.position.x, t);
-      y = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.sin(seed + elapsed * 18) * 0.16;
-      z = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(seed + elapsed * 14) * 0.12;
+      y = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.sin(seed + elapsed * speed * 18) * 0.16 * beamJitter;
+      z = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(seed + elapsed * speed * 14) * 0.12 * beamJitter;
     } else if (effect === "orbit" || effect === "galaxy") {
-      const orbitRadius = effect === "galaxy" ? 0.45 + (index % 12) * 0.045 : 0.28 + (index % 8) * 0.04;
+      const orbitRadius = (effect === "galaxy" ? 0.45 + (index % 12) * 0.045 : 0.28 + (index % 8) * 0.04) * spread;
       x = midpointX + Math.cos(phase * (index % 2 ? 0.8 : -0.65)) * orbitRadius;
       y = midpointY + Math.sin(phase * 0.7 + index) * (effect === "galaxy" ? 0.55 : 0.34);
       z = midpointZ + Math.sin(phase * (index % 2 ? 0.8 : -0.65)) * orbitRadius;
     } else if (effect === "confetti") {
-      const fall = (elapsed * (resultStage ? 1.8 : 0.7) + (index % 17) / 17) % 1;
-      x = midpointX + Math.sin(seed) * 1.35;
-      y = 1.75 - fall * 1.6;
-      z = midpointZ + Math.cos(seed * 1.7) * 1.25;
+      const fall = (elapsed * speed * (resultStage ? 1.8 : 0.7) + (index % 17) / 17) % 1;
+      x = midpointX + Math.sin(seed) * 1.35 * spread;
+      y = 1.75 - fall * (1.05 + gravity);
+      z = midpointZ + Math.cos(seed * 1.7) * 1.25 * spread;
     } else if (effect === "flash") {
-      const burst = (elapsed * (resultStage ? 3.5 : 1.2) + (index % 12) / 12) % 1;
-      x = midpointX + Math.cos(seed) * burst * 1.5;
-      y = midpointY + Math.sin(seed * 1.3) * burst * 1.3;
-      z = midpointZ + Math.sin(seed) * burst * 1.5;
+      const burst = (elapsed * speed * (resultStage ? 3.5 : 1.2) + (index % 12) / 12) % 1;
+      x = midpointX + Math.cos(seed) * burst * 1.5 * spread;
+      y = midpointY + Math.sin(seed * 1.3) * burst * 1.3 * spread;
+      z = midpointZ + Math.sin(seed) * burst * 1.5 * spread;
+    } else if (effect === "flames") {
+      const rise = (elapsed * speed * 1.8 + (index % 19) / 19) % 1;
+      const flameRadius = (0.12 + Math.sin(rise * Math.PI) * 0.34) * spread;
+      x = die.position.x + Math.sin(seed + elapsed * speed * 5) * flameRadius;
+      y = die.position.y - 0.35 + rise * (1.35 + intensity * 0.18) - gravity * rise * 0.18;
+      z = die.position.z + Math.cos(seed * 0.8 + elapsed * speed * 4.2) * flameRadius;
+    } else if (effect === "smoke") {
+      const rise = (elapsed * speed * 0.62 + (index % 23) / 23) % 1;
+      const swirl = (0.2 + rise * 0.75) * spread;
+      x = die.position.x + Math.sin(seed + rise * 5) * swirl;
+      y = die.position.y + 0.18 + rise * (1.35 + intensity * 0.18);
+      z = die.position.z + Math.cos(seed * 1.2 + rise * 5) * swirl;
+    } else if (effect === "embers") {
+      const rise = (elapsed * speed * 1.15 + (index % 29) / 29) % 1;
+      x = die.position.x + Math.sin(seed) * (0.2 + rise * 0.75 * spread);
+      y = die.position.y + 0.1 + rise * 1.1 - gravity * rise * rise * 0.25;
+      z = die.position.z + Math.cos(seed) * (0.2 + rise * 0.75 * spread);
+    } else if (effect === "coins") {
+      const arc = (elapsed * speed * 1.3 + (index % 24) / 24) % 1;
+      const angle = seed + arc * Math.PI * 2;
+      x = midpointX + Math.cos(angle) * (0.35 + arc * spread);
+      y = midpointY + Math.sin(arc * Math.PI) * (0.85 + intensity * 0.1) - gravity * arc * 0.28;
+      z = midpointZ + Math.sin(angle) * (0.35 + arc * spread);
+    } else if (effect === "hearts") {
+      const float = (elapsed * speed * 0.8 + (index % 17) / 17) % 1;
+      x = die.position.x + Math.sin(seed) * 0.6 * spread;
+      y = die.position.y + float * 1.25 + Math.sin(elapsed * speed * 3 + seed) * 0.08;
+      z = die.position.z + Math.cos(seed * 1.3) * 0.6 * spread;
+    } else if (effect === "portal") {
+      const t = (index % 36) / 36;
+      const portalRadius = (0.45 + Math.sin(elapsed * speed * 2 + t * Math.PI * 2) * 0.12) * spread;
+      const angle = t * Math.PI * 2 + elapsed * speed * 2.6;
+      x = midpointX + Math.cos(angle) * portalRadius;
+      y = 0.2 + Math.sin(t * Math.PI * 2 + elapsed * speed) * 0.16 + (index % 2) * 0.34;
+      z = midpointZ + Math.sin(angle) * portalRadius;
+    } else if (effect === "laser") {
+      const t = (index % 36) / 35;
+      x = THREE.MathUtils.lerp(left.position.x, right.position.x, t) + Math.sin(seed + elapsed * speed * 30) * 0.025 * beamJitter;
+      y = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.cos(seed + elapsed * speed * 24) * 0.06 * beamJitter;
+      z = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(seed + elapsed * speed * 26) * 0.025 * beamJitter;
+    } else if (effect === "bubbles") {
+      const rise = (elapsed * speed * 0.75 + (index % 31) / 31) % 1;
+      const wobble = Math.sin(elapsed * speed * 4 + seed) * 0.16;
+      x = die.position.x + (Math.sin(seed) * 0.42 + wobble) * spread;
+      y = die.position.y + rise * (1.25 + intensity * 0.24);
+      z = die.position.z + (Math.cos(seed * 1.4) * 0.42 + wobble) * spread;
+    } else if (effect === "storm") {
+      const storm = (elapsed * speed * 1.9 + (index % 21) / 21) % 1;
+      const angle = seed + storm * Math.PI * 4;
+      x = midpointX + Math.cos(angle) * (0.22 + storm * 1.15 * spread);
+      y = midpointY + Math.sin(seed + elapsed * speed * 12) * 0.55 + storm * 0.65;
+      z = midpointZ + Math.sin(angle) * (0.22 + storm * 1.15 * spread);
+    } else if (effect === "runes") {
+      const slot = index % 12;
+      const orbit = 0.65 * spread;
+      const angle = (slot / 12) * Math.PI * 2 + Math.floor(index / 12) * 0.2 + elapsed * speed * 0.45;
+      x = midpointX + Math.cos(angle) * orbit;
+      y = 0.18 + Math.floor(index / 12) * 0.18 + Math.sin(elapsed * speed * 2 + slot) * 0.05;
+      z = midpointZ + Math.sin(angle) * orbit;
     }
 
     positions[index * 3] = x;
@@ -922,36 +1228,41 @@ function animateDiceFx(group, elapsed) {
     positions[index * 3 + 2] = z;
   }
   points.geometry.attributes.position.needsUpdate = true;
-  points.material.opacity = Math.min(0.96, 0.34 + intensity * 0.3);
-  points.material.size = effect === "glitch" ? 0.11 : effect === "galaxy" ? 0.06 : 0.055 + intensity * 0.025;
+  points.material.opacity = Math.min(0.96, (0.3 + intensity * 0.24) * (0.7 + density * 0.3));
+  points.material.size = (
+    effect === "glitch" ? 0.11 :
+      effect === "galaxy" || effect === "embers" ? 0.06 :
+        effect === "smoke" || effect === "bubbles" ? 0.085 :
+          0.055 + intensity * 0.025
+  ) * particleSize * (1 + sparkle * 0.08);
 
-  if (["waves", "flash", "galaxy"].includes(effect) && rings) {
+  if (["waves", "flash", "galaxy", "portal", "storm", "runes"].includes(effect) && rings) {
     rings.visible = true;
     rings.children.forEach((ring, index) => {
-      const cycle = (elapsed * (effect === "flash" ? 2.4 : 1.2) + index / 3) % 1;
+      const cycle = (elapsed * speed * (effect === "flash" ? 2.4 : effect === "portal" ? 1.8 : 1.2) + index / 3) % 1;
       ring.visible = true;
       ring.position.set(midpointX, 0.14 + index * 0.015, midpointZ);
-      ring.scale.setScalar(0.6 + cycle * (effect === "galaxy" ? 2.4 : 3.1));
-      ring.material.opacity = (1 - cycle) * (effect === "flash" && resultStage ? 0.85 : 0.48);
+      ring.scale.setScalar((0.55 + cycle * (effect === "galaxy" || effect === "portal" ? 2.4 : 3.1)) * ringScale);
+      ring.material.opacity = (1 - cycle) * (effect === "flash" && resultStage ? 0.85 : 0.48) * (0.7 + sparkle * 0.22);
     });
   }
 
-  if (effect === "electric" && beam) {
+  if (["electric", "laser", "storm"].includes(effect) && beam) {
     beam.visible = true;
     const beamPositions = beam.geometry.attributes.position.array;
     for (let index = 0; index < beamPositions.length / 3; index += 1) {
       const t = index / (beamPositions.length / 3 - 1);
       beamPositions[index * 3] = THREE.MathUtils.lerp(left.position.x, right.position.x, t);
-      beamPositions[index * 3 + 1] = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.sin(elapsed * 22 + index * 4.7) * 0.13;
-      beamPositions[index * 3 + 2] = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(elapsed * 19 + index * 3.2) * 0.1;
+      beamPositions[index * 3 + 1] = THREE.MathUtils.lerp(left.position.y, right.position.y, t) + Math.sin(elapsed * speed * 22 + index * 4.7) * 0.13 * beamJitter;
+      beamPositions[index * 3 + 2] = THREE.MathUtils.lerp(left.position.z, right.position.z, t) + Math.cos(elapsed * speed * 19 + index * 3.2) * 0.1 * beamJitter;
     }
     beam.geometry.attributes.position.needsUpdate = true;
-    beam.material.opacity = 0.65 + Math.sin(elapsed * 28) * 0.25;
+    beam.material.opacity = (effect === "laser" ? 0.84 : 0.65) + Math.sin(elapsed * speed * 28) * 0.18;
   }
 
   if (light) {
     light.position.set(midpointX, midpointY, midpointZ);
-    light.intensity = ["flash", "electric", "trail", "galaxy"].includes(effect)
+    light.intensity = ["flash", "electric", "trail", "galaxy", "flames", "portal", "laser", "storm"].includes(effect)
       ? intensity * (resultStage && effect === "flash" ? 5.5 : 2.4)
       : intensity * 0.65;
   }

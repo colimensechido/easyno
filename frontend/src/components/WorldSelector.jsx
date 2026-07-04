@@ -210,26 +210,13 @@ export default function WorldSelector({ token, onWorldJoined, eyconProfile, onEy
         </div>
 
         <div className="lobby-visual" aria-hidden="true">
-          <div className="lobby-visual__table">
-            <span className="visual-orbit visual-orbit--one" />
-            <span className="visual-orbit visual-orbit--two" />
-            <div className="visual-card visual-card--one">
-              <small>MAIN</small>
-              <strong>Sala publica</strong>
-            </div>
-            <div className="visual-card visual-card--two">
-              <small>1 EC</small>
-              <strong>Privada</strong>
-            </div>
-            <div className="visual-chip visual-chip--gold">$</div>
-            <div className="visual-chip visual-chip--copper">E</div>
-            <div className="visual-dice">
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-          </div>
+          <img
+            className="lobby-hero-art"
+            src="/lobby-hero.png"
+            alt=""
+            decoding="async"
+            draggable={false}
+          />
         </div>
       </div>
 

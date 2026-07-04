@@ -215,6 +215,11 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
       group.userData.loadedAssetKey = assetKey;
     })
     .catch(() => {
+      console.warn("No se pudo cargar modelo GLB de ficha", {
+        assetKey,
+        url: assetConfig.url,
+        fallbackModel
+      });
       if (disposed || group.userData.disposed || group.children.length > 0) return;
       group.add(fallbackFactory(primary, secondary));
     });

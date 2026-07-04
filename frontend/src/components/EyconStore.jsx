@@ -16,8 +16,22 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
+import { BOLOWPOLY_DISPLAY_NAME, BOLOWPOLY_TAGLINE } from "../content/bolowpolyBrand";
 import EyconProductPreview3D from "./EyconProductPreview3D";
+import BrandLogo from "./shared/BrandLogo";
 import { monopolyTokenColors } from "./monopoly3d/monopolyTokenColors";
+
+const BOLOWPOLY_GAME_KEY = "MONOPOLY";
+const BOLOWPOLY_STORE_DESCRIPTION = `${BOLOWPOLY_TAGLINE}. Piezas, dados, efectos y tableros para personalizar cada partida.`;
+
+function normalizeStoreGame(game) {
+  if (!game || game.key !== BOLOWPOLY_GAME_KEY) return game;
+  return {
+    ...game,
+    name: BOLOWPOLY_DISPLAY_NAME,
+    description: BOLOWPOLY_STORE_DESCRIPTION
+  };
+}
 
 const rarities = [
   { key: "ALL", label: "Todas" },
@@ -27,8 +41,79 @@ const rarities = [
   { key: "LEGENDARY", label: "Legendaria" }
 ];
 
+const primaryCategories = [
+  { key: "ALL", label: "Todo" },
+  { key: "TOKEN", label: "Piezas" },
+  { key: "DICE", label: "Dados" },
+  { key: "DICE_FX", label: "FX de dados" },
+  { key: "BOARD_THEME", label: "Tableros" }
+];
+
+const categoryLabels = {
+  TOKEN: "Piezas",
+  DICE: "Dados",
+  DICE_FX: "FX de dados",
+  BOARD_THEME: "Tableros",
+  TOKEN_ANIMAL: "Animales",
+  TOKEN_VEHICLE: "Vehículos",
+  TOKEN_OBJECT: "Objetos",
+  TOKEN_FANTASY: "Fantasía",
+  TOKEN_FOOD: "Comida",
+  TOKEN_COLLECTIBLE: "Colección",
+  TOKEN_PREMIUM: "Especiales"
+};
+
+const ownershipOptions = [
+  { key: "ALL", label: "Todos" },
+  { key: "OWNED", label: "Comprados" },
+  { key: "AVAILABLE", label: "No comprados" },
+  { key: "EQUIPPED", label: "Equipados" },
+  { key: "LOCKED", label: "Bloqueados" }
+];
+
+const sortOptions = [
+  { key: "FEATURED", label: "Recomendados" },
+  { key: "NEWEST", label: "Más recientes" },
+  { key: "PRICE_ASC", label: "Precio: menor" },
+  { key: "PRICE_DESC", label: "Precio: mayor" },
+  { key: "RARITY", label: "Rareza" },
+  { key: "NAME", label: "Nombre" }
+];
+
+const rarityRank = {
+  COMMON: 1,
+  RARE: 2,
+  EPIC: 3,
+  LEGENDARY: 4
+};
+
 function formatEycon(units = 0) {
   return `${(Number(units || 0) / 100).toFixed(2)} EyCon`;
+}
+
+function isTokenCosmetic(product) {
+  return product?.slotKey === "TOKEN" || product?.category === "TOKEN" || String(product?.category || "").startsWith("TOKEN_");
+}
+
+function primaryCategoryFor(product) {
+  if (isTokenCosmetic(product)) return "TOKEN";
+  return product?.slotKey || product?.category || "ALL";
+}
+
+function categoryLabelFor(product) {
+  return categoryLabels[product?.category] || categoryLabels[primaryCategoryFor(product)] || product?.category || "Cosmético";
+}
+
+function isProductLocked(product) {
+  return Boolean(product?.locked || product?.metadata?.locked || product?.active === false);
+}
+
+function productStatus(product, balanceUnits = 0) {
+  if (isProductLocked(product)) return { key: "LOCKED", label: "Bloqueado" };
+  if (product?.equipped) return { key: "EQUIPPED", label: "En uso" };
+  if (product?.owned) return { key: "OWNED", label: "Adquirido" };
+  if (Number(balanceUnits || 0) < Number(product?.priceUnits || 0)) return { key: "INSUFFICIENT", label: "Sin saldo" };
+  return { key: "AVAILABLE", label: "Comprar" };
 }
 
 function isTokenColorLocked(product) {
@@ -46,7 +131,7 @@ function isTokenColorLocked(product) {
   return Boolean(metadata.colorLocked);
 }
 
-export default function EyconStore({ token, onProfileChange, isAdmin = false }) {
+export default function EyconStore({ token, onProfileChange, isAdmin = false, onRecharge }) {
   const [data, setData] = useState({
     products: [],
     inventory: [],
@@ -79,7 +164,7 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
     setLoading(true);
     try {
       const payload = await api("/api/eycon/games", { token });
-      setGames(payload.games || []);
+      setGames((payload.games || []).map(normalizeStoreGame));
       setData((current) => ({
         ...current,
         balanceUnits: payload.balanceUnits || 0,
@@ -109,7 +194,7 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
     setLoading(true);
     try {
       const payload = await api(`/api/eycon/catalog?gameKey=${encodeURIComponent(gameKey)}`, { token });
-      setData(payload);
+      setData({ ...payload, game: normalizeStoreGame(payload.game) });
       setSelectedGameKey(gameKey);
       setSelectedId((current) => (
         !resetFilters && payload.products?.some((product) => product.id === current)
@@ -150,41 +235,54 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
   }, [busyId, purchaseCandidate]);
 
   const selectedGame = data.game || games.find((game) => game.key === selectedGameKey) || null;
-  const categories = useMemo(() => {
-    const configured = selectedGame?.categories || [];
-    const knownKeys = new Set(configured.map((item) => item.key));
-    const extra = (data.products || [])
-      .filter((product) => !knownKeys.has(product.category))
-      .map((product) => ({ key: product.category, label: product.category }));
-    return [{ key: "ALL", label: "Todo" }, ...configured, ...extra];
-  }, [data.products, selectedGame]);
+  const categories = useMemo(() => primaryCategories.filter((item) => (
+    item.key === "ALL" || (data.products || []).some((product) => primaryCategoryFor(product) === item.key)
+  )), [data.products]);
   const filteredProducts = useMemo(
     () => {
       const normalizedQuery = query.trim().toLocaleLowerCase("es");
-      const products = (data.products || []).filter((product) => (
-        (category === "ALL" || product.category === category) &&
-        (rarity === "ALL" || product.rarity === rarity) &&
-        (ownership === "ALL" || (ownership === "OWNED" ? product.owned : !product.owned)) &&
-        (!normalizedQuery || `${product.name} ${product.description}`.toLocaleLowerCase("es").includes(normalizedQuery))
-      ));
-      return [...products].sort((left, right) => {
+      const products = (data.products || []).map((product, index) => ({ product, index })).filter(({ product }) => {
+        const status = productStatus(product, data.balanceUnits);
+        const searchable = `${product.name} ${product.description} ${categoryLabelFor(product)} ${product.rarity}`.toLocaleLowerCase("es");
+        return (
+          (category === "ALL" || primaryCategoryFor(product) === category) &&
+          (rarity === "ALL" || product.rarity === rarity) &&
+          (ownership === "ALL" ||
+            (ownership === "OWNED" && product.owned) ||
+            (ownership === "AVAILABLE" && !product.owned && !isProductLocked(product)) ||
+            (ownership === "EQUIPPED" && product.equipped) ||
+            (ownership === "LOCKED" && isProductLocked(product))) &&
+          (!normalizedQuery || searchable.includes(normalizedQuery)) &&
+          (ownership !== "LOCKED" || status.key === "LOCKED")
+        );
+      });
+      return [...products].sort((leftEntry, rightEntry) => {
+        const left = leftEntry.product;
+        const right = rightEntry.product;
         if (sortBy === "PRICE_ASC") return left.priceUnits - right.priceUnits;
         if (sortBy === "PRICE_DESC") return right.priceUnits - left.priceUnits;
+        if (sortBy === "RARITY") return (rarityRank[right.rarity] || 0) - (rarityRank[left.rarity] || 0) || left.name.localeCompare(right.name, "es");
+        if (sortBy === "NEWEST") return rightEntry.index - leftEntry.index;
         if (sortBy === "NAME") return left.name.localeCompare(right.name, "es");
         if (left.equipped !== right.equipped) return left.equipped ? -1 : 1;
         if (left.owned !== right.owned) return left.owned ? -1 : 1;
-        return right.priceUnits - left.priceUnits;
-      });
+        return (rarityRank[right.rarity] || 0) - (rarityRank[left.rarity] || 0) || right.priceUnits - left.priceUnits;
+      }).map(({ product }) => product);
     },
-    [category, data.products, ownership, query, rarity, sortBy]
+    [category, data.balanceUnits, data.products, ownership, query, rarity, sortBy]
   );
   const selected = filteredProducts.find((product) => product.id === selectedId) || filteredProducts[0] || null;
-  const categoryLabel = categories.find((item) => item.key === selected?.category)?.label || selected?.category;
+  const categoryLabel = selected ? categoryLabelFor(selected) : "";
   const selectedTokenColorLocked = isTokenColorLocked(selected);
+  const selectedStatus = selected ? productStatus(selected, data.balanceUnits) : null;
+  const selectedIsToken = isTokenCosmetic(selected);
+  const collectionCount = (data.products || []).filter((product) => product.owned).length;
+  const collectionTotal = (data.products || []).length;
   const categoryCounts = useMemo(() => (
     (data.products || []).reduce((counts, product) => {
       counts.ALL = (counts.ALL || 0) + 1;
-      counts[product.category] = (counts[product.category] || 0) + 1;
+      const primaryCategory = primaryCategoryFor(product);
+      counts[primaryCategory] = (counts[primaryCategory] || 0) + 1;
       return counts;
     }, {})
   ), [data.products]);
@@ -314,21 +412,45 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
   return (
     <section className="eycon-store">
       <header className="eycon-store-hero">
-        <div>
-          <span className="eycon-store-eyebrow"><Sparkles size={15} /> Cosméticos de plataforma</span>
-          <h2>Tienda EyCon</h2>
-          <p>
-            {selectedGame
-              ? `Explora los personalizables disponibles para ${selectedGame.name}.`
-              : "¿De qué juego quieres comprar personalizables?"}
-          </p>
+        <div className="eycon-store-hero-copy">
+          <BrandLogo size="lg" className="eycon-store-logo" alt="EasyNo" />
+          <div>
+            <span className="eycon-store-eyebrow"><Sparkles size={15} /> Cosméticos de plataforma</span>
+            <h2>Tienda EyCon</h2>
+            <p>
+              {selectedGame
+                ? `Explora los personalizables disponibles para ${selectedGame.name}.`
+                : "¿De qué juego quieres comprar personalizables?"}
+            </p>
+          </div>
         </div>
-        <div className="eycon-balance-card">
-          <span><Coins size={18} /> Tu saldo</span>
-          <strong>{formatEycon(data.balanceUnits)}</strong>
+        <div className="eycon-store-stats">
+          <div className="eycon-balance-stack">
+            <div className="eycon-balance-card">
+              <span><Coins size={18} /> Tu saldo</span>
+              <strong>{formatEycon(data.balanceUnits)}</strong>
+            </div>
+            {typeof onRecharge === "function" && (
+              <button type="button" className="eycon-recharge-button" onClick={onRecharge} title="Comprar EyCon con Mercado Pago">
+                <WalletCards size={16} />
+                Recargar
+              </button>
+            )}
+          </div>
+          <div className="eycon-balance-card">
+            <span><PackageCheck size={18} /> Colección</span>
+            <strong>{collectionCount}/{collectionTotal || 0}</strong>
+          </div>
+          {selectedGame && (
+            <button type="button" className="eycon-game-switch" onClick={returnToGames} style={{ "--game-accent": selectedGame.accent }}>
+              <i>{selectedGame.icon}</i>
+              <span>{selectedGame.name}</span>
+              <ChevronRight size={14} />
+            </button>
+          )}
           {isAdmin && (
-            <button className={adminOpen ? "is-active" : ""} onClick={toggleAdmin}>
-              <Shield size={14} /> Administrar
+            <button className={`eycon-admin-toggle ${adminOpen ? "is-active" : ""}`} onClick={toggleAdmin}>
+              <Shield size={14} /> Admin
             </button>
           )}
         </div>
@@ -369,128 +491,125 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
         </section>
       ) : (
         <>
-          <div className="eycon-game-heading">
-            <button type="button" onClick={returnToGames}><ArrowLeft size={16} /> Cambiar juego</button>
-            <span style={{ "--game-accent": selectedGame?.accent }}>
-              <i>{selectedGame?.icon}</i>
-              <strong>{selectedGame?.name}</strong>
-              <small>{data.products?.length || 0} personalizables disponibles</small>
-            </span>
-          </div>
-
           {loading ? (
             <div className="eycon-empty-state">Cargando catálogo...</div>
           ) : (
-            <div className="eycon-market-layout">
-              <aside className="eycon-category-rail">
-                <header><Boxes size={16} /> Categorías</header>
-                <nav>
-                  {categories.map((item) => (
-                    <button
-                      type="button"
-                      key={item.key}
-                      className={category === item.key ? "is-active" : ""}
-                      onClick={() => {
-                        setCategory(item.key);
-                        setSelectedId("");
-                      }}
-                    >
-                      <span>{item.label}</span>
-                      <small>{categoryCounts[item.key] || 0}</small>
-                      <ChevronRight size={13} />
-                    </button>
-                  ))}
-                </nav>
-                <div className="eycon-inventory-summary">
-                  <PackageCheck size={17} />
-                  <span>
-                    <strong>{(data.products || []).filter((product) => product.owned).length}</strong>
-                    <small>En tu colección</small>
-                  </span>
-                </div>
-              </aside>
-
-              <section className="eycon-catalog-browser">
-                <div className="eycon-catalog-tools">
-                  <label className="eycon-search-field">
-                    <Search size={15} />
-                    <input
-                      value={query}
-                      onChange={(event) => {
-                        setQuery(event.target.value);
-                        setSelectedId("");
-                      }}
-                      placeholder="Buscar personalizable..."
-                    />
-                    {query && <button type="button" onClick={() => setQuery("")}><X size={13} /></button>}
-                  </label>
-                  <select
-                    value={rarity}
-                    onChange={(event) => {
-                      setRarity(event.target.value);
+            <>
+              <nav className="eycon-category-rail" aria-label="Categorías de tienda">
+                {categories.map((item) => (
+                  <button
+                    type="button"
+                    key={item.key}
+                    className={category === item.key ? "is-active" : ""}
+                    onClick={() => {
+                      setCategory(item.key);
                       setSelectedId("");
                     }}
-                    aria-label="Filtrar por rareza"
                   >
-                    {rarities.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
-                  </select>
-                  <select value={ownership} onChange={(event) => setOwnership(event.target.value)} aria-label="Filtrar por propiedad">
-                    <option value="ALL">Todos</option>
-                    <option value="AVAILABLE">Por comprar</option>
-                    <option value="OWNED">Mi colección</option>
-                  </select>
-                  <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar productos">
-                    <option value="FEATURED">Destacados</option>
-                    <option value="PRICE_ASC">Precio: menor</option>
-                    <option value="PRICE_DESC">Precio: mayor</option>
-                    <option value="NAME">Nombre</option>
-                  </select>
-                </div>
+                    <span>{item.label}</span>
+                    <small>{categoryCounts[item.key] || 0}</small>
+                  </button>
+                ))}
+              </nav>
 
-                <header className="eycon-results-heading">
-                  <span>
-                    <strong>{categories.find((item) => item.key === category)?.label || "Catálogo"}</strong>
-                    <small>{filteredProducts.length} resultados</small>
-                  </span>
-                  <em>Selecciona uno para verlo en 3D</em>
-                </header>
+              <div className="eycon-catalog-tools">
+                <label className="eycon-search-field">
+                  <Search size={15} />
+                  <input
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setSelectedId("");
+                    }}
+                    placeholder="Buscar por nombre o categoría..."
+                  />
+                  {query && <button type="button" onClick={() => setQuery("")}><X size={13} /></button>}
+                </label>
+                <select
+                  value={rarity}
+                  onChange={(event) => {
+                    setRarity(event.target.value);
+                    setSelectedId("");
+                  }}
+                  aria-label="Filtrar por rareza"
+                >
+                  {rarities.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+                <select
+                  value={ownership}
+                  onChange={(event) => {
+                    setOwnership(event.target.value);
+                    setSelectedId("");
+                  }}
+                  aria-label="Filtrar por estado"
+                >
+                  {ownershipOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+                <select value={sortBy} onChange={(event) => setSortBy(event.target.value)} aria-label="Ordenar productos">
+                  {sortOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                </select>
+              </div>
 
-                <div className="eycon-products-grid">
-                  {filteredProducts.map((product) => (
-                    <button
-                      type="button"
-                      key={product.id}
-                      className={`eycon-product-card rarity-${product.rarity.toLowerCase()} ${selected?.id === product.id ? "is-selected" : ""}`}
-                      onClick={() => setSelectedId(product.id)}
-                    >
-                      <span className="eycon-product-preview" style={{ color: product.metadata?.color || product.metadata?.pipColor || product.metadata?.accentColor }}>
-                        {product.preview || "✦"}
-                      </span>
-                      <span className="eycon-product-copy">
-                        <small>{categories.find((item) => item.key === product.category)?.label || product.category} · {product.rarity}</small>
-                        <strong>{product.name}</strong>
-                        <em>{formatEycon(product.priceUnits)}</em>
-                      </span>
-                      <span className={`eycon-product-state ${product.equipped ? "is-equipped" : product.owned ? "is-owned" : ""}`}>
-                        {product.equipped ? <><Check size={12} /> Equipado</> : product.owned ? <><PackageCheck size={12} /> Comprado</> : <><ShoppingBag size={12} /> Disponible</>}
-                      </span>
-                    </button>
-                  ))}
-                  {filteredProducts.length === 0 && (
-                    <div className="eycon-empty-state">
-                      No encontramos productos con esos filtros. Prueba otra categoría o búsqueda.
-                    </div>
-                  )}
-                </div>
-              </section>
+              <div className="eycon-market-layout">
+                <section className="eycon-catalog-browser">
+                  <header className="eycon-results-heading">
+                    <span>
+                      <strong>{categories.find((item) => item.key === category)?.label || "Catálogo"}</strong>
+                      <small>{filteredProducts.length} de {data.products?.length || 0} cosméticos</small>
+                    </span>
+                    <em>Selecciona para previsualizar</em>
+                  </header>
 
-              <aside className="eycon-product-detail">
-                {selected ? (
-                  <>
+                  <div className="eycon-products-grid">
+                    {filteredProducts.map((product) => {
+                      const status = productStatus(product, data.balanceUnits);
+                      return (
+                        <button
+                          type="button"
+                          key={product.id}
+                          className={`eycon-product-card rarity-${String(product.rarity || "common").toLowerCase()} status-${status.key.toLowerCase()} ${selected?.id === product.id ? "is-selected" : ""}`}
+                          onClick={() => setSelectedId(product.id)}
+                        >
+                          <span className="eycon-product-preview" style={{ color: product.metadata?.color || product.metadata?.pipColor || product.metadata?.accentColor }}>
+                            {product.preview || "✦"}
+                          </span>
+                          <span className="eycon-product-copy">
+                            <small>{categoryLabelFor(product)}</small>
+                            <strong>{product.name}</strong>
+                            <em>{product.rarity} · {formatEycon(product.priceUnits)}</em>
+                          </span>
+                          <span className={`eycon-product-state is-${status.key.toLowerCase()}`}>
+                            {status.key === "EQUIPPED" ? <Check size={12} /> : status.key === "OWNED" ? <PackageCheck size={12} /> : <ShoppingBag size={12} />}
+                            {status.label}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {filteredProducts.length === 0 && (
+                      <div className="eycon-empty-state">
+                        No encontramos productos con esos filtros. Prueba otra categoría o búsqueda.
+                      </div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="eycon-preview-panel">
+                  {selected ? (
                     <EyconProductPreview3D
                       product={selected}
-                      tokenColor={selected.category === "TOKEN" && !selectedTokenColorLocked ? previewTokenColor : null}
+                      tokenColor={selectedIsToken && !selectedTokenColorLocked ? previewTokenColor : null}
                     />
+                  ) : (
+                    <div className="eycon-detail-empty">
+                      <Boxes size={30} />
+                      <p>Selecciona un personalizable para inspeccionarlo.</p>
+                    </div>
+                  )}
+                </section>
+
+                <aside className="eycon-product-detail">
+                {selected ? (
+                  <>
                     <span className="eycon-detail-category">
                       <Gamepad2 size={14} /> {selectedGame?.name} · {categoryLabel}
                     </span>
@@ -499,13 +618,20 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
                         <small>{selected.rarity}</small>
                         <h3>{selected.name}</h3>
                       </span>
-                      {selected.equipped && <em><Check size={12} /> En uso</em>}
+                      {selectedStatus && <em className={`status-${selectedStatus.key.toLowerCase()}`}>{selectedStatus.label}</em>}
                     </div>
-                    {selected.category === "TOKEN" && !selectedTokenColorLocked && (
+                    <p>{selected.description}</p>
+                    {selected.category === "BOARD_THEME" && (
+                      <div className="eycon-host-note">
+                        <Shield size={14} />
+                        <span><strong>Diseño del anfitrión</strong><small>Este tablero se muestra para todos únicamente cuando tú eres host de la mesa.</small></span>
+                      </div>
+                    )}
+                    {selectedIsToken && !selectedTokenColorLocked && (
                       <div className="eycon-token-color-preview">
                         <header>
-                          <span>Probar color de Monopoly</span>
-                          <small>{previewTokenColor.name}</small>
+                          <span>Color principal</span>
+                          <small>Actual: {previewTokenColor.name}</small>
                         </header>
                         <div>
                           {monopolyTokenColors.map((color) => (
@@ -520,7 +646,7 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
                             />
                           ))}
                         </div>
-                        <small>La pieza usa tu color activo; puedes cambiarlo también desde Monopoly.</small>
+                        <small>Esta sección sólo controla el color de tu ficha. Comprar/equipar está separado abajo.</small>
                         <button
                           type="button"
                           className="eycon-save-token-color"
@@ -535,18 +661,16 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
                         </button>
                       </div>
                     )}
-                    <p>{selected.description}</p>
-                    {selected.category === "BOARD_THEME" && (
-                      <div className="eycon-host-note">
-                        <Shield size={14} />
-                        <span><strong>Diseño del anfitrión</strong><small>Este tablero se muestra para todos únicamente cuando tú eres host de la mesa.</small></span>
-                      </div>
-                    )}
                     <div className="eycon-detail-meta">
                       <span><small>Precio</small><strong>{formatEycon(selected.priceUnits)}</strong></span>
                       <span><small>Tu saldo</small><strong>{formatEycon(data.balanceUnits)}</strong></span>
+                      {!selected.owned && !isProductLocked(selected) && data.balanceUnits >= selected.priceUnits && (
+                        <span><small>Después de compra</small><strong>{formatEycon(data.balanceUnits - selected.priceUnits)}</strong></span>
+                      )}
                     </div>
-                    {selected.equipped ? (
+                    {isProductLocked(selected) ? (
+                      <button className="eycon-store-primary is-locked" disabled>Bloqueado</button>
+                    ) : selected.equipped ? (
                       <button className="eycon-store-primary is-equipped" disabled><Check size={17} /> Ya está equipado</button>
                     ) : selected.owned ? (
                       <button className="eycon-store-primary" disabled={Boolean(busyId)} onClick={() => equip(selected)}>
@@ -576,8 +700,9 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
                     <p>Selecciona un personalizable para inspeccionarlo.</p>
                   </div>
                 )}
-              </aside>
-            </div>
+                </aside>
+              </div>
+            </>
           )}
         </>
       )}
@@ -591,7 +716,7 @@ export default function EyconStore({ token, onProfileChange, isAdmin = false }) 
             <div className="eycon-purchase-preview">
               <EyconProductPreview3D
                 product={purchaseCandidate}
-                tokenColor={purchaseCandidate.category === "TOKEN" && !isTokenColorLocked(purchaseCandidate) ? previewTokenColor : null}
+                tokenColor={isTokenCosmetic(purchaseCandidate) && !isTokenColorLocked(purchaseCandidate) ? previewTokenColor : null}
               />
             </div>
             <div className="eycon-purchase-copy">

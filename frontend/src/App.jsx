@@ -1,18 +1,21 @@
-import { Coins, Cuboid, Gamepad2, Gem, Globe2, LogOut, MessageSquare, Shield, Sparkles, Trophy, Volume2, VolumeX, Wifi, WifiOff, X } from "lucide-react";
+import { Coins, Crown, Cuboid, Gamepad2, Gem, Globe2, LogOut, MessageSquare, Shield, Sparkles, Target, Trophy, Volume2, VolumeX, WalletCards, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
 import { audio } from "./audio";
 import AdminPanel from "./components/AdminPanel";
 import AuthPanel from "./components/AuthPanel";
+import BattlePassPanel from "./components/BattlePassPanel";
 import BlackjackTable from "./components/BlackjackTable";
 import DishesGame from "./components/DishesGame";
 import EyconStore from "./components/EyconStore";
 import MonopolyGame from "./components/MonopolyGame";
 import PlatformRadioPlayer from "./components/PlatformRadioPlayer";
+import RechargePanel from "./components/RechargePanel";
 import { useRadio } from "./radio/RadioContext";
 import WorldSelector from "./components/WorldSelector";
 import WorldSidebar from "./components/WorldSidebar";
+import BrandLogo from "./components/shared/BrandLogo";
 
 const APP_RADIO_GAME_KEY = "MONOPOLY";
 const GAME_VIEWS = new Set(["games", "dishes", "blackjack", "monopoly", "monopoly3d"]);
@@ -30,7 +33,7 @@ function RoomGamesHub({ world, onSelectGame }) {
   const games = [
     { key: "dishes", icon: Sparkles, title: "Trabajo", text: "Lavar platos", status: "Listo" },
     { key: "blackjack", icon: Gamepad2, title: "Blackjack", text: "Mesa contra la banca", status: "Activo" },
-    { key: "monopoly3d", icon: Cuboid, title: "Monopoly", text: "Tablero 3D", status: "Activo" }
+    { key: "monopoly3d", icon: Cuboid, title: "BolowPoly", text: "Juego inspirado en MONOPOLY", status: "Activo" }
   ];
 
   return (
@@ -107,8 +110,8 @@ function RoomRankingPanel({ world, presence, currentUser, onOpenRooms, onOpenGam
           ranking.map((player, index) => (
             <span className={player.userId === currentUser?.id ? "is-current" : ""} key={player.userId}>
               <Trophy size={17} />
-              <strong>
-                #{index + 1} {player.username}
+              <strong className={player.isVip ? "vip-username" : ""}>
+                #{index + 1} {player.isVip && <Crown size={14} className="vip-username-icon" />} {player.username}
                 {player.userId === currentUser?.id ? " (tu)" : ""}
               </strong>
               <em>{formatMoney(player.balance)} en esta sala</em>
@@ -170,6 +173,34 @@ export default function App() {
     window.history.pushState({}, "", pathname);
     setRoutePath(pathname);
   }
+
+  // Cuando Mercado Pago redirige de vuelta tras el checkout, sincroniza el pago.
+  useEffect(() => {
+    if (!token) return;
+    const params = new URLSearchParams(window.location.search);
+    const paymentMarker = params.get("payment");
+    if (!paymentMarker) return;
+
+    const paymentId = params.get("payment_id") || params.get("collection_id");
+    const externalReference = params.get("external_reference");
+
+    api("/api/payments/return-sync", {
+      method: "POST",
+      token,
+      body: { paymentId, externalReference }
+    })
+      .then((result) => {
+        if (result.eyconBalanceUnits !== undefined) {
+          setEyconProfile((current) => ({ ...current, balanceUnits: result.eyconBalanceUnits }));
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        setView("recharge");
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // Mantener el estado local sincronizado con el módulo de audio
   useEffect(() => audio.subscribe(setMuted), []);
@@ -528,6 +559,22 @@ export default function App() {
     setView("eycon-store");
   }
 
+  function openBattlePassTab() {
+    setView("battlepass");
+  }
+
+  function openRechargeTab() {
+    setView("recharge");
+  }
+
+  async function refreshSessionUser() {
+    const payload = await api("/api/me", { token });
+    if (payload?.user) {
+      setSession((current) => (current ? { ...current, user: payload.user } : current));
+    }
+    return payload;
+  }
+
   function handleWorldJoined(nextWorld, nextBalance) {
     setWorld(nextWorld);
     setBalance(nextBalance);
@@ -591,11 +638,8 @@ export default function App() {
         <div className={`platform-header__inner ${monopolyView ? "platform-header__inner--game" : ""}`}>
           {/* Marca */}
           <div className="platform-brand">
-            <div className={`brand-mark ${monopolyView ? "h-8 w-8" : "h-11 w-11"}`}>
-              <span className={`${monopolyView ? "text-base" : "text-xl"} font-display font-black leading-none`}>EN</span>
-              <span className={`${monopolyView ? "-bottom-0.5 -right-0.5 h-4 w-4" : "-bottom-1 -right-1 h-5 w-5"} absolute flex items-center justify-center rounded-full border border-[#25362F] bg-[#050807] text-[#F4C542]`}>
-                <Coins size={11} />
-              </span>
+            <div className="brand-mark">
+              <BrandLogo size={monopolyView ? "sm" : "md"} alt="EasyNo" />
             </div>
             <div className="min-w-0">
               <h1 className={`${monopolyView ? "text-base" : "text-xl"} font-display font-black leading-none tracking-tight`}>
@@ -624,6 +668,14 @@ export default function App() {
             <button className={`nav-tab ${view === "eycon-store" ? "is-active" : ""}`} onClick={openStoreTab} type="button">
               <Gem size={17} />
               Tienda
+            </button>
+            <button className={`nav-tab ${view === "battlepass" ? "is-active" : ""}`} onClick={openBattlePassTab} type="button">
+              <Target size={17} />
+              Misiones
+            </button>
+            <button className={`nav-tab ${view === "recharge" ? "is-active" : ""}`} onClick={openRechargeTab} type="button">
+              <WalletCards size={17} />
+              Recargar
             </button>
           </nav>
 
@@ -695,7 +747,12 @@ export default function App() {
             token={token}
             onProfileChange={setEyconProfile}
             isAdmin={isAdmin}
+            onRecharge={openRechargeTab}
           />
+        ) : view === "battlepass" ? (
+          <BattlePassPanel token={token} onProfileChange={setEyconProfile} />
+        ) : view === "recharge" ? (
+          <RechargePanel token={token} onProfileChange={setEyconProfile} onUserRefresh={refreshSessionUser} />
         ) : view === "ranking" ? (
           <RoomRankingPanel
             world={world}
@@ -729,6 +786,7 @@ export default function App() {
                 onBoardViewModeChange={(nextMode) => setView(nextMode === "3d" ? "monopoly3d" : "monopoly")}
                 equippedCosmetics={eyconProfile.equipment?.MONOPOLY || {}}
                 eyconInventory={eyconProfile.inventory || []}
+                eyconBalanceUnits={eyconProfile.balanceUnits || 0}
                 onEyconProfileChange={setEyconProfile}
               />
             ) : (
@@ -750,6 +808,7 @@ export default function App() {
                       currentUser={session.user}
                       world={world}
                       balance={balance}
+                      eyconBalanceUnits={eyconProfile.balanceUnits}
                     />
                   )}
                 </div>
