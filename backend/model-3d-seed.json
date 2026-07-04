@@ -1,15 +1,2528 @@
 {
-  "version": 1,
+  "version": 2,
   "defaultColorMode": "TINT",
   "defaultTintStrength": 0.75,
-  "updatedAt": "2026-06-26T00:00:00.000Z",
-  "assets": [],
+  "updatedAt": "2026-07-04T20:12:25.103Z",
+  "products": [
+    {
+      "id": "monopoly-board-arctic-vault",
+      "slug": "arctic-vault",
+      "name": "Bóveda ártica",
+      "description": "Hielo azul, plata y una superficie limpia de cristal frío.",
+      "priceUnits": 170,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "❄",
+      "metadata": {
+        "baseColor": "#29465b",
+        "centerColor": "#dbeafe",
+        "accentColor": "#67e8f9",
+        "roughness": 0.16,
+        "metalness": 0.62
+      }
+    },
+    {
+      "id": "monopoly-board-aztec-gold",
+      "slug": "aztec-gold",
+      "name": "Tesoro solar",
+      "description": "Piedra turquesa y oro inspirados en una cámara ceremonial.",
+      "priceUnits": 310,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "☀",
+      "metadata": {
+        "baseColor": "#3f2d16",
+        "centerColor": "#0f766e",
+        "accentColor": "#fbbf24",
+        "roughness": 0.54,
+        "metalness": 0.42
+      }
+    },
+    {
+      "id": "monopoly-board-casino-noir",
+      "slug": "casino-noir",
+      "name": "Casino Noir",
+      "description": "Negro carbón con centro vino y líneas de oro tenue.",
+      "priceUnits": 180,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "◆",
+      "metadata": {
+        "baseColor": "#080b10",
+        "centerColor": "#3f0d1a",
+        "accentColor": "#d4a928",
+        "roughness": 0.3,
+        "metalness": 0.48
+      }
+    },
+    {
+      "id": "monopoly-board-checker-pop",
+      "slug": "checker-pop",
+      "name": "Checker pop",
+      "description": "Casillas alternadas con contraste alto y look arcade.",
+      "priceUnits": 105,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "CHK",
+      "metadata": {
+        "baseColor": "#111827",
+        "centerColor": "#0f766e",
+        "accentColor": "#f472b6",
+        "roughness": 0.36,
+        "metalness": 0.18,
+        "tileColor": "#f8fafc",
+        "railColor": "#020617",
+        "cornerColor": "#22d3ee",
+        "stripeColor": "#f472b6",
+        "pattern": "checker",
+        "glow": 0.28,
+        "tileDensity": 9
+      }
+    },
+    {
+      "id": "monopoly-board-classic-deluxe",
+      "slug": "classic-deluxe",
+      "name": "Clásico de lujo",
+      "description": "Madera oscura, paño verde y detalles dorados.",
+      "priceUnits": 95,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "▦",
+      "metadata": {
+        "baseColor": "#2d2418",
+        "centerColor": "#1f6f59",
+        "accentColor": "#f4d45d",
+        "roughness": 0.62,
+        "metalness": 0.16
+      }
+    },
+    {
+      "id": "monopoly-board-cyber-bank",
+      "slug": "cyber-bank",
+      "name": "Banco cyber",
+      "description": "Circuitos y rieles de neon para partidas futuristas.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "GRID",
+      "metadata": {
+        "baseColor": "#071827",
+        "centerColor": "#0f172a",
+        "accentColor": "#22d3ee",
+        "roughness": 0.24,
+        "metalness": 0.42,
+        "tileColor": "#cffafe",
+        "railColor": "#020617",
+        "cornerColor": "#67e8f9",
+        "stripeColor": "#a78bfa",
+        "pattern": "neon-grid",
+        "glow": 0.85,
+        "tileDensity": 8
+      }
+    },
+    {
+      "id": "monopoly-board-galactic-empire",
+      "slug": "galactic-empire",
+      "name": "Imperio galáctico",
+      "description": "Azul profundo, violeta cósmico y bordes de luz estelar.",
+      "priceUnits": 330,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "baseColor": "#11133b",
+        "centerColor": "#312e81",
+        "accentColor": "#c084fc",
+        "roughness": 0.2,
+        "metalness": 0.5
+      }
+    },
+    {
+      "id": "monopoly-board-magma-market",
+      "slug": "magma-market",
+      "name": "Mercado magma",
+      "description": "Piedra oscura con franjas calientes y glow volcanico.",
+      "priceUnits": 310,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "LAVA",
+      "metadata": {
+        "baseColor": "#1c1917",
+        "centerColor": "#451a03",
+        "accentColor": "#fb923c",
+        "roughness": 0.52,
+        "metalness": 0.22,
+        "tileColor": "#fed7aa",
+        "railColor": "#0c0a09",
+        "cornerColor": "#f97316",
+        "stripeColor": "#facc15",
+        "pattern": "lava",
+        "glow": 1.1,
+        "tileDensity": 7
+      }
+    },
+    {
+      "id": "monopoly-board-neon-city",
+      "slug": "neon-city",
+      "name": "Ciudad neón",
+      "description": "Tablero nocturno cyan y magenta con acabado tecnológico.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⌗",
+      "metadata": {
+        "baseColor": "#071827",
+        "centerColor": "#082f49",
+        "accentColor": "#22d3ee",
+        "roughness": 0.24,
+        "metalness": 0.38
+      }
+    },
+    {
+      "id": "monopoly-board-royal-vault",
+      "slug": "royal-vault",
+      "name": "Boveda royal",
+      "description": "Tablero de lujo con postes, oro y centro profundo.",
+      "priceUnits": 320,
+      "gameKey": "MONOPOLY",
+      "category": "BOARD_THEME",
+      "slotKey": "BOARD_THEME",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "CROWN",
+      "metadata": {
+        "baseColor": "#120817",
+        "centerColor": "#3f0d1a",
+        "accentColor": "#d4a928",
+        "roughness": 0.28,
+        "metalness": 0.58,
+        "tileColor": "#fef3c7",
+        "railColor": "#1e1b4b",
+        "cornerColor": "#fbbf24",
+        "stripeColor": "#fde68a",
+        "pattern": "royal",
+        "glow": 0.44,
+        "tileDensity": 7
+      }
+    },
+    {
+      "id": "monopoly-dice-casino-red",
+      "slug": "casino-red",
+      "name": "Dados de casino rojo",
+      "description": "Rojo clásico de mesa profesional.",
+      "priceUnits": 105,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#b91c1c",
+        "pipColor": "#fff7ed",
+        "roughness": 0.3,
+        "metalness": 0.2,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-classic-white",
+      "slug": "classic-white",
+      "name": "Dados clásicos blancos",
+      "description": "Marfil limpio con puntos oscuros.",
+      "priceUnits": 35,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "COMMON",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#fffdf6",
+        "pipColor": "#3f2b17",
+        "roughness": 0.34,
+        "metalness": 0.04,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-cyber-grid",
+      "slug": "cyber-grid",
+      "name": "Dados cyber grid",
+      "description": "Circuitos cyan sobre material oscuro.",
+      "priceUnits": 180,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#071827",
+        "pipColor": "#67e8f9",
+        "roughness": 0.24,
+        "metalness": 0.36,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true,
+        "accentColor": "#22d3ee",
+        "edgeColor": "#38bdf8",
+        "pattern": "circuit",
+        "pipShape": "square",
+        "pipScale": 0.82,
+        "faceContrast": 0.9
+      }
+    },
+    {
+      "id": "monopoly-dice-diamond",
+      "slug": "diamond",
+      "name": "Dados de lujo diamante",
+      "description": "Facetado brillante de rareza legendaria.",
+      "priceUnits": 310,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#e0f2fe",
+        "pipColor": "#0369a1",
+        "roughness": 0.06,
+        "metalness": 0.9,
+        "opacity": 0.82,
+        "transparent": true,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-elegant-black",
+      "slug": "elegant-black",
+      "name": "Dados negros elegantes",
+      "description": "Negro mate con puntos dorados.",
+      "priceUnits": 85,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#111827",
+        "pipColor": "#fbbf24",
+        "roughness": 0.28,
+        "metalness": 0.24,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-fire",
+      "slug": "fire",
+      "name": "Dados de fuego",
+      "description": "Ascuas oscuras con puntos incandescentes.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#7f1d1d",
+        "pipColor": "#fef08a",
+        "roughness": 0.4,
+        "metalness": 0.12,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-galactic",
+      "slug": "galactic",
+      "name": "Dados galácticos",
+      "description": "Una pequeña nebulosa en cada cara.",
+      "priceUnits": 320,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#312e81",
+        "pipColor": "#f0abfc",
+        "roughness": 0.22,
+        "metalness": 0.38,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-ghost",
+      "slug": "ghost",
+      "name": "Dados fantasma",
+      "description": "Blancos espectrales y translúcidos.",
+      "priceUnits": 180,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#ecfeff",
+        "pipColor": "#22d3ee",
+        "roughness": 0.15,
+        "metalness": 0.12,
+        "opacity": 0.58,
+        "transparent": true,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-gold",
+      "slug": "gold",
+      "name": "Dados dorados",
+      "description": "Metal dorado pulido para tiradas importantes.",
+      "priceUnits": 170,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#f5c542",
+        "pipColor": "#3f2600",
+        "roughness": 0.2,
+        "metalness": 0.72,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-hacker",
+      "slug": "hacker",
+      "name": "Dados hacker glitch",
+      "description": "Verde terminal con errores deliberados.",
+      "priceUnits": 160,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#052e16",
+        "pipColor": "#4ade80",
+        "roughness": 0.32,
+        "metalness": 0.16,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-hazard-core",
+      "slug": "hazard-core",
+      "name": "Dados hazard core",
+      "description": "Franjas industriales con centro toxico.",
+      "priceUnits": 170,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#111827",
+        "pipColor": "#facc15",
+        "roughness": 0.42,
+        "metalness": 0.18,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true,
+        "accentColor": "#f97316",
+        "edgeColor": "#facc15",
+        "pattern": "danger",
+        "pipShape": "ring",
+        "pipScale": 0.9,
+        "faceContrast": 0.88
+      }
+    },
+    {
+      "id": "monopoly-dice-ice",
+      "slug": "ice",
+      "name": "Dados de hielo",
+      "description": "Cristal helado con reflejos celestes.",
+      "priceUnits": 160,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#bae6fd",
+        "pipColor": "#075985",
+        "roughness": 0.12,
+        "metalness": 0.35,
+        "opacity": 0.88,
+        "transparent": true,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-lava",
+      "slug": "lava",
+      "name": "Dados de lava",
+      "description": "Roca negra atravesada por magma.",
+      "priceUnits": 320,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#1c1917",
+        "pipColor": "#fb923c",
+        "roughness": 0.48,
+        "metalness": 0.1,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-neon-blue",
+      "slug": "neon-blue",
+      "name": "Dados neón azul",
+      "description": "Azul eléctrico con brillo interno.",
+      "priceUnits": 105,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#082f49",
+        "pipColor": "#67e8f9",
+        "roughness": 0.24,
+        "metalness": 0.22,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-rainbow",
+      "slug": "rainbow",
+      "name": "Dados arcoíris",
+      "description": "Color cambiante y puntos blancos.",
+      "priceUnits": 300,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#a855f7",
+        "pipColor": "#ffffff",
+        "roughness": 0.24,
+        "metalness": 0.28,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-royal-marble",
+      "slug": "royal-marble",
+      "name": "Dados marmol royal",
+      "description": "Marmol vino con vetas doradas y pips diamante.",
+      "priceUnits": 300,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#3f0d1a",
+        "pipColor": "#fde68a",
+        "roughness": 0.18,
+        "metalness": 0.48,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true,
+        "accentColor": "#d4a928",
+        "edgeColor": "#fbbf24",
+        "pattern": "marble",
+        "pipShape": "diamond",
+        "pipScale": 1.05,
+        "faceContrast": 0.75
+      }
+    },
+    {
+      "id": "monopoly-dice-star-candy",
+      "slug": "star-candy",
+      "name": "Dados star candy",
+      "description": "Patron dulce con estrellas y pips suaves.",
+      "priceUnits": 85,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#fdf2f8",
+        "pipColor": "#be185d",
+        "roughness": 0.38,
+        "metalness": 0.06,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true,
+        "accentColor": "#93c5fd",
+        "edgeColor": "#f9a8d4",
+        "pattern": "stars",
+        "pipShape": "star",
+        "pipScale": 0.88,
+        "faceContrast": 0.62
+      }
+    },
+    {
+      "id": "monopoly-dice-transparent",
+      "slug": "transparent",
+      "name": "Dados transparentes",
+      "description": "Cuerpo de cristal casi invisible.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#dbeafe",
+        "pipColor": "#1e3a8a",
+        "roughness": 0.08,
+        "metalness": 0.15,
+        "opacity": 0.42,
+        "transparent": true,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-wood",
+      "slug": "wood",
+      "name": "Dados textura de madera",
+      "description": "Madera cálida con grabado oscuro.",
+      "priceUnits": 95,
+      "gameKey": "MONOPOLY",
+      "category": "DICE",
+      "slotKey": "DICE",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "⚄",
+      "metadata": {
+        "baseColor": "#92400e",
+        "pipColor": "#2a1205",
+        "roughness": 0.72,
+        "metalness": 0.02,
+        "opacity": 1,
+        "transparent": false,
+        "fxCompatible": true
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-bubble-luck",
+      "slug": "bubble-luck",
+      "name": "Burbujas de suerte",
+      "description": "Burbujas suben con movimiento alegre y traslucido.",
+      "priceUnits": 85,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "bubbles",
+        "color": "#67e8f9",
+        "secondaryColor": "#dbeafe",
+        "intensity": 0.92,
+        "speed": 0.74,
+        "spread": 1.25,
+        "particleSize": 1.65,
+        "gravity": 0.05,
+        "density": 0.86
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-casino-glow",
+      "slug": "casino-glow",
+      "name": "Brillo de casino",
+      "description": "Halo rojo y dorado de mesa premium.",
+      "priceUnits": 75,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "glow",
+        "color": "#ef4444",
+        "intensity": 0.85
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-coin-burst",
+      "slug": "coin-burst",
+      "name": "Explosion de monedas",
+      "description": "Monedas doradas orbitan y caen durante el resultado.",
+      "priceUnits": 310,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "coins",
+        "color": "#fbbf24",
+        "secondaryColor": "#fde68a",
+        "intensity": 1.25,
+        "speed": 1.05,
+        "spread": 1.25,
+        "particleSize": 1.08,
+        "gravity": 0.75,
+        "sparkle": 1.15
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-electric-rays",
+      "slug": "electric-rays",
+      "name": "Enlace eléctrico",
+      "description": "Descargas luminosas conectan ambos dados mientras se mueven.",
+      "priceUnits": 310,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "electric",
+        "color": "#67e8f9",
+        "secondaryColor": "#ffffff",
+        "intensity": 1.35
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-ember-rain",
+      "slug": "ember-rain",
+      "name": "Lluvia de brasas",
+      "description": "Particulas calientes saltan y se apagan sobre el tablero.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "embers",
+        "color": "#fb923c",
+        "secondaryColor": "#fef08a",
+        "intensity": 1.08,
+        "speed": 1,
+        "spread": 1.15,
+        "particleSize": 0.92,
+        "gravity": 0.45,
+        "sparkle": 1.25
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-energy-waves",
+      "slug": "energy-waves",
+      "name": "Pulso de energía",
+      "description": "Anillos expansivos recorren la mesa debajo de los dados.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "waves",
+        "color": "#818cf8",
+        "secondaryColor": "#22d3ee",
+        "intensity": 1.1
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-fire-trail",
+      "slug": "fire-trail",
+      "name": "Estela infernal",
+      "description": "Dos colas de brasas persiguen los dados durante toda la tirada.",
+      "priceUnits": 160,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "trail",
+        "color": "#fb451f",
+        "secondaryColor": "#facc15",
+        "intensity": 1.15
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-galactic-trail",
+      "slug": "galactic-trail",
+      "name": "Vórtice galáctico",
+      "description": "Estrellas y nebulosa giran como una pequeña galaxia.",
+      "priceUnits": 300,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "galaxy",
+        "color": "#8b5cf6",
+        "secondaryColor": "#38bdf8",
+        "intensity": 1.35
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-ghost-aura",
+      "slug": "ghost-aura",
+      "name": "Aura fantasma",
+      "description": "Niebla espectral de baja intensidad.",
+      "priceUnits": 180,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "aura",
+        "color": "#a5f3fc",
+        "intensity": 1.1
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-glitch",
+      "slug": "glitch",
+      "name": "Ruptura digital",
+      "description": "Píxeles verdes saltan de posición en pulsos deliberadamente inestables.",
+      "priceUnits": 180,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "glitch",
+        "color": "#4ade80",
+        "secondaryColor": "#22d3ee",
+        "intensity": 1.1
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-gold-sparks",
+      "slug": "gold-sparks",
+      "name": "Forja dorada",
+      "description": "Chispas rápidas rebotan y caen alrededor de cada dado.",
+      "priceUnits": 75,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "sparks",
+        "color": "#fbbf24",
+        "secondaryColor": "#fff7ae",
+        "intensity": 0.95
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-heart-pop",
+      "slug": "heart-pop",
+      "name": "Pop de corazones",
+      "description": "Corazones luminosos flotan con rebote suave.",
+      "priceUnits": 95,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "hearts",
+        "color": "#fb7185",
+        "secondaryColor": "#f9a8d4",
+        "intensity": 0.95,
+        "speed": 0.82,
+        "spread": 1,
+        "particleSize": 1.18,
+        "gravity": 0.12,
+        "sparkle": 0.72
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-ice-particles",
+      "slug": "ice-particles",
+      "name": "Fractura glacial",
+      "description": "Fragmentos azul hielo se separan con un movimiento cortante.",
+      "priceUnits": 95,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "flakes",
+        "color": "#bae6fd",
+        "secondaryColor": "#38bdf8",
+        "intensity": 0.9
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-landing-burst",
+      "slug": "landing-burst",
+      "name": "Mini explosion al caer",
+      "description": "Un impacto breve al asentarse.",
+      "priceUnits": 85,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "landing_burst",
+        "color": "#fb923c",
+        "intensity": 0.85
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-landing-confetti",
+      "slug": "landing-confetti",
+      "name": "Impacto festivo",
+      "description": "El resultado libera una lluvia breve y colorida de confeti.",
+      "priceUnits": 105,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "confetti",
+        "color": "#f472b6",
+        "secondaryColor": "#fde047",
+        "intensity": 0.95
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-laser-link",
+      "slug": "laser-link",
+      "name": "Laser link",
+      "description": "Un rayo firme conecta ambos dados con vibracion controlada.",
+      "priceUnits": 150,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "laser",
+        "color": "#ef4444",
+        "secondaryColor": "#ffffff",
+        "intensity": 1.18,
+        "speed": 1.7,
+        "spread": 0.75,
+        "particleSize": 0.7,
+        "beamJitter": 0.32,
+        "sparkle": 1.1
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-legendary-flash",
+      "slug": "legendary-flash",
+      "name": "Juicio legendario",
+      "description": "Un destello dorado y una corona de luz anuncian el resultado.",
+      "priceUnits": 310,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "flash",
+        "color": "#fef08a",
+        "secondaryColor": "#f59e0b",
+        "intensity": 1.4
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-magic-dust",
+      "slug": "magic-dust",
+      "name": "Órbita arcana",
+      "description": "Partículas violetas forman espirales suaves alrededor de la tirada.",
+      "priceUnits": 170,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "orbit",
+        "color": "#c084fc",
+        "secondaryColor": "#f0abfc",
+        "intensity": 1.08
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-neon-smoke",
+      "slug": "neon-smoke",
+      "name": "Humo neon",
+      "description": "Nubes luminosas de color cyan.",
+      "priceUnits": 170,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "smoke",
+        "color": "#22d3ee",
+        "intensity": 1.1
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-portal-roll",
+      "slug": "portal-roll",
+      "name": "Portal arcano",
+      "description": "Un aro energetico gira debajo de los dados.",
+      "priceUnits": 330,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "portal",
+        "color": "#a855f7",
+        "secondaryColor": "#22d3ee",
+        "intensity": 1.32,
+        "speed": 1.1,
+        "spread": 1,
+        "particleSize": 0.9,
+        "ringScale": 1.25,
+        "sparkle": 1.25
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-real-flames",
+      "slug": "real-flames",
+      "name": "Flamas reales",
+      "description": "Lenguas de fuego suben desde los dados con brasas vivas.",
+      "priceUnits": 320,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "flames",
+        "color": "#fb451f",
+        "secondaryColor": "#facc15",
+        "intensity": 1.45,
+        "speed": 1.18,
+        "spread": 1.2,
+        "particleSize": 1.22,
+        "gravity": 0.35,
+        "sparkle": 1.1,
+        "density": 1
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-rune-circle",
+      "slug": "rune-circle",
+      "name": "Circulo de runas",
+      "description": "Puntos rituales forman un sello bajo los dados.",
+      "priceUnits": 180,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "runes",
+        "color": "#c084fc",
+        "secondaryColor": "#f0abfc",
+        "intensity": 1.1,
+        "speed": 0.72,
+        "spread": 1.05,
+        "particleSize": 1,
+        "ringScale": 0.9,
+        "density": 0.92
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-smoke-veil",
+      "slug": "smoke-veil",
+      "name": "Velo de humo",
+      "description": "Humo oscuro asciende lento alrededor de la tirada.",
+      "priceUnits": 105,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "smoke",
+        "color": "#94a3b8",
+        "secondaryColor": "#e2e8f0",
+        "intensity": 0.88,
+        "speed": 0.6,
+        "spread": 1.45,
+        "particleSize": 1.75,
+        "gravity": 0.15,
+        "density": 0.78
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-spin-stars",
+      "slug": "spin-stars",
+      "name": "Estrellas al girar",
+      "description": "Estrellas pequeñas orbitan los dados.",
+      "priceUnits": 95,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "stars",
+        "color": "#fde047",
+        "intensity": 0.85
+      }
+    },
+    {
+      "id": "monopoly-dice-fx-storm-core",
+      "slug": "storm-core",
+      "name": "Tormenta core",
+      "description": "Viento, rayos y remolinos cortan el espacio entre dados.",
+      "priceUnits": 320,
+      "gameKey": "MONOPOLY",
+      "category": "DICE_FX",
+      "slotKey": "DICE_FX",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "✦",
+      "metadata": {
+        "effect": "storm",
+        "color": "#60a5fa",
+        "secondaryColor": "#f8fafc",
+        "intensity": 1.5,
+        "speed": 1.45,
+        "spread": 1.35,
+        "particleSize": 1.05,
+        "ringScale": 1.1,
+        "beamJitter": 1.65,
+        "sparkle": 1.35
+      }
+    },
+    {
+      "id": "monopoly-token-t",
+      "slug": "t",
+      "name": "Traffic Cone",
+      "description": "",
+      "priceUnits": 397,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "*",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "hat",
+        "glyph": "*",
+        "color": "#fbbf24",
+        "ring": "#92400e",
+        "assetKey": "traffic_cone_405335b0",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/traffic_cone_405335b0.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-ajolote",
+      "slug": "ajolote",
+      "name": "Ajolote",
+      "description": "Ajolote coleccionable para recorrer el tablero con estilo acuatico.",
+      "priceUnits": 265,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "🦎",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "hat",
+        "glyph": "🦎",
+        "color": "#f8a4c8",
+        "ring": "#7dd3fc",
+        "assetKey": "ajolote_2b306705",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/ajolote_2b306705.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-axolotl",
+      "slug": "blowfish",
+      "name": "Blowfish",
+      "description": "El habitante mas relajado de toda la mesa.",
+      "priceUnits": 265,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "🦎",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "axolotl",
+        "glyph": "🦎",
+        "color": "#f9a8d4",
+        "ring": "#831843",
+        "assetKey": "chicken",
+        "fallbackModel": "duck",
+        "fitSize": 1.95,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/ajolote_2b306705.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-chicken",
+      "slug": "chicken",
+      "name": "Chicken",
+      "description": "Figura GLB legendaria con textura fija y postura compacta.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "🐤",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "chicken",
+        "glyph": "🐤",
+        "color": "#f97316",
+        "ring": "#7c2d12",
+        "assetKey": "chicken",
+        "fallbackModel": "duck",
+        "fitSize": 1.9,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-dingus-the-cat",
+      "slug": "dingus-the-cat",
+      "name": "Dingus the Cat",
+      "description": "Figura GLB importada con textura propia y base adaptable al color del jugador.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "🐈",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "dingus_the_cat",
+        "glyph": "🐈",
+        "color": "#fef3c7",
+        "ring": "#7c2d12",
+        "assetKey": "dingus_the_cat",
+        "fallbackModel": "cat",
+        "fitSize": 1.95,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-elegant-cat",
+      "slug": "elegant-cat",
+      "name": "Gato de sociedad",
+      "description": "Felino de porte elegante con orejas, cola y collar de lujo.",
+      "priceUnits": 230,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "🐈",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "cat",
+        "glyph": "🐈",
+        "color": "#a78bfa",
+        "ring": "#3b0764"
+      }
+    },
+    {
+      "id": "monopoly-token-mcbee",
+      "slug": "mcbee",
+      "name": "McBee",
+      "description": "",
+      "priceUnits": 462,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "*",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "cat",
+        "glyph": "*",
+        "color": "#fbbf24",
+        "ring": "#b67349",
+        "assetKey": "mcbee_11d2a93c",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.95,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/mcbee_11d2a93c.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-mcbee-alt",
+      "slug": "mcbee-alt",
+      "name": "McBee Alterno",
+      "description": "Variante coleccionable de McBee para completar la vitrina.",
+      "priceUnits": 462,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "🐝",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "hat",
+        "glyph": "🐝",
+        "color": "#facc15",
+        "ring": "#111827"
+      }
+    },
+    {
+      "id": "monopoly-token-robot-dog",
+      "slug": "robot-dog",
+      "name": "Perrito robot",
+      "description": "Compañero mecánico articulado con visor de neón.",
+      "priceUnits": 403,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "🐕",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "robot_dog",
+        "glyph": "🐕",
+        "color": "#7dd3fc",
+        "ring": "#164e63"
+      }
+    },
+    {
+      "id": "monopoly-token-rubber-duck",
+      "slug": "rubber-duck",
+      "name": "Patito de la fortuna",
+      "description": "Patito brillante con pico, alas y una confianza inexplicable.",
+      "priceUnits": 115,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_ANIMAL",
+      "slotKey": "TOKEN",
+      "rarity": "COMMON",
+      "active": true,
+      "preview": "🐤",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "duck",
+        "glyph": "🐤",
+        "color": "#fde047",
+        "ring": "#f97316"
+      }
+    },
+    {
+      "id": "monopoly-token-jigglypuff",
+      "slug": "jigglypuff",
+      "name": "Jigglypuff",
+      "description": "Figura GLB legendaria de acabado suave y textura fija.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_COLLECTIBLE",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "♪",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "jigglypuff",
+        "glyph": "♪",
+        "color": "#f9a8d4",
+        "ring": "#831843",
+        "assetKey": "jigglypuff",
+        "fallbackModel": "ghost",
+        "fitSize": 1.75,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-pikachu",
+      "slug": "pikachu",
+      "name": "Pikachu",
+      "description": "Figura GLB legendaria con textura fija y silueta electrica.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_COLLECTIBLE",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "⚡",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "pikachu",
+        "glyph": "⚡",
+        "color": "#facc15",
+        "ring": "#78350f",
+        "assetKey": "pikachu",
+        "fallbackModel": "robot_dog",
+        "fitSize": 1.9,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-snorlax",
+      "slug": "snorlax",
+      "name": "Snorlax",
+      "description": "Figura GLB legendaria de gran volumen y textura fija.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_COLLECTIBLE",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "●",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "snorlax",
+        "glyph": "●",
+        "color": "#334155",
+        "ring": "#0f172a",
+        "assetKey": "snorlax",
+        "fallbackModel": "astronaut",
+        "fitSize": 1.9,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-tralalero-tralala",
+      "slug": "tralalero-tralala",
+      "name": "Tralalero Tralala",
+      "description": "Figura GLB legendaria con textura fija para mesas de alto perfil.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_COLLECTIBLE",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "★",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "tralalero_tralala",
+        "glyph": "★",
+        "color": "#38bdf8",
+        "ring": "#075985",
+        "assetKey": "tralalero_tralala",
+        "fallbackModel": "dinosaur",
+        "fitSize": 2.05,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-tung-tung-shakur",
+      "slug": "tung-tung-shakur",
+      "name": "Tung Tung Shakur",
+      "description": "Figura GLB legendaria con textura fija y presencia ceremonial.",
+      "priceUnits": 575,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_COLLECTIBLE",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "◆",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "tung_tung_shakur",
+        "glyph": "◆",
+        "color": "#92400e",
+        "ring": "#431407",
+        "assetKey": "tung_tung_shakur",
+        "fallbackModel": "hat",
+        "fitSize": 2.05,
+        "colorLocked": true
+      }
+    },
+    {
+      "id": "monopoly-token-baby-dragon",
+      "slug": "baby-dragon",
+      "name": "Dragón banquero",
+      "description": "Dragón bebé con alas, cuernos, cola y obsesión por el oro.",
+      "priceUnits": 403,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_FANTASY",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "🐉",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "dragon",
+        "glyph": "🐉",
+        "color": "#fb7185",
+        "ring": "#881337"
+      }
+    },
+    {
+      "id": "monopoly-token-mini-dino",
+      "slug": "mini-dino",
+      "name": "Tirano miniatura",
+      "description": "Dinosaurio compacto con cola, patas y cresta dorsal.",
+      "priceUnits": 403,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_FANTASY",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "🦖",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "dinosaur",
+        "glyph": "🦖",
+        "color": "#4ade80",
+        "ring": "#14532d"
+      }
+    },
+    {
+      "id": "monopoly-token-neon-ghost",
+      "slug": "neon-ghost",
+      "name": "Fantasma de neón",
+      "description": "Espectro translúcido con ojos luminosos y silueta flotante.",
+      "priceUnits": 403,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_FANTASY",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "👻",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "ghost",
+        "glyph": "👻",
+        "color": "#22d3ee",
+        "ring": "#083344"
+      }
+    },
+    {
+      "id": "monopoly-token-golden-taco",
+      "slug": "golden-taco",
+      "name": "Taco dorado",
+      "description": "Una inversión crujiente con tortilla dorada y relleno de lujo.",
+      "priceUnits": 230,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_FOOD",
+      "slotKey": "TOKEN",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "🌮",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "taco",
+        "glyph": "🌮",
+        "color": "#fbbf24",
+        "ring": "#16a34a"
+      }
+    },
+    {
+      "id": "monopoly-token-casino-chip",
+      "slug": "casino-chip",
+      "name": "Ficha de casino",
+      "description": "Una ficha dentro de un juego dentro de otro juego.",
+      "priceUnits": 132,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_OBJECT",
+      "slotKey": "TOKEN",
+      "rarity": "COMMON",
+      "active": true,
+      "preview": "🔴",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "casino_chip",
+        "glyph": "🔴",
+        "color": "#dc2626",
+        "ring": "#450a0a",
+        "assetKey": "ficha_de_casino_123856ab",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/ficha_de_casino_123856ab.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-game-controller",
+      "slug": "game-controller",
+      "name": "Control de videojuegos",
+      "description": "La ficha para quien siempre juega en serio.",
+      "priceUnits": 265,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_OBJECT",
+      "slotKey": "TOKEN",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "🎮",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "controller",
+        "glyph": "🎮",
+        "color": "#818cf8",
+        "ring": "#312e81",
+        "assetKey": "control_de_videojuegos_445721bd",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/control_de_videojuegos_445721bd.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-golden-hat",
+      "slug": "golden-hat",
+      "name": "Sombrero de magnate",
+      "description": "Sombrero de copa con cinta, hebilla y acabado de oro cepillado.",
+      "priceUnits": 230,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_OBJECT",
+      "slotKey": "TOKEN",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "🎩",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "hat",
+        "glyph": "🎩",
+        "color": "#d4a928",
+        "ring": "#6b4d0d"
+      }
+    },
+    {
+      "id": "monopoly-token-money-boot",
+      "slug": "money-boot",
+      "name": "Botin de dinero",
+      "description": "Fortuna compacta con cordones incluidos.",
+      "priceUnits": 462,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_OBJECT",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "👢",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "money_boot",
+        "glyph": "👢",
+        "color": "#34d399",
+        "ring": "#064e3b",
+        "assetKey": "botin_de_dinero_11648b43",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/botin_de_dinero_11648b43.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-retro-camera",
+      "slug": "retro-camera",
+      "name": "Camara retro",
+      "description": "Captura cada quiebra con grano cinematografico.",
+      "priceUnits": 265,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_OBJECT",
+      "slotKey": "TOKEN",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "📷",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "camera",
+        "glyph": "📷",
+        "color": "#a16207",
+        "ring": "#422006",
+        "assetKey": "camara_retro_890a4c6c",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/camara_retro_890a4c6c.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-giant-eycon",
+      "slug": "giant-eycon",
+      "name": "Moneda EyCon gigante",
+      "description": "La moneda especial convertida en protagonista.",
+      "priceUnits": 661,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_PREMIUM",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "E",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "eycon_coin",
+        "glyph": "E",
+        "color": "#22d3ee",
+        "ring": "#0e7490",
+        "assetKey": "moneda_eycon_gigante_3fb10b60",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/moneda_eycon_gigante_3fb10b60.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-mexican-skull",
+      "slug": "mexican-skull",
+      "name": "Walid",
+      "description": "Walid",
+      "priceUnits": 661,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_PREMIUM",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "💀",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "skull",
+        "glyph": "💀",
+        "color": "#f472b6",
+        "ring": "#831843",
+        "assetKey": "walid_1af34580",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/walid_1af34580.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-royal-crown",
+      "slug": "royal-crown",
+      "name": "Corona real",
+      "description": "Para gobernar el tablero sin pedir permiso.",
+      "priceUnits": 661,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_PREMIUM",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "👑",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "crown",
+        "glyph": "👑",
+        "color": "#facc15",
+        "ring": "#713f12",
+        "assetKey": "corona_real_2a870fc0",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/corona_real_2a870fc0.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-astronaut",
+      "slug": "astronaut",
+      "name": "Glock",
+      "description": "Astronauta con casco, visor, mochila y traje presurizado.",
+      "priceUnits": 403,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_VEHICLE",
+      "slotKey": "TOKEN",
+      "rarity": "LEGENDARY",
+      "active": true,
+      "preview": "🚀",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "astronaut",
+        "glyph": "🚀",
+        "color": "#e2e8f0",
+        "ring": "#334155",
+        "assetKey": "glock_7438655d",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/glock_7438655d.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-mini-train",
+      "slug": "mini-train",
+      "name": "Tren miniatura",
+      "description": "Siempre puntual para cobrar ferrocarriles.",
+      "priceUnits": 265,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_VEHICLE",
+      "slotKey": "TOKEN",
+      "rarity": "RARE",
+      "active": true,
+      "preview": "🚂",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "train",
+        "glyph": "🚂",
+        "color": "#64748b",
+        "ring": "#1e293b",
+        "assetKey": "tren_miniatura_fee4dc7c",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/tren_miniatura_fee4dc7c.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-space-ship",
+      "slug": "space-ship",
+      "name": "RocketShip",
+      "description": "Compra propiedades a velocidad orbital.",
+      "priceUnits": 462,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_VEHICLE",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "🚀",
+      "metadata": {
+        "renderer": "gltf",
+        "model": "spaceship",
+        "glyph": "🚀",
+        "color": "#93c5fd",
+        "ring": "#1e3a8a",
+        "assetKey": "rocketship_f4d3ef72",
+        "fallbackModel": "hat",
+        "fitSize": 1.9,
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "offset": [
+          0,
+          0,
+          0
+        ],
+        "colorLocked": false,
+        "tintable": true,
+        "tintStrength": 0.75,
+        "colorMode": "TINT",
+        "previewStatus": "READY",
+        "assetUrl": "/uploads/models3d/rocketship_f4d3ef72.glb"
+      }
+    },
+    {
+      "id": "monopoly-token-sport-car",
+      "slug": "sport-car",
+      "name": "Bólido escarlata",
+      "description": "Carro deportivo bajo, con cabina, alerón y ruedas visibles.",
+      "priceUnits": 403,
+      "gameKey": "MONOPOLY",
+      "category": "TOKEN_VEHICLE",
+      "slotKey": "TOKEN",
+      "rarity": "EPIC",
+      "active": true,
+      "preview": "🏎️",
+      "metadata": {
+        "renderer": "primitive",
+        "model": "sport_car",
+        "glyph": "🏎️",
+        "color": "#ef4444",
+        "ring": "#450a0a"
+      }
+    }
+  ],
+  "assets": [
+    {
+      "assetKey": "chicken",
+      "label": "Chicken",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/chicken.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "duck",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "dingus_the_cat",
+      "label": "Dingus the Cat",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/Dingusthecat.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "cat",
+      "fitSize": 1.95,
+      "active": true
+    },
+    {
+      "assetKey": "jigglypuff",
+      "label": "Jigglypuff",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/jigglypuff.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "ghost",
+      "fitSize": 1.75,
+      "active": true
+    },
+    {
+      "assetKey": "pikachu",
+      "label": "Pikachu",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/pikachu.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "robot_dog",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "snorlax",
+      "label": "Snorlax",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/snorlax.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "astronaut",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "tralalero_tralala",
+      "label": "Tralalero Tralala",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/tralalerotralala.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "dinosaur",
+      "fitSize": 2.05,
+      "active": true
+    },
+    {
+      "assetKey": "tung_tung_shakur",
+      "label": "Tung Tung Shakur",
+      "filePath": "frontend/src/files/custom_models/monopoly/pawns/tungtungshakur.glb",
+      "source": "BUILTIN",
+      "fallbackModel": "hat",
+      "fitSize": 2.05,
+      "active": true
+    },
+    {
+      "assetKey": "ajolote_2b306705",
+      "label": "Ajolote",
+      "filePath": "/uploads/models3d/ajolote_2b306705.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "blowfish_95dc4bdd",
+      "label": "Blowfish",
+      "filePath": "/uploads/models3d/blowfish_95dc4bdd.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "blowfish_6c30f64a",
+      "label": "Blowfish",
+      "filePath": "/uploads/models3d/blowfish_6c30f64a.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "botin_de_dinero_11648b43",
+      "label": "Botin de dinero",
+      "filePath": "/uploads/models3d/botin_de_dinero_11648b43.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "camara_retro_890a4c6c",
+      "label": "Camara retro",
+      "filePath": "/uploads/models3d/camara_retro_890a4c6c.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "control_de_videojuegos_445721bd",
+      "label": "Control de videojuegos",
+      "filePath": "/uploads/models3d/control_de_videojuegos_445721bd.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "corona_real_2a870fc0",
+      "label": "Corona real",
+      "filePath": "/uploads/models3d/corona_real_2a870fc0.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "dodge_charger_458e03e7",
+      "label": "Dodge Charger",
+      "filePath": "/uploads/models3d/dodge_charger_458e03e7.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "drag_n_banquero_a087d110",
+      "label": "Dragón banquero",
+      "filePath": "/uploads/models3d/drag_n_banquero_a087d110.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "fantasma_6dd1e2ad",
+      "label": "Fantasma",
+      "filePath": "/uploads/models3d/fantasma_6dd1e2ad.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "ficha_de_casino_123856ab",
+      "label": "Ficha de casino",
+      "filePath": "/uploads/models3d/ficha_de_casino_123856ab.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "glock_7438655d",
+      "label": "Glock",
+      "filePath": "/uploads/models3d/glock_7438655d.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "mcbee_9cb4485b",
+      "label": "McBee",
+      "filePath": "/uploads/models3d/mcbee_9cb4485b.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": false
+    },
+    {
+      "assetKey": "mcbee_ca263fa4",
+      "label": "McBee",
+      "filePath": "/uploads/models3d/mcbee_ca263fa4.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": false
+    },
+    {
+      "assetKey": "mcbee_bcfdc089",
+      "label": "McBee",
+      "filePath": "/uploads/models3d/mcbee_bcfdc089.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "mcbee_11d2a93c",
+      "label": "McBee",
+      "filePath": "/uploads/models3d/mcbee_11d2a93c.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "moneda_eycon_gigante_3fb10b60",
+      "label": "Moneda EyCon gigante",
+      "filePath": "/uploads/models3d/moneda_eycon_gigante_3fb10b60.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "patito_ducky_5115c7a6",
+      "label": "Patito Ducky",
+      "filePath": "/uploads/models3d/patito_ducky_5115c7a6.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "perrito_cute_20c87b76",
+      "label": "Perrito Cute",
+      "filePath": "/uploads/models3d/perrito_cute_20c87b76.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "rata_a423fb34",
+      "label": "Rata",
+      "filePath": "/uploads/models3d/rata_a423fb34.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "rocketship_f4d3ef72",
+      "label": "RocketShip",
+      "filePath": "/uploads/models3d/rocketship_f4d3ef72.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "sombrero_mexicano_69faaf0f",
+      "label": "Sombrero Mexicano",
+      "filePath": "/uploads/models3d/sombrero_mexicano_69faaf0f.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "taco_dorado_9a21fb9c",
+      "label": "Taco dorado",
+      "filePath": "/uploads/models3d/taco_dorado_9a21fb9c.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "tirano_miniatura_53066cef",
+      "label": "Tirano miniatura",
+      "filePath": "/uploads/models3d/tirano_miniatura_53066cef.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "traffic_cone_405335b0",
+      "label": "Traffic Cone",
+      "filePath": "/uploads/models3d/traffic_cone_405335b0.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "tren_miniatura_fee4dc7c",
+      "label": "Tren miniatura",
+      "filePath": "/uploads/models3d/tren_miniatura_fee4dc7c.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "walid_1af34580",
+      "label": "Walid",
+      "filePath": "/uploads/models3d/walid_1af34580.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": true
+    },
+    {
+      "assetKey": "mcbee_ad4a9892",
+      "label": "mcbee",
+      "filePath": "/uploads/models3d/mcbee_ad4a9892.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "cat",
+      "fitSize": 1.9,
+      "active": false
+    },
+    {
+      "assetKey": "minecraft_bee_84a27968",
+      "label": "minecraft_bee",
+      "filePath": "/uploads/models3d/minecraft_bee_84a27968.glb",
+      "source": "UPLOAD",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "active": false
+    }
+  ],
   "settings": [
     {
+      "productId": "monopoly-token-ajolote",
+      "assetKey": "ajolote_2b306705",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-astronaut",
+      "assetKey": "glock_7438655d",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
       "productId": "monopoly-token-axolotl",
-      "assetKey": "chicken",
-      "fallbackModel": "duck",
-      "fitSize": 1.95,
+      "assetKey": "blowfish_6c30f64a",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-baby-dragon",
+      "assetKey": "drag_n_banquero_a087d110",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-casino-chip",
+      "assetKey": "ficha_de_casino_123856ab",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
       "rotation": [
         0,
         0,
@@ -66,10 +2579,250 @@
       "active": true
     },
     {
+      "productId": "monopoly-token-elegant-cat",
+      "assetKey": "rata_a423fb34",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-game-controller",
+      "assetKey": "control_de_videojuegos_445721bd",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-giant-eycon",
+      "assetKey": "moneda_eycon_gigante_3fb10b60",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-golden-hat",
+      "assetKey": "sombrero_mexicano_69faaf0f",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-golden-taco",
+      "assetKey": "taco_dorado_9a21fb9c",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
       "productId": "monopoly-token-jigglypuff",
       "assetKey": "jigglypuff",
       "fallbackModel": "ghost",
       "fitSize": 1.75,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-mcbee",
+      "assetKey": "mcbee_11d2a93c",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.95,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-mcbee-alt",
+      "assetKey": "mcbee_bcfdc089",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-mexican-skull",
+      "assetKey": "walid_1af34580",
+      "fallbackModel": "hat",
+      "fitSize": 2.59,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-mini-dino",
+      "assetKey": "tirano_miniatura_53066cef",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-mini-train",
+      "assetKey": "tren_miniatura_fee4dc7c",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-money-boot",
+      "assetKey": "botin_de_dinero_11648b43",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-neon-ghost",
+      "assetKey": "fantasma_6dd1e2ad",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
       "rotation": [
         0,
         0,
@@ -106,10 +2859,150 @@
       "active": true
     },
     {
+      "productId": "monopoly-token-retro-camera",
+      "assetKey": "camara_retro_890a4c6c",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-robot-dog",
+      "assetKey": "perrito_cute_20c87b76",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-royal-crown",
+      "assetKey": "corona_real_2a870fc0",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-rubber-duck",
+      "assetKey": "patito_ducky_5115c7a6",
+      "fallbackModel": "hat",
+      "fitSize": 1.65,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
       "productId": "monopoly-token-snorlax",
       "assetKey": "snorlax",
       "fallbackModel": "astronaut",
       "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-space-ship",
+      "assetKey": "rocketship_f4d3ef72",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-sport-car",
+      "assetKey": "dodge_charger_458e03e7",
+      "fallbackModel": "hat",
+      "fitSize": 1.9,
+      "rotation": [
+        0,
+        0,
+        0
+      ],
+      "offset": [
+        0,
+        0,
+        0
+      ],
+      "tintStrength": 0.75,
+      "colorMode": "TINT",
+      "previewStatus": "READY",
+      "active": true
+    },
+    {
+      "productId": "monopoly-token-t",
+      "assetKey": "traffic_cone_405335b0",
+      "fallbackModel": "hat",
+      "fitSize": 1.3,
       "rotation": [
         0,
         0,

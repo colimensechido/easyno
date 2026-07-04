@@ -9,8 +9,9 @@ const EYCON_SCALE = 100;
 const BLACKJACK_DAILY_CAP_UNITS = 100;
 const MODEL_3D_DEFAULT_COLOR_MODE = "TINT";
 const MODEL_3D_DEFAULT_TINT_STRENGTH = 0.75;
-const MODEL_3D_SEED_PATH = path.join(__dirname, "model-3d-seed.json");
-const MODEL_3D_WRITE_SEED = process.env.MODEL_3D_WRITE_SEED === "1";
+// Kept at the historical path so existing Docker deploys keep copying the seed.
+const EYCON_STORE_SEED_PATH = process.env.EYCON_STORE_SEED_PATH || path.join(__dirname, "model-3d-seed.json");
+const EYCON_STORE_WRITE_SEED = process.env.EYCON_STORE_WRITE_SEED === "1" || process.env.MODEL_3D_WRITE_SEED === "1";
 const MODEL_3D_TINT_MIGRATION_KEY = "model3d-default-tint-75-v2";
 const MODEL_3D_LEGACY_COLOR_CLEANUP_KEY = "model3d-remove-legacy-color-v1";
 const MODEL_3D_ASSETS = [
@@ -556,14 +557,38 @@ function createEyconService({ get, run, all, io, userRoom }) {
   }
 
   async function reactivateAllAssets() {
-    const tables = ["eycon_products", "model_3d_assets", "model_3d_settings"];
     let total = 0;
-    for (const table of tables) {
-      const result = await run(
+
+    for (const table of ["eycon_products", "model_3d_settings"]) {
+      const { changes } = await run(
         `UPDATE ${table} SET active = 1, updated_at = CURRENT_TIMESTAMP WHERE active = 0`
       );
-      total += result.changes || 0;
+      total += changes || 0;
     }
+
+    const builtinAssets = await run(
+      `UPDATE model_3d_assets
+       SET active = 1, updated_at = CURRENT_TIMESTAMP
+       WHERE active = 0 AND file_path NOT LIKE '/uploads/models3d/%'`
+    );
+    total += builtinAssets.changes || 0;
+
+    const uploadAssets = await all(
+      `SELECT asset_key AS assetKey, file_path AS filePath
+       FROM model_3d_assets
+       WHERE active = 0 AND file_path LIKE '/uploads/models3d/%'`
+    );
+    for (const asset of uploadAssets) {
+      if (!uploadAssetFileExists(asset.filePath)) continue;
+      const { changes } = await run(
+        `UPDATE model_3d_assets
+         SET active = 1, updated_at = CURRENT_TIMESTAMP
+         WHERE asset_key = ?`,
+        [asset.assetKey]
+      );
+      total += changes || 0;
+    }
+
     return total;
   }
 
@@ -1205,11 +1230,57 @@ function createEyconService({ get, run, all, io, userRoom }) {
     return Array.isArray(value) ? value : [];
   }
 
+  function uploadAssetFileExists(filePath) {
+    const safePath = String(filePath || "");
+    if (!safePath.startsWith("/uploads/models3d/")) return true;
+    return fs.existsSync(path.join(__dirname, "uploads", "models3d", path.basename(safePath)));
+  }
+
+  function normalizeSeedProduct(product = {}) {
+    const id = String(product.id || "").trim().slice(0, 120);
+    const name = String(product.name || "").trim().slice(0, 80);
+    const slug = normalizeProductSlug(product.slug || name);
+    const gameKey = String(product.gameKey || "").trim().toUpperCase();
+    const category = String(product.category || "").trim().toUpperCase();
+    const slotKey = String(product.slotKey || category).trim().toUpperCase();
+    const priceUnits = Number(product.priceUnits);
+    if (!id || !name || !slug || !gameKey || !category || !slotKey) return null;
+    if (!gameDefinitions.some((game) => game.key === gameKey)) return null;
+    if (!Number.isInteger(priceUnits) || priceUnits < 0 || priceUnits > 100000) return null;
+
+    let rarity = "COMMON";
+    try {
+      rarity = normalizeProductRarity(product.rarity);
+    } catch {
+      rarity = "COMMON";
+    }
+
+    const metadataSource = product.metadata && typeof product.metadata === "object" && !Array.isArray(product.metadata)
+      ? product.metadata
+      : parseMetadata(typeof product.metadata === "string" ? product.metadata : product.metadataJson);
+
+    return {
+      id,
+      slug,
+      name,
+      description: String(product.description || "").slice(0, 300),
+      priceUnits,
+      gameKey,
+      category,
+      slotKey,
+      rarity,
+      active: product.active === false || product.active === 0 ? 0 : 1,
+      preview: String(product.preview || "*").slice(0, 16),
+      metadataJson: JSON.stringify(metadataSource)
+    };
+  }
+
   async function readModel3dSeed() {
     try {
-      const raw = await fs.promises.readFile(MODEL_3D_SEED_PATH, "utf8");
+      const raw = await fs.promises.readFile(EYCON_STORE_SEED_PATH, "utf8");
       const parsed = JSON.parse(raw);
       return {
+        products: safeSeedArray(parsed.products),
         assets: safeSeedArray(parsed.assets),
         settings: safeSeedArray(parsed.settings)
       };
@@ -1217,12 +1288,50 @@ function createEyconService({ get, run, all, io, userRoom }) {
       if (error.code !== "ENOENT") {
         console.error("No se pudo leer model-3d-seed.json", error);
       }
-      return { assets: [], settings: [] };
+      return { products: [], assets: [], settings: [] };
     }
   }
 
   async function applyModel3dSeed() {
     const seed = await readModel3dSeed();
+
+    for (const rawProduct of seed.products) {
+      const product = normalizeSeedProduct(rawProduct);
+      if (!product) continue;
+      await run(
+        `INSERT INTO eycon_products (
+          id, slug, name, description, price_units, game_key, category,
+          slot_key, rarity, active, preview, metadata_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          slug = excluded.slug,
+          name = excluded.name,
+          description = excluded.description,
+          price_units = excluded.price_units,
+          game_key = excluded.game_key,
+          category = excluded.category,
+          slot_key = excluded.slot_key,
+          rarity = excluded.rarity,
+          active = excluded.active,
+          preview = excluded.preview,
+          metadata_json = excluded.metadata_json,
+          updated_at = CURRENT_TIMESTAMP`,
+        [
+          product.id,
+          product.slug,
+          product.name,
+          product.description,
+          product.priceUnits,
+          product.gameKey,
+          product.category,
+          product.slotKey,
+          product.rarity,
+          product.active,
+          product.preview,
+          product.metadataJson
+        ]
+      );
+    }
 
     for (const asset of seed.assets) {
       const assetKey = String(asset.assetKey || "").trim();
@@ -1257,11 +1366,11 @@ function createEyconService({ get, run, all, io, userRoom }) {
       const assetKey = String(setting.assetKey || "").trim();
       if (!productId || !assetKey) continue;
       const product = await get(
-      `SELECT id, game_key AS gameKey, category, slot_key AS slotKey FROM eycon_products WHERE id = ?`,
+        `SELECT id, game_key AS gameKey, category, slot_key AS slotKey FROM eycon_products WHERE id = ?`,
         [productId]
       );
       const asset = await getModel3dAsset(assetKey);
-    if (!product || product.gameKey !== "MONOPOLY" || product.slotKey !== "TOKEN" || !asset) continue;
+      if (!product || product.gameKey !== "MONOPOLY" || product.slotKey !== "TOKEN" || !asset) continue;
 
       const colorMode = normalizeColorMode(setting.colorMode);
       const tintStrength = colorMode === "FORCE"
@@ -1308,7 +1417,14 @@ function createEyconService({ get, run, all, io, userRoom }) {
     }
   }
 
-  async function exportModel3dSeed() {
+  async function exportEyconStoreSeed() {
+    const products = await all(
+      `SELECT id, slug, name, description, price_units AS priceUnits,
+              game_key AS gameKey, category, slot_key AS slotKey, rarity,
+              active, preview, metadata_json AS metadataJson
+       FROM eycon_products
+       ORDER BY game_key ASC, category ASC, slot_key ASC, slug ASC, id ASC`
+    );
     const assets = await all(
       `SELECT asset_key AS assetKey, label, file_path AS filePath, source,
               fallback_model AS fallbackModel, fit_size AS fitSize, active
@@ -1326,19 +1442,36 @@ function createEyconService({ get, run, all, io, userRoom }) {
     );
 
     return {
-      version: 1,
+      version: 2,
       defaultColorMode: MODEL_3D_DEFAULT_COLOR_MODE,
       defaultTintStrength: MODEL_3D_DEFAULT_TINT_STRENGTH,
       updatedAt: new Date().toISOString(),
-      assets: assets.map((asset) => ({
-        assetKey: asset.assetKey,
-        label: asset.label,
-        filePath: asset.filePath,
-        source: asset.source,
-        fallbackModel: asset.fallbackModel,
-        fitSize: Number(asset.fitSize || 1.9),
-        active: asset.active !== 0
+      products: products.map((product) => ({
+        id: product.id,
+        slug: product.slug,
+        name: product.name,
+        description: product.description,
+        priceUnits: Number(product.priceUnits || 0),
+        gameKey: product.gameKey,
+        category: product.category,
+        slotKey: product.slotKey,
+        rarity: product.rarity,
+        active: product.active !== 0,
+        preview: product.preview,
+        metadata: parseMetadata(product.metadataJson)
       })),
+      assets: assets.map((asset) => {
+        const fileExists = uploadAssetFileExists(asset.filePath);
+        return {
+          assetKey: asset.assetKey,
+          label: asset.label,
+          filePath: asset.filePath,
+          source: asset.source,
+          fallbackModel: asset.fallbackModel,
+          fitSize: Number(asset.fitSize || 1.9),
+          active: asset.active !== 0 && fileExists
+        };
+      }),
       settings: settings.map((setting) => ({
         productId: setting.productId,
         assetKey: setting.assetKey,
@@ -1354,10 +1487,15 @@ function createEyconService({ get, run, all, io, userRoom }) {
     };
   }
 
-  async function maybeWriteModel3dSeed() {
-    if (!MODEL_3D_WRITE_SEED) return false;
-    const seed = await exportModel3dSeed();
-    await fs.promises.writeFile(MODEL_3D_SEED_PATH, `${JSON.stringify(seed, null, 2)}\n`, "utf8");
+  async function writeEyconStoreSeed() {
+    const seed = await exportEyconStoreSeed();
+    await fs.promises.writeFile(EYCON_STORE_SEED_PATH, `${JSON.stringify(seed, null, 2)}\n`, "utf8");
+    return { seed, seedPath: EYCON_STORE_SEED_PATH };
+  }
+
+  async function maybeWriteEyconStoreSeed() {
+    if (!EYCON_STORE_WRITE_SEED) return false;
+    await writeEyconStoreSeed();
     return true;
   }
 
@@ -1431,7 +1569,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       previewStatuses: MODEL_3D_PREVIEW_STATUSES,
       colorModes: MODEL_3D_COLOR_MODES,
       seedPath: "backend/model-3d-seed.json",
-      seedWriteEnabled: MODEL_3D_WRITE_SEED,
+      seedWriteEnabled: EYCON_STORE_WRITE_SEED,
       defaultColorMode: MODEL_3D_DEFAULT_COLOR_MODE,
       defaultTintStrength: MODEL_3D_DEFAULT_TINT_STRENGTH,
       products: publicProducts,
@@ -1474,7 +1612,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         asset.uploadedBy || null
       ]
     );
-    const seedWritten = await maybeWriteModel3dSeed();
+    const seedWritten = await maybeWriteEyconStoreSeed();
     return {
       asset: await getModel3dAsset(assetKey),
       model3d: await adminModel3dOverview(),
@@ -1512,10 +1650,12 @@ function createEyconService({ get, run, all, io, userRoom }) {
        WHERE asset_key = ?`,
       [safeAssetKey]
     );
+    const seedWritten = await maybeWriteEyconStoreSeed();
     return {
       asset: { ...asset, active: false, fitSize: Number(asset.fitSize || 1.9) },
       model3d: await adminModel3dOverview(),
-      filePath: asset.filePath
+      filePath: asset.filePath,
+      seedWritten
     };
   }
 
@@ -1591,7 +1731,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
        WHERE id = ?`,
       [productId]
     );
-    const seedWritten = await maybeWriteModel3dSeed();
+    const seedWritten = await maybeWriteEyconStoreSeed();
     return {
       product: await getProductWithModel3d(productId),
       model3d: await adminModel3dOverview(),
@@ -1609,7 +1749,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
        WHERE product_id = ?`,
       [adminId || null, productId]
     );
-    const seedWritten = await maybeWriteModel3dSeed();
+    const seedWritten = await maybeWriteEyconStoreSeed();
     return {
       product: await getProductWithModel3d(productId),
       model3d: await adminModel3dOverview(),
@@ -1727,6 +1867,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       `UPDATE eycon_products SET ${updates.join(", ")}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
       params
     );
+    await maybeWriteEyconStoreSeed();
     return getProductWithModel3d(productId);
   }
 
@@ -1762,6 +1903,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
         JSON.stringify(product.metadata && typeof product.metadata === "object" ? product.metadata : {})
       ]
     );
+    await maybeWriteEyconStoreSeed();
     return getProductWithModel3d(id);
   }
 
@@ -1806,7 +1948,9 @@ function createEyconService({ get, run, all, io, userRoom }) {
     adminAdjust,
     adminCreateProduct,
     adminUpdateProduct,
-    adminGrantProduct
+    adminGrantProduct,
+    exportEyconStoreSeed,
+    writeEyconStoreSeed
   };
 }
 

@@ -5,7 +5,9 @@
   "main": "server.js",
   "scripts": {
     "dev": "node --watch server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "export:eycon-seed": "node scripts/export-eycon-store-seed.js",
+    "test:eycon-seed": "node --test eycon-store-seed.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

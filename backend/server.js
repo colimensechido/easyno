@@ -2694,7 +2694,8 @@ async function getAdminStoreAnalysis() {
         "Los productos EyCon viven en eycon_products con metadata_json.",
         "Los assets GLB aprobados viven en model_3d_assets; los uploads se sirven desde /uploads/models3d.",
         "Los ajustes por producto viven en model_3d_settings y se mezclan en la metadata publica.",
-        "El seed versionable vive en backend/model-3d-seed.json; con MODEL_3D_WRITE_SEED=1 se actualiza al guardar desde admin local.",
+        "El seed versionable vive en backend/model-3d-seed.json e incluye productos, assets y ajustes 3D.",
+        "Con MODEL_3D_WRITE_SEED=1 o EYCON_STORE_WRITE_SEED=1 se actualiza al guardar productos/assets desde admin local.",
         "Escala, offset, rotacion y modo de color se leen desde base de datos cuando el ajuste esta activo.",
         "TINTE y FORZAR usan el color activo del jugador; no guardan un color propio."
       ],
@@ -2702,7 +2703,7 @@ async function getAdminStoreAnalysis() {
         "Sube un .glb en Cargar GLB nuevo para agregarlo a model_3d_assets.",
         "Elige un producto BolowPoly TOKEN y asignale un asset aprobado.",
         "Usa Tinte 75% como base y ajusta escala, rotacion u offset con la vista previa.",
-        "Guarda con motivo; en localhost activa MODEL_3D_WRITE_SEED=1 para llevar cambios por Git."
+        "Guarda con motivo o ejecuta npm run export:eycon-seed; en localhost activa MODEL_3D_WRITE_SEED=1 para llevar cambios por Git."
       ]
     }
   };
