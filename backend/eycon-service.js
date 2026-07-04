@@ -441,6 +441,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
           category = excluded.category,
           slot_key = excluded.slot_key,
           rarity = excluded.rarity,
+          active = 1,
           preview = excluded.preview,
           metadata_json = excluded.metadata_json,
           updated_at = CURRENT_TIMESTAMP`,
