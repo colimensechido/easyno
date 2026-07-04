@@ -555,18 +555,21 @@ function createEyconService({ get, run, all, io, userRoom }) {
     }
   }
 
-  function shouldSkipOrphanCleanup() {
-    return (
-      process.env.EYCON_SKIP_ORPHAN_CLEANUP === "1" ||
-      process.env.NODE_ENV !== "production"
-    );
+  async function reactivateAllAssets() {
+    const tables = ["eycon_products", "model_3d_assets", "model_3d_settings"];
+    let total = 0;
+    for (const table of tables) {
+      const result = await run(
+        `UPDATE ${table} SET active = 1, updated_at = CURRENT_TIMESTAMP WHERE active = 0`
+      );
+      total += result.changes || 0;
+    }
+    return total;
   }
 
   async function syncCatalogProductState() {
     const catalogIds = allProducts.map((product) => product.id);
-    let activated = 0;
-    let deactivated = 0;
-    const skipOrphans = shouldSkipOrphanCleanup();
+    let catalogActivated = 0;
 
     if (catalogIds.length) {
       const result = await run(
@@ -575,92 +578,27 @@ function createEyconService({ get, run, all, io, userRoom }) {
          WHERE id IN (${catalogIds.map(() => "?").join(", ")})`,
         catalogIds
       );
-      activated = result.changes || 0;
+      catalogActivated = result.changes || 0;
     }
 
-    if (!skipOrphans) {
-      const managedTokenIds = allProducts
-        .filter((product) => product.gameKey === "MONOPOLY" && product.slotKey === "TOKEN")
-        .map((product) => product.id);
-      if (managedTokenIds.length) {
-        const result = await run(
-          `UPDATE eycon_products
-           SET active = 0, updated_at = CURRENT_TIMESTAMP
-           WHERE game_key = 'MONOPOLY'
-             AND slot_key = 'TOKEN'
-             AND id LIKE 'monopoly-token-%'
-             AND id NOT IN (${managedTokenIds.map(() => "?").join(", ")})`,
-          managedTokenIds
-        );
-        deactivated += result.changes || 0;
-      }
-
-      const managedFxIds = allProducts
-        .filter((product) => product.gameKey === "MONOPOLY" && product.category === "DICE_FX")
-        .map((product) => product.id);
-      if (managedFxIds.length) {
-        const result = await run(
-          `UPDATE eycon_products
-           SET active = 0, updated_at = CURRENT_TIMESTAMP
-           WHERE game_key = 'MONOPOLY'
-             AND category = 'DICE_FX'
-             AND id LIKE 'monopoly-dice-fx-%'
-             AND id NOT IN (${managedFxIds.map(() => "?").join(", ")})`,
-          managedFxIds
-        );
-        deactivated += result.changes || 0;
-      }
-    } else if (process.env.NODE_ENV !== "production") {
-      console.log("[eycon] Catalog sync: omitiendo desactivación de huérfanos (entorno local/dev)");
-    }
-
-    const equipmentResult = await run(
-      `DELETE FROM eycon_equipment
-       WHERE product_id IN (
-         SELECT id FROM eycon_products WHERE active = 0
-       )`
-    );
+    const reactivated = await reactivateAllAssets();
 
     const countRows = await all(
       `SELECT active, COUNT(*) AS cnt FROM eycon_products GROUP BY active ORDER BY active`
     );
     const activeTotal = countRows.find((row) => row.active === 1)?.cnt || 0;
     const inactiveTotal = countRows.find((row) => row.active === 0)?.cnt || 0;
-    const activeCatalogRow = catalogIds.length
-      ? await get(
-          `SELECT COUNT(*) AS cnt FROM eycon_products
-           WHERE active = 1 AND id IN (${catalogIds.map(() => "?").join(", ")})`,
-          catalogIds
-        )
-      : { cnt: 0 };
-    const activeCatalog = Number(activeCatalogRow?.cnt || 0);
-    const activeOrphans = Math.max(0, activeTotal - activeCatalog);
-
-    if (skipOrphans && process.env.NODE_ENV === "production") {
-      console.warn(
-        "[eycon] Catalog sync: EYCON_SKIP_ORPHAN_CLEANUP=1 — huérfanos NO desactivados en producción"
-      );
-    }
 
     console.log(
-      `[eycon] Catalog sync: catálogo=${catalogIds.length}, activos=${activeTotal} (${activeCatalog} catálogo + ${activeOrphans} huérfanos), inactivos=${inactiveTotal}, NODE_ENV=${process.env.NODE_ENV || "undefined"}, skipOrphans=${skipOrphans}`
+      `[eycon] Catalog sync: catálogo=${catalogIds.length}, productos activos=${activeTotal}, inactivos=${inactiveTotal}, reactivados=${reactivated}`
     );
-    if (activated > 0 || deactivated > 0 || equipmentResult.changes > 0) {
+    if (catalogActivated > 0 || reactivated > 0) {
       console.log(
-        `[eycon] Catalog sync cambios: ${activated} activados, ${deactivated} huérfanos desactivados, ${equipmentResult.changes || 0} equipamientos limpiados`
+        `[eycon] Catalog sync cambios: ${catalogActivated} del catálogo actualizados, ${reactivated} filas reactivadas en total`
       );
     }
 
-    return {
-      activated,
-      deactivated,
-      equipmentCleared: equipmentResult.changes || 0,
-      skipOrphans,
-      activeTotal,
-      activeCatalog,
-      activeOrphans,
-      inactiveTotal
-    };
+    return { catalogActivated, reactivated, activeTotal, inactiveTotal };
   }
 
   async function getProfile(userId) {

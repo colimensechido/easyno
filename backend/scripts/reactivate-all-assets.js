@@ -1,3 +1,10 @@
+/**
+ * Reactiva todos los productos y assets 3D inactivos.
+ * También corre automáticamente en cada arranque del backend (initSchema).
+ *
+ * Uso en producción:
+ *   docker compose exec backend node scripts/reactivate-all-assets.js
+ */
 const path = require("path");
 const sqlite3 = require("sqlite3");
 
