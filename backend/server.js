@@ -212,10 +212,14 @@ app.use(
   })
 );
 app.use(express.json({ limit: "12mb" }));
-app.use("/uploads/models3d", express.static(modelUploadsDir, {
-  immutable: true,
-  maxAge: "7d"
-}));
+app.use(
+  "/uploads/models3d",
+  cors({ origin: true }),
+  express.static(modelUploadsDir, {
+    immutable: true,
+    maxAge: "7d"
+  })
+);
 
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
