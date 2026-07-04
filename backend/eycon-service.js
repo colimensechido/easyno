@@ -2,7 +2,8 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { allProducts, gameDefinitions } = require("./eycon-catalog");
-const { displayName: BOLOWPOLY_NAME } = require("../shared/bolowpoly-brand");
+const { loadShared } = require("./load-shared");
+const { displayName: BOLOWPOLY_NAME } = loadShared("bolowpoly-brand");
 
 const EYCON_SCALE = 100;
 const BLACKJACK_DAILY_CAP_UNITS = 100;

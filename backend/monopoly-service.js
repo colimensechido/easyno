@@ -33,7 +33,8 @@ const MONOPOLY_MIN_TURNS_FOR_ACTIVITY = 10;
 
 let modulePromise = null;
 
-const { displayName: BOLOWPOLY_NAME, defaultTableName: BOLOWPOLY_DEFAULT_TABLE } = require("../shared/bolowpoly-brand");
+const { loadShared } = require("./load-shared");
+const { displayName: BOLOWPOLY_NAME, defaultTableName: BOLOWPOLY_DEFAULT_TABLE } = loadShared("bolowpoly-brand");
 
 function resolveMonopolyModulePath() {
   const engineFromEnv = process.env.MONOPOLY_ENGINE_PATH;
