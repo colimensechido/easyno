@@ -137,10 +137,11 @@ function createEyconService({ get, run, all, io, userRoom }) {
 
   function publicModel3dSetting(row) {
     if (!row || !row.model3dAssetKey) return null;
+    const filePath = String(row.model3dFilePath || "");
     return {
       productId: row.id,
       assetKey: row.model3dAssetKey,
-      filePath: row.model3dFilePath,
+      filePath,
       fallbackModel: row.model3dFallbackModel || "hat",
       fitSize: Number(row.model3dFitSize || 1.9),
       rotation: parseVector(row.model3dRotationJson),
@@ -153,10 +154,16 @@ function createEyconService({ get, run, all, io, userRoom }) {
       active: row.model3dActive !== 0,
       assetLabel: row.model3dAssetLabel || row.model3dAssetKey,
       assetSource: row.model3dAssetSource || "BUILTIN",
-      assetUrl: String(row.model3dFilePath || "").startsWith("/") ? row.model3dFilePath : null,
+      assetUrl: publicUploadAssetUrl(filePath),
       createdAt: row.model3dCreatedAt || null,
       updatedAt: row.model3dUpdatedAt || null
     };
+  }
+
+  function publicUploadAssetUrl(filePath) {
+    const safePath = String(filePath || "");
+    if (safePath.startsWith("/uploads/models3d/")) return `/api${safePath}`;
+    return safePath.startsWith("/") ? safePath : null;
   }
 
   function model3dMetadata(setting) {
@@ -173,8 +180,9 @@ function createEyconService({ get, run, all, io, userRoom }) {
       colorMode: setting.colorMode || (setting.tintable ? "TINT" : MODEL_3D_DEFAULT_COLOR_MODE),
       previewStatus: setting.previewStatus
     };
-    if (String(setting.filePath || "").startsWith("/")) {
-      metadata.assetUrl = setting.filePath;
+    const assetUrl = publicUploadAssetUrl(setting.filePath);
+    if (assetUrl) {
+      metadata.assetUrl = assetUrl;
     }
     return metadata;
   }
@@ -1529,7 +1537,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       ...row,
       fitSize: Number(row.fitSize || 1.9),
       active: Boolean(row.active),
-      assetUrl: String(row.filePath || "").startsWith("/") ? row.filePath : null
+      assetUrl: publicUploadAssetUrl(row.filePath)
     }));
   }
 
@@ -1545,7 +1553,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       ...row,
       fitSize: Number(row.fitSize || 1.9),
       active: Boolean(row.active),
-      assetUrl: String(row.filePath || "").startsWith("/") ? row.filePath : null
+      assetUrl: publicUploadAssetUrl(row.filePath)
     } : null;
   }
 

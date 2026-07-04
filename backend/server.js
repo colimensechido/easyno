@@ -220,6 +220,14 @@ app.use(
     maxAge: "7d"
   })
 );
+app.use(
+  "/api/uploads/models3d",
+  cors({ origin: true }),
+  express.static(modelUploadsDir, {
+    immutable: true,
+    maxAge: "7d"
+  })
+);
 
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
