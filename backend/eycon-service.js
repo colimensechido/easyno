@@ -621,13 +621,46 @@ function createEyconService({ get, run, all, io, userRoom }) {
        )`
     );
 
-    if (activated > 0 || deactivated > 0) {
-      console.log(
-        `[eycon] Catalog sync: ${activated} producto(s) activados, ${deactivated} huérfano(s) desactivados, ${equipmentResult.changes || 0} equipamiento(s) limpiados`
+    const countRows = await all(
+      `SELECT active, COUNT(*) AS cnt FROM eycon_products GROUP BY active ORDER BY active`
+    );
+    const activeTotal = countRows.find((row) => row.active === 1)?.cnt || 0;
+    const inactiveTotal = countRows.find((row) => row.active === 0)?.cnt || 0;
+    const activeCatalogRow = catalogIds.length
+      ? await get(
+          `SELECT COUNT(*) AS cnt FROM eycon_products
+           WHERE active = 1 AND id IN (${catalogIds.map(() => "?").join(", ")})`,
+          catalogIds
+        )
+      : { cnt: 0 };
+    const activeCatalog = Number(activeCatalogRow?.cnt || 0);
+    const activeOrphans = Math.max(0, activeTotal - activeCatalog);
+
+    if (skipOrphans && process.env.NODE_ENV === "production") {
+      console.warn(
+        "[eycon] Catalog sync: EYCON_SKIP_ORPHAN_CLEANUP=1 — huérfanos NO desactivados en producción"
       );
     }
 
-    return { activated, deactivated, equipmentCleared: equipmentResult.changes || 0, skipOrphans };
+    console.log(
+      `[eycon] Catalog sync: catálogo=${catalogIds.length}, activos=${activeTotal} (${activeCatalog} catálogo + ${activeOrphans} huérfanos), inactivos=${inactiveTotal}, NODE_ENV=${process.env.NODE_ENV || "undefined"}, skipOrphans=${skipOrphans}`
+    );
+    if (activated > 0 || deactivated > 0 || equipmentResult.changes > 0) {
+      console.log(
+        `[eycon] Catalog sync cambios: ${activated} activados, ${deactivated} huérfanos desactivados, ${equipmentResult.changes || 0} equipamientos limpiados`
+      );
+    }
+
+    return {
+      activated,
+      deactivated,
+      equipmentCleared: equipmentResult.changes || 0,
+      skipOrphans,
+      activeTotal,
+      activeCatalog,
+      activeOrphans,
+      inactiveTotal
+    };
   }
 
   async function getProfile(userId) {
