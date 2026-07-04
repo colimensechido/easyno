@@ -555,10 +555,18 @@ function createEyconService({ get, run, all, io, userRoom }) {
     }
   }
 
+  function shouldSkipOrphanCleanup() {
+    return (
+      process.env.EYCON_SKIP_ORPHAN_CLEANUP === "1" ||
+      process.env.NODE_ENV !== "production"
+    );
+  }
+
   async function syncCatalogProductState() {
     const catalogIds = allProducts.map((product) => product.id);
     let activated = 0;
     let deactivated = 0;
+    const skipOrphans = shouldSkipOrphanCleanup();
 
     if (catalogIds.length) {
       const result = await run(
@@ -570,36 +578,40 @@ function createEyconService({ get, run, all, io, userRoom }) {
       activated = result.changes || 0;
     }
 
-    const managedTokenIds = allProducts
-      .filter((product) => product.gameKey === "MONOPOLY" && product.slotKey === "TOKEN")
-      .map((product) => product.id);
-    if (managedTokenIds.length) {
-      const result = await run(
-        `UPDATE eycon_products
-         SET active = 0, updated_at = CURRENT_TIMESTAMP
-         WHERE game_key = 'MONOPOLY'
-           AND slot_key = 'TOKEN'
-           AND id LIKE 'monopoly-token-%'
-           AND id NOT IN (${managedTokenIds.map(() => "?").join(", ")})`,
-        managedTokenIds
-      );
-      deactivated += result.changes || 0;
-    }
+    if (!skipOrphans) {
+      const managedTokenIds = allProducts
+        .filter((product) => product.gameKey === "MONOPOLY" && product.slotKey === "TOKEN")
+        .map((product) => product.id);
+      if (managedTokenIds.length) {
+        const result = await run(
+          `UPDATE eycon_products
+           SET active = 0, updated_at = CURRENT_TIMESTAMP
+           WHERE game_key = 'MONOPOLY'
+             AND slot_key = 'TOKEN'
+             AND id LIKE 'monopoly-token-%'
+             AND id NOT IN (${managedTokenIds.map(() => "?").join(", ")})`,
+          managedTokenIds
+        );
+        deactivated += result.changes || 0;
+      }
 
-    const managedFxIds = allProducts
-      .filter((product) => product.gameKey === "MONOPOLY" && product.category === "DICE_FX")
-      .map((product) => product.id);
-    if (managedFxIds.length) {
-      const result = await run(
-        `UPDATE eycon_products
-         SET active = 0, updated_at = CURRENT_TIMESTAMP
-         WHERE game_key = 'MONOPOLY'
-           AND category = 'DICE_FX'
-           AND id LIKE 'monopoly-dice-fx-%'
-           AND id NOT IN (${managedFxIds.map(() => "?").join(", ")})`,
-        managedFxIds
-      );
-      deactivated += result.changes || 0;
+      const managedFxIds = allProducts
+        .filter((product) => product.gameKey === "MONOPOLY" && product.category === "DICE_FX")
+        .map((product) => product.id);
+      if (managedFxIds.length) {
+        const result = await run(
+          `UPDATE eycon_products
+           SET active = 0, updated_at = CURRENT_TIMESTAMP
+           WHERE game_key = 'MONOPOLY'
+             AND category = 'DICE_FX'
+             AND id LIKE 'monopoly-dice-fx-%'
+             AND id NOT IN (${managedFxIds.map(() => "?").join(", ")})`,
+          managedFxIds
+        );
+        deactivated += result.changes || 0;
+      }
+    } else if (process.env.NODE_ENV !== "production") {
+      console.log("[eycon] Catalog sync: omitiendo desactivación de huérfanos (entorno local/dev)");
     }
 
     const equipmentResult = await run(
@@ -615,7 +627,7 @@ function createEyconService({ get, run, all, io, userRoom }) {
       );
     }
 
-    return { activated, deactivated, equipmentCleared: equipmentResult.changes || 0 };
+    return { activated, deactivated, equipmentCleared: equipmentResult.changes || 0, skipOrphans };
   }
 
   async function getProfile(userId) {
