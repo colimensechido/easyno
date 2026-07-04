@@ -9,6 +9,7 @@ RUN npm ci --omit=dev
 
 # Copiar código fuente del backend
 COPY backend/*.js ./
+COPY backend/scripts ./scripts
 COPY backend/model-3d-seed.json ./model-3d-seed.json
 COPY backend/uploads ./seed-uploads
 

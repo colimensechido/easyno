@@ -491,11 +491,18 @@ function createEyconService({ get, run, all, io, userRoom }) {
         ? metadata.fallbackModel
         : asset.fallbackModel;
       await run(
-        `INSERT OR IGNORE INTO model_3d_settings (
+        `INSERT INTO model_3d_settings (
           product_id, asset_key, file_path, fallback_model, fit_size,
           rotation_json, offset_json, color_locked, tintable, tint_strength,
           tint_color, color_mode, preview_status, active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', 1)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'READY', 1)
+        ON CONFLICT(product_id) DO UPDATE SET
+          asset_key = excluded.asset_key,
+          file_path = excluded.file_path,
+          fallback_model = excluded.fallback_model,
+          fit_size = excluded.fit_size,
+          active = 1,
+          updated_at = CURRENT_TIMESTAMP`,
         [
           product.id,
           asset.assetKey,
@@ -581,6 +588,23 @@ function createEyconService({ get, run, all, io, userRoom }) {
         throw error;
       }
     }
+
+    await reactivateAllAssets();
+  }
+
+  async function reactivateAllAssets() {
+    const tables = ["eycon_products", "model_3d_assets", "model_3d_settings"];
+    let total = 0;
+    for (const table of tables) {
+      const result = await run(
+        `UPDATE ${table} SET active = 1, updated_at = CURRENT_TIMESTAMP WHERE active = 0`
+      );
+      total += result.changes || 0;
+    }
+    if (total > 0) {
+      console.log(`[eycon] Reactivados ${total} registro(s) con active=0`);
+    }
+    return total;
   }
 
   async function getProfile(userId) {
