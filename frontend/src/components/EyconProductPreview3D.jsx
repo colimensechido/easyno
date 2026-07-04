@@ -55,6 +55,7 @@ function createTokenPreview(product, tokenColor = null) {
   token.scale.setScalar(0.86);
   showcase.add(pedestal, ring, token);
   showcase.userData.animatePreview = (delta, elapsed) => {
+    token.userData.animateLoading?.(delta, elapsed);
     token.rotation.y += delta * 0.42;
     token.position.y = 0.12 + Math.sin(elapsed * 1.8) * 0.02;
   };

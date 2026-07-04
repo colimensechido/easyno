@@ -61,9 +61,26 @@ const textureSlots = [
 const gltfLoader = new GLTFLoader();
 const gltfCache = new Map();
 
+function backendAssetOrigin() {
+  const explicit = String(import.meta.env.VITE_ASSET_BASE_URL || import.meta.env.VITE_API_URL || "").trim();
+  if (explicit) return explicit.replace(/\/+$/, "");
+  if (typeof window === "undefined") return "";
+  const { protocol, hostname } = window.location;
+  if (hostname === "localhost" || hostname === "127.0.0.1") return "http://localhost:4000";
+  return `${protocol}//api.${hostname}`;
+}
+
+function resolveTokenAssetUrl(url) {
+  const safeUrl = String(url || "").trim();
+  if (safeUrl.startsWith("/uploads/models3d/")) {
+    return `${backendAssetOrigin()}${safeUrl}`;
+  }
+  return safeUrl;
+}
+
 function loadCustomTokenAsset(assetKey, assetUrl = "") {
   const asset = customTokenAssets[assetKey];
-  const url = asset?.url || assetUrl;
+  const url = resolveTokenAssetUrl(asset?.url || assetUrl);
   if (!url) return Promise.reject(new Error(`Modelo de ficha no registrado: ${assetKey}`));
   const cacheKey = `${assetKey || "uploaded"}:${url}`;
   if (!gltfCache.has(cacheKey)) {
@@ -185,6 +202,51 @@ function instantiateCustomModel(gltf, metadata, assetConfig, primary) {
   return normalizeCustomModel(root, metadata, assetConfig);
 }
 
+function createTokenLoadingSpinner(primary, secondary) {
+  const group = new THREE.Group();
+  const outer = new THREE.Mesh(
+    new THREE.TorusGeometry(0.58, 0.045, 10, 72, Math.PI * 1.55),
+    tokenMaterial(primary || "#22d3ee", {
+      metalness: 0.35,
+      roughness: 0.22,
+      emissive: primary || "#22d3ee",
+      emissiveIntensity: 0.35
+    })
+  );
+  const inner = new THREE.Mesh(
+    new THREE.TorusGeometry(0.34, 0.032, 8, 56, Math.PI * 1.25),
+    tokenMaterial(secondary || "#fbbf24", {
+      metalness: 0.45,
+      roughness: 0.2,
+      emissive: secondary || "#fbbf24",
+      emissiveIntensity: 0.28
+    })
+  );
+  const core = new THREE.Mesh(
+    new THREE.SphereGeometry(0.095, 24, 16),
+    tokenMaterial("#fff8dc", {
+      metalness: 0.2,
+      roughness: 0.24,
+      emissive: "#fbbf24",
+      emissiveIntensity: 0.55
+    })
+  );
+
+  outer.rotation.x = Math.PI / 2;
+  inner.rotation.x = Math.PI / 2;
+  inner.rotation.z = Math.PI;
+  core.position.y = 0.02;
+  group.position.y = 0.62;
+  group.add(outer, inner, core);
+  group.userData.loadingSpinner = true;
+  group.userData.animateLoading = (delta) => {
+    outer.rotation.z -= delta * 4.8;
+    inner.rotation.z += delta * 3.4;
+    core.scale.setScalar(1 + Math.sin(performance.now() * 0.008) * 0.08);
+  };
+  return group;
+}
+
 function createCustomTokenModel(assetKey, primary, secondary, metadata, factories) {
   const assetConfig = customTokenAssets[assetKey] || {
     url: metadata.assetUrl,
@@ -194,10 +256,12 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
   const group = new THREE.Group();
   const fallbackModel = metadata.fallbackModel || assetConfig.fallbackModel || "cat";
   const fallbackFactory = factories[fallbackModel] || factories.cat || factories.hat;
-  const placeholder = fallbackFactory(primary, secondary);
-  placeholder.scale.setScalar(0.92);
-  placeholder.userData.placeholder = true;
-  group.add(placeholder);
+  const loadingSpinner = createTokenLoadingSpinner(primary, secondary);
+  group.add(loadingSpinner);
+  group.userData.loadingAssetKey = assetKey;
+  group.userData.animateLoading = (delta, elapsed) => {
+    loadingSpinner.userData.animateLoading?.(delta, elapsed);
+  };
 
   let disposed = false;
   group.userData.dispose = () => {
@@ -209,9 +273,11 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
     .then((gltf) => {
       if (disposed || group.userData.disposed) return;
       const loadedModel = instantiateCustomModel(gltf, metadata, assetConfig, primary);
-      group.remove(placeholder);
-      disposeTokenObject(placeholder);
+      group.remove(loadingSpinner);
+      disposeTokenObject(loadingSpinner);
       group.add(loadedModel);
+      delete group.userData.loadingAssetKey;
+      delete group.userData.animateLoading;
       group.userData.loadedAssetKey = assetKey;
     })
     .catch(() => {
@@ -220,7 +286,11 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
         url: assetConfig.url,
         fallbackModel
       });
-      if (disposed || group.userData.disposed || group.children.length > 0) return;
+      if (disposed || group.userData.disposed) return;
+      group.remove(loadingSpinner);
+      disposeTokenObject(loadingSpinner);
+      delete group.userData.loadingAssetKey;
+      delete group.userData.animateLoading;
       group.add(fallbackFactory(primary, secondary));
     });
 

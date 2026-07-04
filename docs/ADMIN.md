@@ -193,8 +193,14 @@ los ajustes 3D guardados.
 
 Flujo localhost -> produccion:
 
-- En localhost, levanta backend con `MODEL_3D_WRITE_SEED=1` y guarda desde
-  `/admin`; esto actualiza `backend/model-3d-seed.json`.
+- En localhost, levanta backend con `MODEL_3D_WRITE_SEED=1` o
+  `EYCON_STORE_WRITE_SEED=1` y guarda desde `/admin`; esto actualiza
+  `backend/model-3d-seed.json`.
+- Tambien puedes exportar el estado actual de la tienda local con
+  `npm run export:eycon-seed`.
+- Ese seed versionable incluye productos EyCon, assets GLB aprobados y ajustes
+  3D. Si localhost muestra 85 productos activos, produccion debe llegar a 85
+  tras desplegar el seed.
 - Si subes GLB nuevos, versiona tambien `backend/uploads/models3d/*.glb`.
 - En Docker, el backend lee `model-3d-seed.json` al arrancar y copia los GLB
   versionados hacia `/app/uploads/models3d`, que queda persistido por volumen.
