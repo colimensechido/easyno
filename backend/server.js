@@ -456,13 +456,17 @@ async function syncSeededModelUploads() {
     return;
   }
 
+  let copied = 0;
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".glb")) continue;
     const sourcePath = path.join(modelSeedUploadsDir, entry.name);
     const targetPath = path.join(modelUploadsDir, entry.name);
-    await fs.promises.copyFile(sourcePath, targetPath, fs.constants.COPYFILE_EXCL).catch((error) => {
-      if (error.code !== "EEXIST") throw error;
-    });
+    await fs.promises.copyFile(sourcePath, targetPath);
+    copied += 1;
+  }
+
+  if (copied > 0) {
+    console.log(`[model3d] Uploads versionados listos: ${copied} GLB copiados a ${modelUploadsDir}`);
   }
 }
 
