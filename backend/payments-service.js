@@ -46,6 +46,8 @@ function paymentStatusFromProvider(providerStatus) {
   return "processing_error";
 }
 
+const OPEN_INTENT_STATUSES = ["created", "waiting_payment", "pending"];
+
 function createPaymentsService({ get, run, all, creditReward, grantRole, mercadopago }) {
   let queue = Promise.resolve();
 
@@ -156,6 +158,57 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     return get(`SELECT * FROM payment_intents WHERE id = ?`, [intentRow.id]);
   }
 
+  async function syncIntentWithProvider(intentRow) {
+    if (!mercadopago.isConfigured() || !intentRow?.external_reference) {
+      return intentRow;
+    }
+    if (intentRow.status === "approved" || intentRow.status === "cancelled") {
+      return intentRow;
+    }
+
+    const found = await mercadopago.findLatestPaymentByExternalReference(intentRow.external_reference).catch(() => null);
+    if (!found) return intentRow;
+
+    await run(`UPDATE payment_intents SET provider_payment_id = ? WHERE id = ?`, [String(found.id), intentRow.id]);
+    return applyProviderStatus(
+      { ...intentRow, provider_payment_id: String(found.id) },
+      found.status,
+      found
+    );
+  }
+
+  async function closeSupersededIntents(userId, { keepLatestOpen = false } = {}) {
+    const placeholders = OPEN_INTENT_STATUSES.map(() => "?").join(", ");
+    const rows = await all(
+      `SELECT * FROM payment_intents
+       WHERE user_id = ? AND status IN (${placeholders})
+       ORDER BY created_at DESC`,
+      [userId, ...OPEN_INTENT_STATUSES]
+    );
+
+    if (rows.length === 0) return 0;
+
+    const rowsToClose = keepLatestOpen ? rows.slice(1) : rows;
+    let cancelledCount = 0;
+
+    for (const row of rowsToClose) {
+      const synced = await syncIntentWithProvider(row);
+      if (synced.status === "approved") {
+        continue;
+      }
+      if (OPEN_INTENT_STATUSES.includes(synced.status)) {
+        await run(
+          `UPDATE payment_intents
+           SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [synced.id]
+        );
+        cancelledCount += 1;
+      }
+    }
+    return cancelledCount;
+  }
+
   async function createCheckout({ userId, packageId }) {
     const pkg = PACKAGES_BY_ID.get(packageId);
     if (!pkg) {
@@ -163,6 +216,8 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     }
 
     return serialize(async () => {
+      const cancelledPrevious = await closeSupersededIntents(userId);
+
       const id = crypto.randomUUID();
       const externalReference = `easyno-eycon-${userId}-${pkg.id}-${crypto.randomUUID().slice(0, 8)}`;
 
@@ -178,6 +233,7 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
         return {
           checkoutAvailable: false,
           configurationMissing: true,
+          cancelledPrevious,
           paymentIntent: serializeIntent(await get(`SELECT * FROM payment_intents WHERE id = ?`, [id]))
         };
       }
@@ -225,6 +281,7 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
         return {
           checkoutAvailable: true,
           configurationMissing: false,
+          cancelledPrevious,
           integrationWarnings: hasPublicNotification
             ? []
             : ["Mercado Pago no recibira webhooks automaticos hasta configurar una URL publica; el estado se sincroniza al volver del checkout."],
@@ -368,6 +425,7 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
   }
 
   async function listUserHistory(userId) {
+    await closeSupersededIntents(userId, { keepLatestOpen: true });
     const rows = await all(`SELECT * FROM payment_intents WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`, [userId]);
     return rows.map(serializeIntent);
   }

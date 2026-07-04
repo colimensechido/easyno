@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Pago procesado · EasyNo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050807;
+        --gold: #f4c542;
+        --text: #f4eedc;
+        --muted: rgba(244, 238, 220, 0.62);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 1.5rem;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        background:
+          radial-gradient(circle at top, rgba(244, 197, 66, 0.12), transparent 42%),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .card {
+        width: min(100%, 420px);
+        border: 1px solid rgba(244, 197, 66, 0.28);
+        border-radius: 1rem;
+        background: rgba(16, 26, 23, 0.92);
+        padding: 1.6rem 1.4rem;
+        text-align: center;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      }
+
+      .icon {
+        font-size: 2.4rem;
+        line-height: 1;
+        margin-bottom: 0.75rem;
+      }
+
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.25rem;
+        font-weight: 800;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 0.92rem;
+      }
+
+      .hint {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(244, 197, 66, 0.14);
+        font-size: 0.78rem;
+        color: rgba(244, 238, 220, 0.48);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="icon" id="status-icon">✓</div>
+      <h1 id="status-title">Pago registrado</h1>
+      <p id="status-copy">
+        Tu pago ya se reflejó en EasyNo. Esta pestaña se cerrará sola; si no, ciérrala manualmente y vuelve a la pestaña anterior.
+      </p>
+      <p class="hint">No necesitas hacer nada más aquí.</p>
+    </main>
+    <script>
+      (function () {
+        var params = new URLSearchParams(window.location.search);
+        var marker = params.get("status") || "success";
+        var mpStatus = params.get("collection_status") || params.get("status") || marker;
+        var paymentId = params.get("payment_id") || params.get("collection_id") || "";
+        var externalReference = params.get("external_reference") || params.get("external_reference") || "";
+
+        var title = document.getElementById("status-title");
+        var copy = document.getElementById("status-copy");
+        var icon = document.getElementById("status-icon");
+
+        if (marker === "failure" || mpStatus === "rejected") {
+          icon.textContent = "✕";
+          title.textContent = "Pago no completado";
+          copy.textContent = "El pago no se aprobó. Puedes cerrar esta pestaña y volver a EasyNo para intentarlo de nuevo.";
+        } else if (marker === "pending" || mpStatus === "pending" || mpStatus === "in_process") {
+          icon.textContent = "…";
+          title.textContent = "Pago en proceso";
+          copy.textContent = "Mercado Pago está procesando tu pago. Cierra esta pestaña y espera la confirmación en EasyNo.";
+        }
+
+        var payload = {
+          type: "easyno-payment-return",
+          marker: marker,
+          status: mpStatus,
+          paymentId: paymentId,
+          externalReference: externalReference
+        };
+
+        try {
+          if (window.opener && !window.opener.closed) {
+            window.opener.postMessage(payload, window.location.origin);
+          }
+        } catch (error) {
+          // noop
+        }
+
+        function tryClose() {
+          try {
+            window.close();
+          } catch (error) {
+            // noop
+          }
+        }
+
+        window.setTimeout(tryClose, 900);
+        window.setTimeout(tryClose, 2200);
+      })();
+    </script>
+  </body>
+</html>

@@ -33,9 +33,9 @@ function buildCheckoutUrls() {
   const publicApiUrl = cleanUrl(process.env.MERCADOPAGO_PUBLIC_API_URL);
 
   return {
-    success: cleanUrl(process.env.MERCADOPAGO_SUCCESS_URL) || (publicSiteUrl ? `${publicSiteUrl}/?payment=success` : null),
-    pending: cleanUrl(process.env.MERCADOPAGO_PENDING_URL) || (publicSiteUrl ? `${publicSiteUrl}/?payment=pending` : null),
-    failure: cleanUrl(process.env.MERCADOPAGO_FAILURE_URL) || (publicSiteUrl ? `${publicSiteUrl}/?payment=failure` : null),
+    success: cleanUrl(process.env.MERCADOPAGO_SUCCESS_URL) || (publicSiteUrl ? `${publicSiteUrl}/payment-return.html?status=success` : null),
+    pending: cleanUrl(process.env.MERCADOPAGO_PENDING_URL) || (publicSiteUrl ? `${publicSiteUrl}/payment-return.html?status=pending` : null),
+    failure: cleanUrl(process.env.MERCADOPAGO_FAILURE_URL) || (publicSiteUrl ? `${publicSiteUrl}/payment-return.html?status=failure` : null),
     notification: cleanUrl(process.env.MERCADOPAGO_WEBHOOK_URL) || (publicApiUrl ? `${publicApiUrl}/api/payments/webhook` : null)
   };
 }

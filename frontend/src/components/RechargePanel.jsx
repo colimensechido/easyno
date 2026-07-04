@@ -37,6 +37,7 @@ const STATUS_LABELS = {
   pending: "En proceso",
   approved: "Aprobado",
   rejected: "Rechazado",
+  cancelled: "Cancelado",
   refunded: "Reembolsado",
   processing_error: "Error"
 };
@@ -164,11 +165,47 @@ export default function RechargePanel({ token, onProfileChange, onUserRefresh })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // La pestaña de Mercado Pago avisa a esta ventana cuando termina el checkout.
+  useEffect(() => {
+    async function onPaymentReturnMessage(event) {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "easyno-payment-return") return;
+
+      const paymentId = event.data.paymentId || null;
+      const externalReference = event.data.externalReference || null;
+
+      try {
+        const result = await api("/api/payments/return-sync", {
+          method: "POST",
+          token,
+          body: {
+            paymentIntentId: activeIntentId || undefined,
+            paymentId: paymentId || undefined,
+            externalReference: externalReference || undefined
+          }
+        });
+        if (result.paymentIntent?.status === "approved") {
+          handleApproved(result.paymentIntent);
+        } else {
+          await loadAll();
+        }
+      } catch {
+        // el polling normal sigue intentando
+      }
+    }
+
+    window.addEventListener("message", onPaymentReturnMessage);
+    return () => window.removeEventListener("message", onPaymentReturnMessage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, activeIntentId]);
+
   // Al entrar (o recargar la página) retoma automáticamente la escucha de
   // cualquier compra que haya quedado pendiente, sin que el usuario tenga que hacer nada.
   useEffect(() => {
     if (resumedRef.current || activeIntentId) return;
-    const pending = history.find((item) => PENDING_STATUSES.has(item.status));
+    const pending = history
+      .filter((item) => PENDING_STATUSES.has(item.status))
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))[0];
     if (pending) {
       resumedRef.current = true;
       setActiveIntentId(pending.id);
@@ -228,10 +265,14 @@ export default function RechargePanel({ token, onProfileChange, onUserRefresh })
           handleApproved(result.paymentIntent);
           return;
         }
-        if (status === "rejected" || status === "refunded") {
+        if (status === "cancelled" || status === "rejected" || status === "refunded") {
           setPolling(false);
           setActiveIntentId(null);
-          setNotice(status === "rejected" ? "El pago fue rechazado por Mercado Pago." : "El pago fue reembolsado.");
+          if (status === "cancelled") {
+            setNotice("Esta compra fue cancelada porque iniciaste otra mas reciente.");
+          } else {
+            setNotice(status === "rejected" ? "El pago fue rechazado por Mercado Pago." : "El pago fue reembolsado.");
+          }
           loadAll();
           return;
         }
@@ -283,15 +324,22 @@ export default function RechargePanel({ token, onProfileChange, onUserRefresh })
 
       if (result.configurationMissing) {
         setError("Mercado Pago no esta configurado en el servidor todavia.");
+        setActiveIntentId(null);
+        await loadAll();
         return;
       }
 
       const checkoutUrl = result.paymentIntent?.initPoint || result.paymentIntent?.sandboxInitPoint;
       if (checkoutUrl) {
         window.open(checkoutUrl, "_blank", "noopener,noreferrer");
-        setNotice("Abrimos Mercado Pago en una pestaña nueva. Quédate tranquilo: en cuanto confirmes el pago lo detectamos solos y te avisamos aquí.");
+        const cancelledNote = Number(result.cancelledPrevious || 0) > 0
+          ? ` Cerramos ${result.cancelledPrevious} compra(s) anterior(es) que seguian abiertas.`
+          : "";
+        setNotice(`Abrimos Mercado Pago en una pestaña nueva. Quédate tranquilo: en cuanto confirmes el pago lo detectamos solos y te avisamos aquí.${cancelledNote}`);
         resumedRef.current = true;
         setActiveIntentId(result.paymentIntent.id);
+      } else {
+        setActiveIntentId(null);
       }
 
       await loadAll();
@@ -337,7 +385,9 @@ export default function RechargePanel({ token, onProfileChange, onUserRefresh })
     );
   }
 
-  const pendingHistory = history.filter((item) => item.status !== "approved");
+  const pendingHistory = history
+    .filter((item) => PENDING_STATUSES.has(item.status))
+    .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
   return (
     <section className="recharge-panel">
