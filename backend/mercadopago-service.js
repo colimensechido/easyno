@@ -1,3 +1,5 @@
+const crypto = require("crypto");
+
 const MERCADOPAGO_API_BASE = (process.env.MERCADOPAGO_API_BASE_URL || "https://api.mercadopago.com").replace(/\/+$/, "");
 
 function getAccessToken() {
@@ -46,14 +48,23 @@ async function jsonRequest(method, url, payload) {
     throw new Error("MERCADOPAGO_ACCESS_TOKEN no configurado");
   }
 
-  const response = await fetch(url, {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  let response;
+  try {
+    response = await fetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      Accept: "application/json"
     },
-    body: payload !== undefined ? JSON.stringify(payload) : undefined
-  });
+    body: payload !== undefined ? JSON.stringify(payload) : undefined,
+    signal: controller.signal
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const text = await response.text();
   let data = {};
@@ -68,6 +79,40 @@ async function jsonRequest(method, url, payload) {
   }
 
   return data;
+}
+
+function validateWebhookSignature({ xSignature, xRequestId, dataId }) {
+  const secret = String(process.env.MERCADOPAGO_WEBHOOK_SECRET || "").trim();
+  if (!secret) {
+    return { valid: process.env.NODE_ENV !== "production", configured: false };
+  }
+
+  const signature = String(xSignature || "");
+  const requestId = String(xRequestId || "").trim();
+  const normalizedDataId = String(dataId || "").trim().toLowerCase();
+  const parts = Object.fromEntries(signature.split(",").map((part) => {
+    const separator = part.indexOf("=");
+    return separator > 0
+      ? [part.slice(0, separator).trim(), part.slice(separator + 1).trim()]
+      : ["", ""];
+  }));
+  if (!parts.ts || !parts.v1 || !requestId || !normalizedDataId) {
+    return { valid: false, configured: true };
+  }
+
+  const timestamp = Number(parts.ts);
+  if (!Number.isFinite(timestamp) || Math.abs(Date.now() - timestamp) > 10 * 60 * 1000) {
+    return { valid: false, configured: true };
+  }
+
+  const manifest = `id:${normalizedDataId};request-id:${requestId};ts:${parts.ts};`;
+  const expected = crypto.createHmac("sha256", secret).update(manifest).digest("hex");
+  const received = String(parts.v1).toLowerCase();
+  if (received.length !== expected.length) return { valid: false, configured: true };
+  return {
+    valid: crypto.timingSafeEqual(Buffer.from(received, "utf8"), Buffer.from(expected, "utf8")),
+    configured: true
+  };
 }
 
 function createCheckoutPreference(payload) {
@@ -91,5 +136,6 @@ module.exports = {
   isPublicHttpsUrl,
   createCheckoutPreference,
   getPayment,
-  findLatestPaymentByExternalReference
+  findLatestPaymentByExternalReference,
+  validateWebhookSignature
 };

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --watch server.js",
     "start": "node server.js",
+    "test": "node --test admin-roles.test.js eycon-store-seed.test.js payments-security.test.js survival-service.test.js",
     "export:eycon-seed": "node scripts/export-eycon-store-seed.js",
     "test:eycon-seed": "node --test eycon-store-seed.test.js"
   },
@@ -14,6 +15,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^4.18.3",
+    "express-rate-limit": "^8.5.2",
+    "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.2",
     "socket.io": "^4.8.3",
     "sqlite3": "^6.0.1"

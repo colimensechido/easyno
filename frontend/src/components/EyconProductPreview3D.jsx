@@ -1,4 +1,4 @@
-import { Compass, Map, MousePointer2, RotateCcw, ScanSearch } from "lucide-react";
+import { Compass, LoaderCircle, Map, MousePointer2, RotateCcw, ScanSearch } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -36,7 +36,7 @@ function isTokenPreview(product) {
   return product?.slotKey === "TOKEN" || product?.category === "TOKEN" || String(product?.category || "").startsWith("TOKEN_");
 }
 
-function createTokenPreview(product, tokenColor = null) {
+function createTokenPreview(product, tokenColor = null, onLoadState = null) {
   const metadata = product?.metadata || {};
   const showcase = new THREE.Group();
   const pedestal = mesh(
@@ -50,7 +50,7 @@ function createTokenPreview(product, tokenColor = null) {
     [0, 0.105, 0],
     [Math.PI / 2, 0, 0]
   );
-  const token = createCosmeticTokenModel3D(product, tokenColor);
+  const token = createCosmeticTokenModel3D(product, tokenColor, onLoadState);
   token.position.y = 0.12;
   token.scale.setScalar(0.86);
   showcase.add(pedestal, ring, token);
@@ -123,8 +123,8 @@ function createGenericPreview(product) {
   return group;
 }
 
-function createProductObject(product, tokenColor = null) {
-  if (isTokenPreview(product)) return createTokenPreview(product, tokenColor);
+function createProductObject(product, tokenColor = null, onLoadState = null) {
+  if (isTokenPreview(product)) return createTokenPreview(product, tokenColor, onLoadState);
   if (product?.category === "DICE" || product?.category === "DICE_FX") return createDicePreview(product);
   if (product?.category === "BOARD_THEME") return createBoardPreview(product);
   return createGenericPreview(product);
@@ -160,6 +160,7 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
   const sceneStateRef = useRef(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [renderError, setRenderError] = useState(false);
+  const [modelLoadState, setModelLoadState] = useState("loaded");
   const previewBadgeLabel = product?.metadata?.renderer === "gltf"
     ? "Modelo 3D"
     : product?.category === "BOARD_THEME"
@@ -265,7 +266,9 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
     previewRoot.children.forEach(disposeObject);
     previewRoot.clear();
     if (state) state.product = product || null;
-    if (product) previewRoot.add(createProductObject(product, tokenColor));
+    const expectsRemoteModel = isTokenPreview(product) && product?.metadata?.renderer === "gltf";
+    setModelLoadState(expectsRemoteModel ? "loading" : "loaded");
+    if (product) previewRoot.add(createProductObject(product, tokenColor, setModelLoadState));
     frameCurrentObject();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product, tokenColor]);
@@ -320,6 +323,16 @@ export default function EyconProductPreview3D({ product, tokenColor = null }) {
   return (
     <div className="eycon-3d-preview">
       <div className="eycon-3d-stage" ref={containerRef} />
+      {modelLoadState === "loading" && !renderError && (
+        <div className="eycon-3d-loading" role="status" aria-live="polite">
+          <LoaderCircle size={34} />
+          <strong>Cargando ficha 3D</strong>
+          <span>Descargando y preparando el modelo...</span>
+        </div>
+      )}
+      {modelLoadState === "error" && !renderError && (
+        <div className="eycon-3d-load-warning">No cargó el modelo; mostramos una figura de respaldo.</div>
+      )}
       {renderError && (
         <div className="eycon-3d-fallback" style={{ color: product?.metadata?.color || product?.metadata?.accentColor }}>
           <strong>{product?.preview || "✦"}</strong>

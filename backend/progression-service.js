@@ -72,6 +72,7 @@ function emptyDay(activityDate) {
     blackjackPlayed: 0,
     blackjackWins: 0,
     monopolyPlayed: 0,
+    monopolyWins: 0,
     monopolyMaxTurns: 0
   };
 }
@@ -113,12 +114,14 @@ function createProgressionService({ get, run, all, creditReward }) {
         blackjack_played INTEGER NOT NULL DEFAULT 0,
         blackjack_wins INTEGER NOT NULL DEFAULT 0,
         monopoly_played INTEGER NOT NULL DEFAULT 0,
+        monopoly_wins INTEGER NOT NULL DEFAULT 0,
         monopoly_max_turns INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, activity_date),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       )
     `);
+    await run("ALTER TABLE player_activity_daily ADD COLUMN monopoly_wins INTEGER NOT NULL DEFAULT 0").catch(() => {});
     await run(`CREATE INDEX IF NOT EXISTS idx_activity_daily_date ON player_activity_daily(activity_date)`);
     await run(`
       CREATE TABLE IF NOT EXISTS battle_pass_day_claims (
@@ -154,7 +157,7 @@ function createProgressionService({ get, run, all, creditReward }) {
     `);
   }
 
-  async function recordActivity({ userId, gameKey = "OTHER", won = false, monopolyTurns = 0 }) {
+  async function recordActivity({ userId, gameKey = "OTHER", won = false, monopolyTurns = 0, winOnly = false }) {
     if (!Number.isInteger(Number(userId))) return;
     const activityDate = todayKey();
     const isBlackjack = gameKey === "BLACKJACK";
@@ -165,21 +168,24 @@ function createProgressionService({ get, run, all, creditReward }) {
       await run(
         `INSERT INTO player_activity_daily (
           user_id, activity_date, games_played, blackjack_played, blackjack_wins,
-          monopoly_played, monopoly_max_turns
-        ) VALUES (?, ?, 1, ?, ?, ?, ?)
+          monopoly_played, monopoly_wins, monopoly_max_turns
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id, activity_date) DO UPDATE SET
           games_played = games_played + 1,
           blackjack_played = blackjack_played + excluded.blackjack_played,
           blackjack_wins = blackjack_wins + excluded.blackjack_wins,
           monopoly_played = monopoly_played + excluded.monopoly_played,
+          monopoly_wins = monopoly_wins + excluded.monopoly_wins,
           monopoly_max_turns = MAX(monopoly_max_turns, excluded.monopoly_max_turns),
           updated_at = CURRENT_TIMESTAMP`,
         [
           userId,
           activityDate,
-          isBlackjack ? 1 : 0,
+          winOnly ? 0 : 1,
+          isBlackjack && !winOnly ? 1 : 0,
           isBlackjack && won ? 1 : 0,
-          isMonopoly ? 1 : 0,
+          isMonopoly && !winOnly ? 1 : 0,
+          isMonopoly && won ? 1 : 0,
           isMonopoly ? turns : 0
         ]
       );
@@ -236,7 +242,8 @@ function createProgressionService({ get, run, all, creditReward }) {
     const rows = await all(
       `SELECT activity_date AS activityDate, games_played AS gamesPlayed,
               blackjack_played AS blackjackPlayed, blackjack_wins AS blackjackWins,
-              monopoly_played AS monopolyPlayed, monopoly_max_turns AS monopolyMaxTurns
+              monopoly_played AS monopolyPlayed, monopoly_wins AS monopolyWins,
+              monopoly_max_turns AS monopolyMaxTurns
        FROM player_activity_daily
        WHERE user_id = ? AND activity_date IN (${dateKeys.map(() => "?").join(",")})`,
       [userId, ...dateKeys]

@@ -46,6 +46,10 @@ function paymentStatusFromProvider(providerStatus) {
   return "processing_error";
 }
 
+function sameMoney(first, second) {
+  return Math.abs(Number(first) - Number(second)) < 0.00001;
+}
+
 const OPEN_INTENT_STATUSES = ["created", "waiting_payment", "pending"];
 
 function createPaymentsService({ get, run, all, creditReward, grantRole, mercadopago }) {
@@ -81,6 +85,10 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     `);
     await run(`CREATE INDEX IF NOT EXISTS idx_payment_intents_user ON payment_intents(user_id)`);
     await run(`CREATE INDEX IF NOT EXISTS idx_payment_intents_payment_id ON payment_intents(provider_payment_id)`);
+    await run("ALTER TABLE payment_intents ADD COLUMN validation_error TEXT").catch(() => {});
+    await run("ALTER TABLE payment_intents ADD COLUMN reversed_at TEXT").catch(() => {});
+    await run("ALTER TABLE payment_intents ADD COLUMN reversal_units INTEGER NOT NULL DEFAULT 0").catch(() => {});
+    await run("ALTER TABLE payment_intents ADD COLUMN reversal_shortfall_units INTEGER NOT NULL DEFAULT 0").catch(() => {});
 
     await run(`
       CREATE TABLE IF NOT EXISTS payment_webhook_events (
@@ -143,7 +151,83 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     await run(`UPDATE payment_intents SET granted_at = CURRENT_TIMESTAMP WHERE id = ?`, [intentRow.id]);
   }
 
+  async function reversePackageIfNeeded(intentRow, providerStatus) {
+    if (!intentRow.granted_at || intentRow.reversed_at) return;
+    const account = await get("SELECT balance_units AS balanceUnits FROM eycon_accounts WHERE user_id = ?", [intentRow.user_id]);
+    const available = Math.max(0, Number(account?.balanceUnits || 0));
+    const reversalUnits = Math.min(available, Number(intentRow.amount_units || 0));
+    if (reversalUnits > 0) {
+      await creditReward({
+        userId: intentRow.user_id,
+        amountUnits: -reversalUnits,
+        movementType: "PAYMENT_REVERSAL",
+        referenceId: intentRow.id,
+        description: `Reversion de pago Mercado Pago (${providerStatus})`,
+        idempotencyKey: `payment-reversal:${intentRow.id}`
+      });
+    }
+    const shortfall = Math.max(0, Number(intentRow.amount_units || 0) - reversalUnits);
+    await run(
+      `UPDATE payment_intents SET reversed_at = CURRENT_TIMESTAMP, reversal_units = ?, reversal_shortfall_units = ? WHERE id = ?`,
+      [reversalUnits, shortfall, intentRow.id]
+    );
+    await run("DELETE FROM user_roles WHERE user_id = ? AND role_key = 'vip' AND source = ?", [
+      intentRow.user_id,
+      `payment:${intentRow.id}`
+    ]).catch(() => {});
+    if (String(providerStatus || "").toLowerCase() === "charged_back") {
+      await run("UPDATE users SET active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [intentRow.user_id]);
+    }
+  }
+
+  function validateProviderPayment(intentRow, paymentData) {
+    if (!intentRow || !paymentData || paymentData.id == null) {
+      throw clientError("Respuesta de pago incompleta", 502);
+    }
+    if (String(paymentData.external_reference || "") !== String(intentRow.external_reference || "")) {
+      throw clientError("El pago no corresponde a este intento", 409);
+    }
+    if (!sameMoney(paymentData.transaction_amount, intentRow.amount_usd)) {
+      throw clientError("El importe confirmado no coincide con el paquete", 409);
+    }
+    if (String(paymentData.currency_id || "").toUpperCase() !== "USD") {
+      throw clientError("La moneda confirmada no coincide con el paquete", 409);
+    }
+
+    const metadata = paymentData.metadata || {};
+    if (
+      metadata.payment_intent_id && String(metadata.payment_intent_id) !== String(intentRow.id)
+    ) {
+      throw clientError("La metadata del pago no corresponde al intento", 409);
+    }
+    if (metadata.user_id != null && Number(metadata.user_id) !== Number(intentRow.user_id)) {
+      throw clientError("El propietario del pago no coincide", 409);
+    }
+    if (metadata.package_id && String(metadata.package_id) !== String(intentRow.package_id)) {
+      throw clientError("El paquete confirmado no coincide", 409);
+    }
+
+    const expectedCollectorId = String(process.env.MERCADOPAGO_COLLECTOR_ID || "").trim();
+    if (expectedCollectorId && String(paymentData.collector_id || "") !== expectedCollectorId) {
+      throw clientError("El pago fue acreditado a otro vendedor", 409);
+    }
+    const checkoutMode = String(process.env.MERCADOPAGO_CHECKOUT_MODE || "").toLowerCase();
+    if (checkoutMode === "production" && paymentData.live_mode === false) {
+      throw clientError("No se aceptan pagos de prueba en produccion", 409);
+    }
+    return true;
+  }
+
   async function applyProviderStatus(intentRow, providerStatus, rawResponse) {
+    try {
+      validateProviderPayment(intentRow, rawResponse);
+    } catch (error) {
+      await run(
+        `UPDATE payment_intents SET validation_error = ?, raw_provider_response = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [String(error.message || error).slice(0, 240), JSON.stringify(rawResponse || {}), intentRow.id]
+      );
+      throw error;
+    }
     const status = paymentStatusFromProvider(providerStatus);
     await run(
       `UPDATE payment_intents
@@ -154,6 +238,8 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     const updated = { ...intentRow, status };
     if (status === "approved") {
       await grantPackageIfApproved(updated);
+    } else if (status === "refunded") {
+      await reversePackageIfNeeded(intentRow, providerStatus);
     }
     return get(`SELECT * FROM payment_intents WHERE id = ?`, [intentRow.id]);
   }
@@ -352,6 +438,11 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
       }
 
       if (paymentData && resolvedPaymentId) {
+        validateProviderPayment(intentRow, paymentData);
+        const paymentOwner = await findByProviderPaymentId(resolvedPaymentId);
+        if (paymentOwner && paymentOwner.id !== intentRow.id) {
+          throw clientError("Este pago ya fue asociado a otro intento", 409);
+        }
         await run(`UPDATE payment_intents SET provider_payment_id = ? WHERE id = ?`, [resolvedPaymentId, intentRow.id]);
         intentRow = await applyProviderStatus({ ...intentRow, provider_payment_id: resolvedPaymentId }, paymentData.status, paymentData);
       }
@@ -360,11 +451,21 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     });
   }
 
-  async function handleWebhook({ query = {}, payload = {} }) {
+  async function handleWebhook({ query = {}, payload = {}, headers = {} }) {
     const providerEventId = query.id || payload.id || payload?.data?.id || null;
     const eventType = query.type || query.topic || payload.type || null;
 
     return serialize(async () => {
+      const signature = mercadopago.validateWebhookSignature({
+        xSignature: headers["x-signature"],
+        xRequestId: headers["x-request-id"],
+        dataId: query["data.id"] || payload?.data?.id || providerEventId
+      });
+      if (!signature.valid) {
+        throw clientError(signature.configured
+          ? "Firma de webhook invalida"
+          : "MERCADOPAGO_WEBHOOK_SECRET requerido en produccion", 401);
+      }
       let event = null;
       if (providerEventId) {
         event = await get(
@@ -405,6 +506,11 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
         }
 
         if (intentRow) {
+          validateProviderPayment(intentRow, paymentData);
+          const paymentOwner = await findByProviderPaymentId(paymentLookupId);
+          if (paymentOwner && paymentOwner.id !== intentRow.id) {
+            throw clientError("Pago ya asociado a otro intento", 409);
+          }
           await run(`UPDATE payment_intents SET provider_payment_id = ? WHERE id = ?`, [String(paymentLookupId), intentRow.id]);
           await applyProviderStatus({ ...intentRow, provider_payment_id: String(paymentLookupId) }, paymentData.status, paymentData);
         }
@@ -437,7 +543,8 @@ function createPaymentsService({ get, run, all, creditReward, grantRole, mercado
     returnSync,
     handleWebhook,
     listUserHistory,
-    serializeIntent
+    serializeIntent,
+    validateProviderPayment
   };
 }
 

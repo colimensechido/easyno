@@ -99,6 +99,7 @@ export function animatePlayerPiece(piece, delta, elapsed) {
   piece.position.lerp(target, speed);
   piece.rotation.y += delta * (distance > 0.04 ? 1.55 : 0.55);
   if (piece.userData.cosmeticModel) {
+    piece.userData.cosmeticModel.userData.animateLoading?.(delta, elapsed);
     piece.userData.cosmeticModel.rotation.y += delta * (distance > 0.04 ? 2.4 : 0.28);
   }
   const hop = distance > 0.04 ? Math.sin(Math.min(1, distance / 0.74) * Math.PI) * 0.17 : 0;

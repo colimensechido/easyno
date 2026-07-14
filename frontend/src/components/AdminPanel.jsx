@@ -2,6 +2,8 @@ import {
   Activity,
   ArrowLeft,
   Boxes,
+  Bug,
+  Camera,
   CheckCircle2,
   Coins,
   Gem,
@@ -30,6 +32,7 @@ const tabs = [
   { key: "store", label: "Tienda 3D", icon: Boxes },
   { key: "stats", label: "Estadisticas", icon: Activity },
   { key: "chat", label: "Chat", icon: MessageSquare },
+  { key: "reports", label: "Reportes", icon: Bug },
   { key: "logs", label: "Logs", icon: Shield }
 ];
 
@@ -609,6 +612,10 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
   });
   const [chatFilters, setChatFilters] = useState({ q: "", userId: "", worldId: "", from: "", to: "" });
   const [chatMessages, setChatMessages] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [selectedReportId, setSelectedReportId] = useState("");
+  const [reportDraft, setReportDraft] = useState({ status: "OPEN", adminNotes: "" });
+  const [reportScreenshotUrl, setReportScreenshotUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -659,6 +666,10 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
   const selectedUser = useMemo(
     () => users.find((user) => String(user.id) === String(selectedUserId)) || users[0] || null,
     [selectedUserId, users]
+  );
+  const selectedReport = useMemo(
+    () => reports.find((report) => report.id === selectedReportId) || reports[0] || null,
+    [reports, selectedReportId]
   );
   const selectedStoreProduct = useMemo(
     () => productCatalog.find((product) => product.id === selectedStoreProductId) || productCatalog[0] || null,
@@ -732,6 +743,32 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
     });
     setPasswordDraft({ password: "", reason: "" });
   }, [selectedUser?.id]);
+
+  useEffect(() => {
+    if (activeTab !== "reports") return;
+    loadReports();
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!selectedReport) return;
+    setSelectedReportId(selectedReport.id);
+    setReportDraft({ status: selectedReport.status, adminNotes: selectedReport.adminNotes || "" });
+    if (reportScreenshotUrl) URL.revokeObjectURL(reportScreenshotUrl);
+    setReportScreenshotUrl("");
+    if (selectedReport.hasScreenshot) {
+      fetch(`/api/admin/reports/${selectedReport.id}/screenshot`, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).then((response) => {
+        if (response.status === 401) {
+          window.dispatchEvent(new CustomEvent("easyno:auth-expired", {
+            detail: { message: "Tu sesión expiró mientras revisabas administración." }
+          }));
+        }
+        if (!response.ok) throw new Error("No se pudo cargar la captura");
+        return response.blob();
+      }).then((blob) => setReportScreenshotUrl(URL.createObjectURL(blob))).catch(() => {});
+    }
+  }, [selectedReport?.id]);
 
   useEffect(() => {
     if (productDraftMode !== "edit" || !selectedStoreProduct) return;
@@ -851,6 +888,38 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
       setError("");
     } catch (nextError) {
       setError(nextError.message || "No se pudo cargar chat");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function loadReports() {
+    setBusy(true);
+    try {
+      const payload = await api("/api/admin/reports", { token });
+      setReports(payload.reports || []);
+      setSelectedReportId((current) => current || payload.reports?.[0]?.id || "");
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudieron cargar los reportes");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateReport(event) {
+    event.preventDefault();
+    if (!selectedReport) return;
+    setBusy(true);
+    try {
+      const payload = await api(`/api/admin/reports/${selectedReport.id}`, {
+        method: "PATCH", token, body: reportDraft
+      });
+      setReports(payload.reports || []);
+      setNotice("Reporte actualizado.");
+      setError("");
+    } catch (nextError) {
+      setError(nextError.message || "No se pudo actualizar el reporte");
     } finally {
       setBusy(false);
     }
@@ -1876,6 +1945,46 @@ export default function AdminPanel({ token, currentUser, onBack, onLogout, onAdm
               </aside>
             </div>
           </section>
+        </section>
+      )}
+
+      {activeTab === "reports" && (
+        <section className="admin-panel is-wide admin-reports-panel">
+          <header><Bug size={17} /> Bugs y sugerencias <button type="button" onClick={loadReports} disabled={busy}><RefreshCw size={14} /> Actualizar</button></header>
+          <div className="admin-reports-layout">
+            <aside className="admin-report-list">
+              {reports.map((report) => (
+                <button type="button" key={report.id} className={selectedReport?.id === report.id ? "is-active" : ""} onClick={() => setSelectedReportId(report.id)}>
+                  <span><strong>{report.reportType === "BUG" ? "Bug" : "Sugerencia"} · {report.title}</strong><small>{report.username} · {formatDate(report.createdAt)}</small></span>
+                  <em className={`report-status is-${report.status.toLowerCase()}`}>{report.status}</em>
+                </button>
+              ))}
+              {!reports.length && <p>No hay reportes todavía.</p>}
+            </aside>
+            {selectedReport && (
+              <article className="admin-report-detail">
+                <div className="admin-report-heading"><span><small>#{selectedReport.id.slice(0, 8)}</small><h3>{selectedReport.title}</h3><p>{selectedReport.description}</p></span></div>
+                {selectedReport.hasScreenshot && (
+                  <div className="admin-report-screenshot">
+                    {reportScreenshotUrl ? <img src={reportScreenshotUrl} alt={`Captura de ${selectedReport.title}`} /> : <span><Camera size={24} /> Cargando captura...</span>}
+                  </div>
+                )}
+                <div className="admin-report-context">
+                  <span><strong>Vista</strong><small>{selectedReport.context?.view || "—"}</small></span>
+                  <span><strong>Ruta</strong><small>{selectedReport.context?.path || "—"}</small></span>
+                  <span><strong>Sala</strong><small>{selectedReport.context?.worldName || "—"}</small></span>
+                  <span><strong>Viewport</strong><small>{selectedReport.context?.viewport || "—"}</small></span>
+                  <span className="is-wide"><strong>Navegador</strong><small>{selectedReport.context?.userAgent || "—"}</small></span>
+                  {!!selectedReport.context?.clientErrors?.length && <span className="is-wide"><strong>Errores recientes</strong><small>{selectedReport.context.clientErrors.join(" | ")}</small></span>}
+                </div>
+                <form className="admin-form-stack" onSubmit={updateReport}>
+                  <label><strong>Estado</strong><select value={reportDraft.status} onChange={(event) => setReportDraft((current) => ({ ...current, status: event.target.value }))}><option value="OPEN">Abierto</option><option value="IN_REVIEW">En revisión</option><option value="RESOLVED">Resuelto</option><option value="DISMISSED">Descartado</option></select></label>
+                  <label><strong>Notas internas</strong><textarea rows="4" maxLength="2000" value={reportDraft.adminNotes} onChange={(event) => setReportDraft((current) => ({ ...current, adminNotes: event.target.value }))} placeholder="Diagnóstico, responsable, solución..." /></label>
+                  <button type="submit" disabled={busy}><CheckCircle2 size={15} /> Guardar seguimiento</button>
+                </form>
+              </article>
+            )}
+          </div>
         </section>
       )}
 

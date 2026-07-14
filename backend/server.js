@@ -6,6 +6,8 @@ const crypto = require("crypto");
 const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
+const helmet = require("helmet");
+const { rateLimit } = require("express-rate-limit");
 const sqlite3 = require("sqlite3").verbose();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -23,6 +25,9 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || "local-dev-secret-change-me";
+if (process.env.NODE_ENV === "production" && JWT_SECRET === "local-dev-secret-change-me") {
+  throw new Error("JWT_SECRET seguro es obligatorio en produccion");
+}
 const STARTING_BALANCE = 5000;
 const REQUIRED_DISH_SCRUBS = 100;
 const BETTING_WINDOW_MS = 7000;
@@ -72,6 +77,7 @@ const io = new Server(server, {
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, "database.sqlite");
 const modelUploadsDir = path.join(__dirname, "uploads", "models3d");
 const modelSeedUploadsDir = path.join(__dirname, "seed-uploads", "models3d");
+const reportUploadsDir = path.join(__dirname, "uploads", "reports");
 const db = new sqlite3.Database(dbPath);
 const blackjackSessions = new Map();
 const worldPresence = new Map();
@@ -199,12 +205,27 @@ const monopolyService = createMonopolyService({
     const turns = Number(state?.turn?.number || 0);
     if (turns >= MONOPOLY_MIN_TURNS_FOR_ACTIVITY) {
       for (const userId of participantIds) {
-        if (alreadyCredited.has(userId)) continue;
-        recordPlayActivity(userId, "MONOPOLY", { monopolyTurns: turns });
+        if (alreadyCredited.has(userId)) {
+          if (Number(userId) === Number(state?.winnerId)) {
+            recordPlayActivity(userId, "MONOPOLY", { won: true, winOnly: true });
+          }
+          continue;
+        }
+        recordPlayActivity(userId, "MONOPOLY", {
+          monopolyTurns: turns,
+          won: Number(userId) === Number(state?.winnerId)
+        });
       }
     }
   }
 });
+
+if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
+app.disable("x-powered-by");
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" }
+}));
 
 app.use(
   cors({
@@ -212,6 +233,25 @@ app.use(
   })
 );
 app.use(express.json({ limit: "12mb" }));
+
+function apiLimiter({ windowMs, limit, message = "Demasiadas solicitudes; intenta de nuevo en unos minutos" }) {
+  return rateLimit({
+    windowMs,
+    limit,
+    standardHeaders: "draft-7",
+    legacyHeaders: false,
+    message: { error: message },
+    skip: (req) => req.path === "/health"
+  });
+}
+
+app.use("/api", apiLimiter({ windowMs: 10 * 60 * 1000, limit: 500 }));
+const authAttemptLimiter = apiLimiter({ windowMs: 15 * 60 * 1000, limit: 18, message: "Demasiados intentos de acceso; espera 15 minutos" });
+const registerLimiter = apiLimiter({ windowMs: 60 * 60 * 1000, limit: 6, message: "Demasiados registros desde esta conexion" });
+const checkoutLimiter = apiLimiter({ windowMs: 10 * 60 * 1000, limit: 10, message: "Demasiados intentos de pago; espera unos minutos" });
+const paymentSyncLimiter = apiLimiter({ windowMs: 10 * 60 * 1000, limit: 35 });
+const webhookLimiter = apiLimiter({ windowMs: 60 * 1000, limit: 120 });
+const reportLimiter = apiLimiter({ windowMs: 60 * 60 * 1000, limit: 6, message: "Limite de reportes alcanzado; intenta mas tarde" });
 app.use(
   "/uploads/models3d",
   cors({ origin: true }),
@@ -270,6 +310,7 @@ function all(sql, params = []) {
 
 async function initDatabase() {
   await syncSeededModelUploads();
+  await fs.promises.mkdir(reportUploadsDir, { recursive: true });
   await run("PRAGMA foreign_keys = ON");
 
   await run(`
@@ -446,6 +487,61 @@ async function initDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_social_settings (
+      user_id INTEGER PRIMARY KEY,
+      chat_muted INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_relations (
+      user_id INTEGER NOT NULL,
+      target_user_id INTEGER NOT NULL,
+      muted INTEGER NOT NULL DEFAULT 0,
+      ignored INTEGER NOT NULL DEFAULT 0,
+      blocked INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, target_user_id),
+      CHECK (user_id <> target_user_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS direct_messages (
+      id TEXT PRIMARY KEY,
+      sender_id INTEGER NOT NULL,
+      recipient_id INTEGER NOT NULL,
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (recipient_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_dm_conversation ON direct_messages(sender_id, recipient_id, created_at)");
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_reports (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      report_type TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      screenshot_path TEXT,
+      context_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      admin_notes TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  await run("CREATE INDEX IF NOT EXISTS idx_user_reports_status ON user_reports(status, created_at)");
 
   await backfillPrivateRoomCodes();
   await ensureRoleSeeds();
@@ -690,6 +786,9 @@ async function recordSiteVisit(req, userId = null) {
 
 function signToken(user) {
   return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, {
+    algorithm: "HS256",
+    issuer: "easyno-api",
+    audience: "easyno-web",
     expiresIn: "7d"
   });
 }
@@ -703,7 +802,11 @@ async function authRequired(req, res, next) {
   }
 
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+      issuer: "easyno-api",
+      audience: "easyno-web"
+    });
     const user = await loadAuthUser(payload.id);
     if (!user) {
       return res.status(401).json({ error: "Usuario inactivo o no encontrado" });
@@ -966,6 +1069,16 @@ function tableChannel(worldId, tableId) {
 
 function userRoom(userId) {
   return `user:${userId}`;
+}
+
+function consumeSocketRate(socket, bucket, limit, windowMs) {
+  const now = Date.now();
+  socket.data.rateBuckets ||= new Map();
+  const values = (socket.data.rateBuckets.get(bucket) || []).filter((timestamp) => now - timestamp < windowMs);
+  if (values.length >= limit) return false;
+  values.push(now);
+  socket.data.rateBuckets.set(bucket, values);
+  return true;
 }
 
 function clamp(value, min, max) {
@@ -2686,6 +2799,154 @@ async function listChatMessages({ query = "", userId = null, worldId = null, fro
   );
 }
 
+function cleanChatText(value, maxLength = 500) {
+  return String(value || "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .trim()
+    .slice(0, maxLength);
+}
+
+async function getSocialSettings(userId) {
+  await run("INSERT OR IGNORE INTO user_social_settings (user_id) VALUES (?)", [userId]);
+  const settings = await get("SELECT chat_muted AS chatMuted FROM user_social_settings WHERE user_id = ?", [userId]);
+  const relations = await all(
+    `SELECT r.target_user_id AS userId, u.username, r.muted, r.ignored, r.blocked
+     FROM user_relations r JOIN users u ON u.id = r.target_user_id
+     WHERE r.user_id = ? ORDER BY u.username`,
+    [userId]
+  );
+  return {
+    chatMuted: Boolean(settings?.chatMuted),
+    relations: relations.map((row) => ({
+      userId: row.userId,
+      username: row.username,
+      muted: Boolean(row.muted),
+      ignored: Boolean(row.ignored),
+      blocked: Boolean(row.blocked)
+    }))
+  };
+}
+
+async function usersAreBlocked(firstUserId, secondUserId) {
+  const row = await get(
+    `SELECT 1 AS blocked FROM user_relations
+     WHERE blocked = 1 AND ((user_id = ? AND target_user_id = ?) OR (user_id = ? AND target_user_id = ?)) LIMIT 1`,
+    [firstUserId, secondUserId, secondUserId, firstUserId]
+  );
+  return Boolean(row);
+}
+
+async function publicUserProfile(userId) {
+  const user = await get(
+    `SELECT id, username, created_at AS createdAt, last_login_at AS lastLoginAt FROM users WHERE id = ? AND active = 1`,
+    [userId]
+  );
+  if (!user) throw Object.assign(new Error("Usuario no encontrado"), { status: 404 });
+  const [activity, inventory, equipmentMap] = await Promise.all([
+    get(
+      `SELECT COALESCE(SUM(games_played), 0) AS gamesPlayed,
+              COALESCE(SUM(blackjack_played), 0) AS blackjackPlayed,
+              COALESCE(SUM(blackjack_wins), 0) AS blackjackWins,
+              COALESCE(SUM(monopoly_played), 0) AS monopolyPlayed,
+              COALESCE(SUM(monopoly_wins), 0) AS monopolyWins,
+              COALESCE(MAX(monopoly_max_turns), 0) AS monopolyMaxTurns,
+              COUNT(CASE WHEN games_played > 0 THEN 1 END) AS activeDays
+       FROM player_activity_daily WHERE user_id = ?`,
+      [userId]
+    ),
+    get("SELECT COUNT(*) AS inventoryCount FROM eycon_inventory WHERE user_id = ?", [userId]),
+    eyconService.getPublicEquipment([userId], "MONOPOLY")
+  ]);
+  const roles = await getUserRoles(userId);
+  const gamesPlayed = Number(activity?.gamesPlayed || 0);
+  const blackjackPlayed = Number(activity?.blackjackPlayed || 0);
+  const blackjackWins = Number(activity?.blackjackWins || 0);
+  const monopolyPlayed = Number(activity?.monopolyPlayed || 0);
+  const monopolyWins = Number(activity?.monopolyWins || 0);
+  return {
+    user: { id: user.id, username: user.username, isVip: roles.includes("vip"), createdAt: user.createdAt },
+    stats: {
+      level: Math.max(1, Math.floor(Math.sqrt(gamesPlayed)) + 1),
+      gamesPlayed,
+      activeDays: Number(activity?.activeDays || 0),
+      blackjackPlayed,
+      blackjackWins,
+      blackjackWinRate: blackjackPlayed ? Math.round((blackjackWins / blackjackPlayed) * 100) : 0,
+      monopolyPlayed,
+      monopolyWins,
+      monopolyWinRate: monopolyPlayed ? Math.round((monopolyWins / monopolyPlayed) * 100) : 0,
+      monopolyMaxTurns: Number(activity?.monopolyMaxTurns || 0),
+      inventoryCount: Number(inventory?.inventoryCount || 0)
+    },
+    equipment: equipmentMap.get(Number(userId)) || {}
+  };
+}
+
+async function listDirectMessages(userId, targetUserId) {
+  if (await usersAreBlocked(userId, targetUserId)) {
+    throw Object.assign(new Error("No puedes abrir esta conversacion"), { status: 403 });
+  }
+  return all(
+    `SELECT d.id, d.sender_id AS senderId, su.username AS senderUsername,
+            d.recipient_id AS recipientId, ru.username AS recipientUsername,
+            d.text, d.created_at AS createdAt
+     FROM direct_messages d
+     JOIN users su ON su.id = d.sender_id JOIN users ru ON ru.id = d.recipient_id
+     WHERE (d.sender_id = ? AND d.recipient_id = ?) OR (d.sender_id = ? AND d.recipient_id = ?)
+     ORDER BY d.created_at DESC LIMIT 100`,
+    [userId, targetUserId, targetUserId, userId]
+  ).then((rows) => rows.reverse());
+}
+
+function safeReportContext(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    view: cleanChatText(source.view, 80),
+    path: cleanChatText(source.path, 240),
+    worldId: Number.isInteger(Number(source.worldId)) ? Number(source.worldId) : null,
+    worldName: cleanChatText(source.worldName, 80),
+    viewport: cleanChatText(source.viewport, 40),
+    userAgent: cleanChatText(source.userAgent, 240),
+    connectionStatus: cleanChatText(source.connectionStatus, 40),
+    clientErrors: Array.isArray(source.clientErrors)
+      ? source.clientErrors.slice(-8).map((item) => cleanChatText(item, 300))
+      : []
+  };
+}
+
+async function saveReportScreenshot(reportId, screenshotBase64) {
+  const raw = String(screenshotBase64 || "").replace(/^data:image\/(?:png|jpeg);base64,/, "");
+  if (!raw) return null;
+  const buffer = Buffer.from(raw, "base64");
+  if (buffer.length < 32 || buffer.length > 2.5 * 1024 * 1024) {
+    throw Object.assign(new Error("La captura debe pesar menos de 2.5 MB"), { status: 400 });
+  }
+  const isPng = buffer.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  const isJpeg = buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[buffer.length - 2] === 0xff && buffer[buffer.length - 1] === 0xd9;
+  if (!isPng && !isJpeg) throw Object.assign(new Error("Formato de captura invalido"), { status: 400 });
+  const fileName = `${reportId}.${isPng ? "png" : "jpg"}`;
+  await fs.promises.writeFile(path.join(reportUploadsDir, fileName), buffer, { flag: "wx" });
+  return fileName;
+}
+
+async function listAdminReports() {
+  const rows = await all(
+    `SELECT r.id, r.user_id AS userId, u.username, r.report_type AS reportType,
+            r.title, r.description, r.screenshot_path AS screenshotPath,
+            r.context_json AS contextJson, r.status, r.admin_notes AS adminNotes,
+            r.created_at AS createdAt, r.updated_at AS updatedAt
+     FROM user_reports r JOIN users u ON u.id = r.user_id
+     ORDER BY CASE r.status WHEN 'OPEN' THEN 0 WHEN 'IN_REVIEW' THEN 1 ELSE 2 END, r.created_at DESC LIMIT 250`
+  );
+  return rows.map((row) => ({
+    ...row,
+    hasScreenshot: Boolean(row.screenshotPath),
+    screenshotPath: undefined,
+    context: parseAdminMetadata(row.contextJson),
+    contextJson: undefined
+  }));
+}
+
 async function getAdminStoreAnalysis() {
   const [overview, model3d] = await Promise.all([
     eyconService.adminOverview(),
@@ -2729,7 +2990,7 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", registerLimiter, async (req, res) => {
   try {
     const username = normalizeUsername(req.body.username);
     const password = String(req.body.password || "");
@@ -2767,7 +3028,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authAttemptLimiter, async (req, res) => {
   try {
     const username = normalizeUsername(req.body.username);
     const password = String(req.body.password || "");
@@ -2814,6 +3075,88 @@ app.post("/api/auth/login", async (req, res) => {
 
 app.get("/api/me", authRequired, async (req, res) => {
   return res.json({ user: req.user });
+});
+
+app.get("/api/social/settings", authRequired, async (req, res) => {
+  try {
+    return res.json(await getSocialSettings(req.user.id));
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar configuracion social" });
+  }
+});
+
+app.patch("/api/social/settings", authRequired, async (req, res) => {
+  await run("INSERT OR IGNORE INTO user_social_settings (user_id) VALUES (?)", [req.user.id]);
+  await run(
+    "UPDATE user_social_settings SET chat_muted = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?",
+    [req.body.chatMuted ? 1 : 0, req.user.id]
+  );
+  return res.json(await getSocialSettings(req.user.id));
+});
+
+app.put("/api/social/relations/:targetUserId", authRequired, async (req, res) => {
+  try {
+    const targetUserId = Number(req.params.targetUserId);
+    if (!Number.isInteger(targetUserId) || targetUserId === req.user.id) {
+      return res.status(400).json({ error: "Usuario objetivo invalido" });
+    }
+    const target = await get("SELECT id FROM users WHERE id = ? AND active = 1", [targetUserId]);
+    if (!target) return res.status(404).json({ error: "Usuario no encontrado" });
+    await run(
+      `INSERT INTO user_relations (user_id, target_user_id, muted, ignored, blocked)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, target_user_id) DO UPDATE SET
+         muted = excluded.muted, ignored = excluded.ignored, blocked = excluded.blocked,
+         updated_at = CURRENT_TIMESTAMP`,
+      [req.user.id, targetUserId, req.body.muted ? 1 : 0, req.body.ignored ? 1 : 0, req.body.blocked ? 1 : 0]
+    );
+    return res.json(await getSocialSettings(req.user.id));
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo actualizar la relacion" });
+  }
+});
+
+app.get("/api/users/:userId/profile", authRequired, async (req, res) => {
+  try {
+    return res.json(await publicUserProfile(Number(req.params.userId)));
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar el perfil" });
+  }
+});
+
+app.get("/api/direct-messages/:userId", authRequired, async (req, res) => {
+  try {
+    const targetUserId = Number(req.params.userId);
+    if (!Number.isInteger(targetUserId) || targetUserId === req.user.id) {
+      return res.status(400).json({ error: "Conversacion invalida" });
+    }
+    return res.json({ messages: await listDirectMessages(req.user.id, targetUserId) });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar la conversacion" });
+  }
+});
+
+app.post("/api/reports", reportLimiter, authRequired, async (req, res) => {
+  const reportType = String(req.body.reportType || "BUG").toUpperCase();
+  const title = cleanChatText(req.body.title, 120);
+  const description = cleanChatText(req.body.description, 3000);
+  if (!["BUG", "SUGGESTION"].includes(reportType) || title.length < 4 || description.length < 10) {
+    return res.status(400).json({ error: "Completa el tipo, titulo y descripcion del reporte" });
+  }
+  const id = crypto.randomUUID();
+  let screenshotPath = null;
+  try {
+    screenshotPath = await saveReportScreenshot(id, req.body.screenshot);
+    await run(
+      `INSERT INTO user_reports (id, user_id, report_type, title, description, screenshot_path, context_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, req.user.id, reportType, title, description, screenshotPath, JSON.stringify(safeReportContext(req.body.context))]
+    );
+    return res.status(201).json({ id, ok: true });
+  } catch (error) {
+    if (screenshotPath) await fs.promises.unlink(path.join(reportUploadsDir, screenshotPath)).catch(() => {});
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo guardar el reporte" });
+  }
 });
 
 app.get("/api/worlds", authRequired, async (req, res) => {
@@ -3066,7 +3409,7 @@ app.get("/api/payments/packages", (req, res) => {
   return res.json({ packages: paymentsService.listPackages() });
 });
 
-app.post("/api/payments/checkout", authRequired, async (req, res) => {
+app.post("/api/payments/checkout", checkoutLimiter, authRequired, async (req, res) => {
   try {
     const packageId = String(req.body.packageId || "");
     const result = await paymentsService.createCheckout({ userId: req.user.id, packageId });
@@ -3079,7 +3422,7 @@ app.post("/api/payments/checkout", authRequired, async (req, res) => {
   }
 });
 
-app.post("/api/payments/return-sync", authRequired, async (req, res) => {
+app.post("/api/payments/return-sync", paymentSyncLimiter, authRequired, async (req, res) => {
   try {
     const paymentIntentId = req.body.paymentIntentId ? String(req.body.paymentIntentId) : null;
     const paymentId = req.body.paymentId || req.body.collectionId || null;
@@ -3113,24 +3456,18 @@ app.get("/api/payments/history", authRequired, async (req, res) => {
   }
 });
 
-app.post("/api/payments/webhook", async (req, res) => {
+app.post("/api/payments/webhook", webhookLimiter, async (req, res) => {
   try {
-    const result = await paymentsService.handleWebhook({ query: req.query, payload: req.body || {} });
+    const result = await paymentsService.handleWebhook({ query: req.query, payload: req.body || {}, headers: req.headers });
     return res.status(200).json(result);
   } catch (error) {
     console.error("Error procesando webhook de Mercado Pago", error);
-    return res.status(200).json({ processed: false });
+    return res.status(error.status === 401 ? 401 : 200).json({ processed: false });
   }
 });
 
-app.get("/api/payments/webhook", async (req, res) => {
-  try {
-    const result = await paymentsService.handleWebhook({ query: req.query, payload: {} });
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error("Error procesando webhook de Mercado Pago", error);
-    return res.status(200).json({ processed: false });
-  }
+app.get("/api/payments/webhook", (req, res) => {
+  return res.status(405).json({ error: "Usa Webhooks HTTPS POST firmados" });
 });
 
 app.get("/api/eycon/games", authRequired, async (req, res) => {
@@ -3227,6 +3564,54 @@ app.post("/api/eycon/unequip", authRequired, async (req, res) => {
   } catch (error) {
     console.error(error);
     return res.status(error.status || 500).json({ error: error.message || "No se pudo desequipar el personalizable" });
+  }
+});
+
+app.get("/api/admin/reports", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    return res.json({ reports: await listAdminReports() });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudieron cargar los reportes" });
+  }
+});
+
+app.get("/api/admin/reports/:reportId/screenshot", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const report = await get("SELECT screenshot_path AS screenshotPath FROM user_reports WHERE id = ?", [String(req.params.reportId)]);
+    if (!report?.screenshotPath) return res.status(404).json({ error: "Captura no encontrada" });
+    const safeName = path.basename(report.screenshotPath);
+    return res.sendFile(path.join(reportUploadsDir, safeName));
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo cargar la captura" });
+  }
+});
+
+app.patch("/api/admin/reports/:reportId", authRequired, async (req, res) => {
+  try {
+    await requirePlatformAdmin(req.user.id);
+    const status = String(req.body.status || "OPEN").toUpperCase();
+    const adminNotes = cleanChatText(req.body.adminNotes, 2000);
+    if (!["OPEN", "IN_REVIEW", "RESOLVED", "DISMISSED"].includes(status)) {
+      return res.status(400).json({ error: "Estado de reporte invalido" });
+    }
+    const result = await run(
+      "UPDATE user_reports SET status = ?, admin_notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      [status, adminNotes, String(req.params.reportId)]
+    );
+    if (!result.changes) return res.status(404).json({ error: "Reporte no encontrado" });
+    await writeAdminLog({
+      adminUserId: req.user.id,
+      action: "REPORT_UPDATE",
+      targetType: "report",
+      targetId: String(req.params.reportId),
+      reason: adminNotes,
+      metadata: { status }
+    });
+    return res.json({ reports: await listAdminReports() });
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message || "No se pudo actualizar el reporte" });
   }
 });
 
@@ -4182,7 +4567,11 @@ io.use(async (socket, next) => {
       return next(new Error("Token requerido"));
     }
 
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, {
+      algorithms: ["HS256"],
+      issuer: "easyno-api",
+      audience: "easyno-web"
+    });
     const user = await loadAuthUser(payload.id);
     if (!user) {
       return next(new Error("Usuario inactivo o no encontrado"));
@@ -4196,6 +4585,15 @@ io.use(async (socket, next) => {
 
 io.on("connection", (socket) => {
   socket.join(userRoom(socket.user.id));
+
+  socket.use(([eventName], next) => {
+    const event = String(eventName || "");
+    const isChat = event === "send_message" || event === "send_direct_message";
+    const allowed = isChat
+      ? consumeSocketRate(socket, "chat", 12, 10 * 1000)
+      : consumeSocketRate(socket, "events", 180, 60 * 1000);
+    next(allowed ? undefined : new Error("Demasiadas acciones; espera un momento"));
+  });
 
   socket.on("join_world", async (payload, callback) => {
     try {
@@ -4280,7 +4678,7 @@ io.on("connection", (socket) => {
   socket.on("send_message", async (payload, callback) => {
     try {
       const worldId = Number(payload && payload.worldId);
-      const text = String((payload && payload.text) || "").trim().slice(0, 240);
+      const text = cleanChatText(payload && payload.text, 240);
 
       if (!text) {
         throw new Error("Mensaje vacio");
@@ -4314,6 +4712,36 @@ io.on("connection", (socket) => {
       if (typeof callback === "function") {
         callback({ ok: false, error: error.message || "No se pudo enviar el mensaje" });
       }
+    }
+  });
+
+  socket.on("send_direct_message", async (payload, callback) => {
+    try {
+      const recipientId = Number(payload?.recipientId);
+      const text = cleanChatText(payload?.text, 500);
+      if (!Number.isInteger(recipientId) || recipientId === socket.user.id) throw new Error("Destinatario invalido");
+      if (!text) throw new Error("Mensaje vacio");
+      const recipient = await get("SELECT id, username FROM users WHERE id = ? AND active = 1", [recipientId]);
+      if (!recipient) throw new Error("Usuario no encontrado");
+      if (await usersAreBlocked(socket.user.id, recipientId)) throw new Error("No puedes enviar mensajes a este usuario");
+
+      const message = {
+        id: crypto.randomUUID(),
+        senderId: socket.user.id,
+        senderUsername: socket.user.username,
+        recipientId,
+        recipientUsername: recipient.username,
+        text,
+        createdAt: new Date().toISOString()
+      };
+      await run(
+        `INSERT INTO direct_messages (id, sender_id, recipient_id, text, created_at) VALUES (?, ?, ?, ?, ?)`,
+        [message.id, message.senderId, message.recipientId, message.text, message.createdAt]
+      );
+      io.to(userRoom(socket.user.id)).to(userRoom(recipientId)).emit("direct_message", message);
+      callback?.({ ok: true, message });
+    } catch (error) {
+      callback?.({ ok: false, error: error.message || "No se pudo enviar el mensaje directo" });
     }
   });
 

@@ -247,7 +247,7 @@ function createTokenLoadingSpinner(primary, secondary) {
   return group;
 }
 
-function createCustomTokenModel(assetKey, primary, secondary, metadata, factories) {
+function createCustomTokenModel(assetKey, primary, secondary, metadata, factories, onLoadState) {
   const assetConfig = customTokenAssets[assetKey] || {
     url: metadata.assetUrl,
     fitSize: metadata.fitSize || 1.9,
@@ -259,6 +259,7 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
   const loadingSpinner = createTokenLoadingSpinner(primary, secondary);
   group.add(loadingSpinner);
   group.userData.loadingAssetKey = assetKey;
+  onLoadState?.("loading");
   group.userData.animateLoading = (delta, elapsed) => {
     loadingSpinner.userData.animateLoading?.(delta, elapsed);
   };
@@ -279,6 +280,7 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
       delete group.userData.loadingAssetKey;
       delete group.userData.animateLoading;
       group.userData.loadedAssetKey = assetKey;
+      onLoadState?.("loaded");
     })
     .catch(() => {
       console.warn("No se pudo cargar modelo GLB de ficha", {
@@ -292,6 +294,7 @@ function createCustomTokenModel(assetKey, primary, secondary, metadata, factorie
       delete group.userData.loadingAssetKey;
       delete group.userData.animateLoading;
       group.add(fallbackFactory(primary, secondary));
+      onLoadState?.("error");
     });
 
   group.userData.cosmeticModel = assetKey;
@@ -489,7 +492,7 @@ function createTaco(primary, secondary) {
   return group;
 }
 
-export function createCosmeticTokenModel3D(cosmetic, colorOverride = null) {
+export function createCosmeticTokenModel3D(cosmetic, colorOverride = null, onLoadState = null) {
   const metadata = cosmetic?.metadata || {};
   const model = metadata.model || "hat";
   const primary = colorOverride?.bg || colorOverride?.color || metadata.color || "#22d3ee";
@@ -510,13 +513,15 @@ export function createCosmeticTokenModel3D(cosmetic, colorOverride = null) {
   const assetKey = resolveCustomAssetKey(metadata);
   if (assetKey || metadata.renderer === "gltf") {
     const customModel = assetKey
-      ? createCustomTokenModel(assetKey, primary, secondary, metadata, factories)
+      ? createCustomTokenModel(assetKey, primary, secondary, metadata, factories, onLoadState)
       : (factories[metadata.fallbackModel] || factories.cat || createHat)(primary, secondary);
+    if (!assetKey) onLoadState?.("error");
     customModel.userData.cosmeticModel = assetKey || model;
     return customModel;
   }
 
   const result = (factories[model] || createHat)(primary, secondary);
+  onLoadState?.("loaded");
   result.userData.cosmeticModel = model;
   return result;
 }

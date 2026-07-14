@@ -56,7 +56,9 @@ export default function WorldSidebar({
   currentUser,
   messages,
   players,
-  onSendMessage
+  onSendMessage,
+  onOpenPlayer,
+  onOpenSocial
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -129,6 +131,12 @@ export default function WorldSidebar({
             return (
               <div
                 key={player.userId}
+                role={!isMe && onOpenPlayer ? "button" : undefined}
+                tabIndex={!isMe && onOpenPlayer ? 0 : undefined}
+                onClick={() => !isMe && onOpenPlayer?.(player.userId)}
+                onKeyDown={(event) => {
+                  if (!isMe && (event.key === "Enter" || event.key === " ")) onOpenPlayer?.(player.userId);
+                }}
                 className={`relative flex items-center gap-3 rounded-lg border-2 p-2.5 transition animate-slide-up-fade ${
                   isVip
                     ? "border-amber-300/60 bg-amber-300/15 shadow-goldSoft"
@@ -169,6 +177,7 @@ export default function WorldSidebar({
         <div className="mb-4 flex items-center gap-2">
           <MessageCircle size={18} className="text-rose-300" />
           <h2 className="font-display text-lg font-extrabold text-white">Chat de mesa</h2>
+          {onOpenSocial && <button type="button" className="ml-auto rounded-md border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-extrabold text-zinc-300 hover:border-amber-300/30 hover:text-amber-100" onClick={onOpenSocial}>Centro social</button>}
         </div>
 
         <div ref={chatRef} className="scrollbar-slim mb-3 grid h-80 content-start gap-2 overflow-y-auto rounded-lg border border-amber-300/15 bg-black/45 p-3 scanline">

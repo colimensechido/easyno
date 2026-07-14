@@ -67,3 +67,15 @@ docker compose exec backend node scripts/reactivate-all-assets.js
 ```bash
 docker compose exec backend node -e "const sqlite3=require('sqlite3');const db=new sqlite3.Database(process.env.DATABASE_PATH);db.all('SELECT active,COUNT(*) cnt FROM eycon_products GROUP BY active',(_,r)=>{console.log(r);db.close();});"
 ```
+
+## Seguridad de pagos en produccion
+
+Ademas del `MERCADOPAGO_ACCESS_TOKEN`, configura `MERCADOPAGO_WEBHOOK_SECRET`
+con la clave de **Webhooks > Configurar notificaciones** en Mercado Pago. Se
+validan firma HMAC, antiguedad de la notificacion, referencia externa, importe,
+moneda, usuario, paquete y, si defines `MERCADOPAGO_COLLECTOR_ID`, la cuenta
+vendedora. En produccion los webhooks sin firma valida se rechazan.
+
+El backend tambien aplica limites diferenciados a login, registro, pagos,
+reportes y eventos Socket.IO. `npm audit` debe permanecer en cero antes de cada
+despliegue.

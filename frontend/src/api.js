@@ -17,6 +17,11 @@ export async function api(path, { method = "GET", body, token } = {}) {
   }
 
   if (!response.ok) {
+    if (response.status === 401 && token && typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("easyno:auth-expired", {
+        detail: { message: data.error || "Tu sesión expiró" }
+      }));
+    }
     if (response.status === 404 && String(path).startsWith("/api/eycon/")) {
       throw new Error("EyCon aún no está cargado en el backend activo. Reinicia el servidor backend para publicar las rutas nuevas.");
     }

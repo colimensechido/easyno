@@ -42,6 +42,9 @@ Bootstrap de administradores:
 - `login_logs`: intentos de login exitosos y fallidos.
 - `site_visits`: actividad basica autenticada por API.
 - `chat_messages`: persistencia del chat global por mundo.
+- `user_social_settings`, `user_relations` y `direct_messages`: preferencias,
+  moderacion personal y conversaciones privadas.
+- `user_reports`: bugs y sugerencias con contexto tecnico y captura opcional.
 - `model_3d_settings`: ajustes editables y auditables de modelos GLB ligados a
   productos EyCon.
 - `model_3d_assets`: lista blanca de assets GLB disponibles. Incluye modelos
@@ -68,6 +71,9 @@ Las contrasenas siguen usando `bcryptjs` con `bcrypt.hash(password, 10)`.
 - `GET /api/admin/logs`
 - `GET /api/admin/stats`
 - `GET /api/admin/chat`
+- `GET /api/admin/reports`
+- `GET /api/admin/reports/:reportId/screenshot`
+- `PATCH /api/admin/reports/:reportId`
 - `GET /api/admin/store-analysis`
 - `GET /api/admin/model-3d-settings`
 - `POST /api/admin/model-3d-assets`
@@ -144,7 +150,17 @@ guarda en `chat_messages` y `/admin` puede consultar:
 - Fecha.
 - Filtros por usuario, mundo, fecha y busqueda textual.
 
-La moderacion destructiva queda pendiente para una fase posterior.
+Cada usuario puede silenciar el sonido global del chat, mutear a una persona,
+ignorar su chat publico o bloquearla. Bloquear tambien impide mensajes directos
+en ambos sentidos; estas reglas se validan en servidor y se guardan en SQLite.
+
+## Bugs y sugerencias
+
+El icono de bicho abre un formulario que intenta capturar la vista visible y
+adjunta ruta, sala, viewport, navegador, estado de conexion y errores recientes.
+Las capturas se guardan en `uploads/reports` y solo se entregan mediante una ruta
+autenticada con rol admin. En `/admin`, la pestana Reportes permite revisar la
+captura, cambiar estado y guardar notas internas auditadas.
 
 ## Tienda y modelos 3D
 
@@ -209,7 +225,7 @@ Flujo localhost -> produccion:
 
 - Paginacion en tablas admin cuando crezca la base.
 - Sesiones persistentes por dispositivo.
-- Moderacion de chat: ocultar/restaurar mensajes con motivo.
+- Moderacion administrativa destructiva: ocultar/restaurar mensajes con motivo.
 - Politica de almacenamiento/CDN para GLB si el volumen crece.
 - Export CSV de logs y movimientos.
 - Politica de retencion para IP, visitas y login logs.

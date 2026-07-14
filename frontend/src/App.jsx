@@ -1,4 +1,4 @@
-import { Coins, Crown, Cuboid, Gamepad2, Gem, Globe2, LogOut, MessageSquare, Shield, Sparkles, Target, Trophy, Volume2, VolumeX, WalletCards, Wifi, WifiOff, X } from "lucide-react";
+import { Bug, Coins, Crown, Cuboid, Gamepad2, Gem, Globe2, KeyRound, LogOut, MessageSquare, Shield, Sparkles, Target, Trophy, Users, Volume2, VolumeX, WalletCards, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
@@ -16,6 +16,8 @@ import { useRadio } from "./radio/RadioContext";
 import WorldSelector from "./components/WorldSelector";
 import WorldSidebar from "./components/WorldSidebar";
 import BrandLogo from "./components/shared/BrandLogo";
+import BugReportDialog from "./components/BugReportDialog";
+import SocialPanel from "./components/SocialPanel";
 
 const APP_RADIO_GAME_KEY = "MONOPOLY";
 const GAME_VIEWS = new Set(["games", "dishes", "blackjack", "monopoly", "monopoly3d"]);
@@ -137,6 +139,20 @@ const savedSession = () => {
   }
 };
 
+function SessionExpiredModal({ message, onClose }) {
+  if (!message) return null;
+  return (
+    <div className="session-expired-overlay" role="presentation">
+      <section className="session-expired-modal" role="alertdialog" aria-modal="true" aria-labelledby="session-expired-title">
+        <span><KeyRound size={28} /></span>
+        <h2 id="session-expired-title">Tu sesión terminó</h2>
+        <p>{message}</p>
+        <button type="button" onClick={onClose}>Volver a iniciar sesión</button>
+      </section>
+    </div>
+  );
+}
+
 export default function App() {
   const { loadDefaultStation, pause } = useRadio();
   const [session, setSession] = useState(savedSession);
@@ -150,16 +166,36 @@ export default function App() {
   const [socketError, setSocketError] = useState("");
   const [presence, setPresence] = useState([]);
   const [messages, setMessages] = useState([]);
+  const [socialSettings, setSocialSettings] = useState({ chatMuted: false, relations: [] });
+  const [socialOpen, setSocialOpen] = useState(false);
+  const [socialTargetId, setSocialTargetId] = useState(null);
+  const [directMessages, setDirectMessages] = useState([]);
+  const [directUnread, setDirectUnread] = useState(0);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [clientErrors, setClientErrors] = useState([]);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState("");
   const [muted, setMuted] = useState(() => audio.isMuted());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const worldRef = useRef(null);
   const presenceIdsRef = useRef(new Set());
   const lastMessageIdRef = useRef(null);
+  const socialSettingsRef = useRef(socialSettings);
+  const socialOpenRef = useRef(false);
+  const authExpiryHandledRef = useRef(false);
 
   const token = session?.token;
   const monopolyView = Boolean(world && (view === "monopoly" || view === "monopoly3d"));
   const adminRoute = routePath.startsWith("/admin");
   const isAdmin = Boolean(session?.user?.isAdmin || session?.user?.roles?.includes("admin"));
+  const hiddenUserIds = useMemo(() => new Set(
+    (socialSettings.relations || [])
+      .filter((relation) => relation.ignored || relation.blocked)
+      .map((relation) => Number(relation.userId))
+  ), [socialSettings]);
+  const visibleMessages = useMemo(
+    () => messages.filter((message) => !hiddenUserIds.has(Number(message.userId))),
+    [messages, hiddenUserIds]
+  );
 
   useEffect(() => {
     function syncPath() {
@@ -168,6 +204,44 @@ export default function App() {
     window.addEventListener("popstate", syncPath);
     return () => window.removeEventListener("popstate", syncPath);
   }, []);
+
+  useEffect(() => {
+    function handleExpiredSession(event) {
+      if (authExpiryHandledRef.current) return;
+      authExpiryHandledRef.current = true;
+      setSessionExpiredMessage(event.detail?.message || "Tu token ya no es válido. Inicia sesión nuevamente para continuar.");
+      resetClientSession();
+    }
+    window.addEventListener("easyno:auth-expired", handleExpiredSession);
+    return () => window.removeEventListener("easyno:auth-expired", handleExpiredSession);
+  }, []);
+
+  useEffect(() => {
+    socialSettingsRef.current = socialSettings;
+  }, [socialSettings]);
+
+  useEffect(() => {
+    socialOpenRef.current = socialOpen;
+  }, [socialOpen]);
+
+  useEffect(() => {
+    const record = (value) => setClientErrors((current) => [...current.slice(-7), String(value || "Error desconocido").slice(0, 300)]);
+    const onError = (event) => record(`${event.message || "Error"} @ ${event.filename || "app"}:${event.lineno || 0}`);
+    const onRejection = (event) => record(`Promise: ${event.reason?.message || event.reason || "rechazada"}`);
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    api("/api/social/settings", { token })
+      .then(setSocialSettings)
+      .catch(() => {});
+  }, [token]);
 
   function navigate(pathname) {
     window.history.pushState({}, "", pathname);
@@ -357,16 +431,37 @@ export default function App() {
     function handleMessage(message) {
       if (message.worldId !== worldRef.current?.id) return;
 
+      const relation = socialSettingsRef.current.relations?.find(
+        (item) => Number(item.userId) === Number(message.userId)
+      );
+
       // Reproducir sonido sólo para mensajes ajenos y nuevos
       if (
         message.userId !== session?.user?.id &&
-        message.id !== lastMessageIdRef.current
+        message.id !== lastMessageIdRef.current &&
+        !socialSettingsRef.current.chatMuted &&
+        !relation?.muted &&
+        !relation?.ignored &&
+        !relation?.blocked
       ) {
         audio.play("msg");
       }
       lastMessageIdRef.current = message.id;
 
       setMessages((current) => [...current.slice(-79), message]);
+    }
+
+    function handleDirectMessage(message) {
+      setDirectMessages((current) => current.some((item) => item.id === message.id)
+        ? current
+        : [...current.slice(-199), message]);
+      if (message.senderId !== session?.user?.id) {
+        const relation = socialSettingsRef.current.relations?.find(
+          (item) => Number(item.userId) === Number(message.senderId)
+        );
+        if (!socialSettingsRef.current.chatMuted && !relation?.muted && !relation?.blocked) audio.play("msg");
+        if (!socialOpenRef.current) setDirectUnread((current) => current + 1);
+      }
     }
 
     function handleBalance(payload) {
@@ -388,6 +483,7 @@ export default function App() {
     socket.on("connect_error", handleConnectError);
     socket.on("world_presence", handlePresence);
     socket.on("chat_message", handleMessage);
+    socket.on("direct_message", handleDirectMessage);
     socket.on("balance_update", handleBalance);
     socket.on("eycon_update", handleEycon);
 
@@ -401,6 +497,7 @@ export default function App() {
       socket.off("connect_error", handleConnectError);
       socket.off("world_presence", handlePresence);
       socket.off("chat_message", handleMessage);
+      socket.off("direct_message", handleDirectMessage);
       socket.off("balance_update", handleBalance);
       socket.off("eycon_update", handleEycon);
     };
@@ -461,9 +558,14 @@ export default function App() {
     setView("worlds");
     setPresence([]);
     setMessages([]);
+    setSocialSettings({ chatMuted: false, relations: [] });
+    setDirectMessages([]);
+    setDirectUnread(0);
   }
 
   function handleAuth(nextSession) {
+    authExpiryHandledRef.current = false;
+    setSessionExpiredMessage("");
     setSession(nextSession);
     setWorld(null);
     setBalance(0);
@@ -471,9 +573,13 @@ export default function App() {
     setView("worlds");
     setPresence([]);
     setMessages([]);
+    setSocialSettings({ chatMuted: false, relations: [] });
+    setDirectMessages([]);
+    setDirectUnread(0);
   }
 
   function handleLogout() {
+    setSessionExpiredMessage("");
     const activeWorldId = worldRef.current?.id;
 
     let finished = false;
@@ -530,6 +636,12 @@ export default function App() {
     }
 
     socket.emit("send_message", { worldId: world.id, text }, callback);
+  }
+
+  function openSocial(userId = null) {
+    setSocialTargetId(userId);
+    setSocialOpen(true);
+    setDirectUnread(0);
   }
 
   function scrollToLobbySection(id) {
@@ -591,6 +703,7 @@ export default function App() {
     return (
       <main className="app-shell min-h-screen px-4 py-8 text-[#F4EEDC]">
         <AuthPanel onAuth={handleAuth} />
+        <SessionExpiredModal message={sessionExpiredMessage} onClose={() => setSessionExpiredMessage("")} />
       </main>
     );
   }
@@ -699,6 +812,15 @@ export default function App() {
                 <span className="hidden sm:inline">Admin</span>
               </button>
             )}
+            <button className="ghost-button px-3 report-trigger" data-report-exclude onClick={() => setReportOpen(true)} title="Reportar bug o enviar sugerencia">
+              <Bug size={18} />
+              <span className="hidden sm:inline">Reportar</span>
+            </button>
+            <button className="ghost-button px-3 social-trigger" data-report-exclude onClick={() => openSocial()} title="Mensajes, perfiles y moderacion">
+              <Users size={18} />
+              <span className="hidden sm:inline">Social</span>
+              {directUnread > 0 && <b>{Math.min(directUnread, 99)}</b>}
+            </button>
             <div
               className={`hud-pill ${socketStatus === "online" ? "hud-pill--emerald" : "hud-pill--muted"} text-xs uppercase tracking-[0.14em]`}
               title={socketError || "Estado de conexión"}
@@ -779,7 +901,7 @@ export default function App() {
                 currentUser={session.user}
                 world={world}
                 presence={presence}
-                messages={messages}
+                messages={visibleMessages}
                 connectionStatus={socketStatus}
                 onSendMessage={sendWorldMessage}
                 preferredBoardViewMode={view === "monopoly3d" ? "3d" : "2d"}
@@ -826,9 +948,11 @@ export default function App() {
                     <WorldSidebar
                       connectionStatus={socketStatus}
                       currentUser={session.user}
-                      messages={messages}
+                      messages={visibleMessages}
                       players={presence}
                       onSendMessage={sendWorldMessage}
+                      onOpenPlayer={openSocial}
+                      onOpenSocial={() => openSocial()}
                     />
                   </div>
                 )}
@@ -853,6 +977,36 @@ export default function App() {
           </>
         )}
       </section>
+      <SocialPanel
+        open={socialOpen}
+        onClose={() => setSocialOpen(false)}
+        token={token}
+        socket={socket}
+        currentUser={session.user}
+        players={presence}
+        world={world}
+        roomMessages={visibleMessages}
+        onSendRoomMessage={sendWorldMessage}
+        settings={socialSettings}
+        onSettingsChange={setSocialSettings}
+        liveDirectMessages={directMessages}
+        initialUserId={socialTargetId}
+      />
+      <BugReportDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        token={token}
+        context={{
+          view,
+          path: `${window.location.pathname}${window.location.search}`,
+          worldId: world?.id || null,
+          worldName: world?.name || "",
+          viewport: `${window.innerWidth}x${window.innerHeight}`,
+          userAgent: navigator.userAgent,
+          connectionStatus: socketStatus,
+          clientErrors
+        }}
+      />
       <PlatformRadioPlayer compact={!world} />
     </main>
   );
