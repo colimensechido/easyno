@@ -874,6 +874,7 @@ export function syncSelectionBillboard(model, info = null) {
     billboard.userData.currentKey = "";
     billboard.userData.infoIndex = null;
     billboard.userData.hoverKey = "";
+    billboard.userData.lastSyncKey = "";
     model.interactiveMeshes = model.interactiveMeshes.filter((mesh) => !mesh.userData.selectionAction && !mesh.userData.selectionPanel);
     return;
   }
@@ -889,19 +890,35 @@ export function syncSelectionBillboard(model, info = null) {
     billboard.userData.activeTab = "info";
     billboard.userData.hoverKey = "";
     billboard.userData.currentKey = "";
+    billboard.userData.lastSyncKey = "";
   }
 
-  const key = JSON.stringify({
-    ...info,
-    activeTab: billboard.userData.activeTab || "info",
-    hoverKey: billboard.userData.hoverKey || "",
-    actions: (info.actions || []).map((action) => ({ label: action.label, tone: action.tone })),
-    rentRows: (info.rentRows || []).map((row) => ({ label: row.label, value: row.value, active: row.active }))
-  });
+  const activeTab = billboard.userData.activeTab || "info";
+  const hoverKey = billboard.userData.hoverKey || "";
+  // Cheap fingerprint — avoid JSON.stringify of the whole info object every frame.
+  const key = [
+    info.index,
+    info.name || "",
+    info.ownerName || "",
+    info.priceLabel || "",
+    info.rentPreviewLabel || "",
+    info.baseRentLabel || "",
+    info.description || "",
+    activeTab,
+    hoverKey,
+    ...(info.actions || []).map((action) => `${action.label || ""}:${action.tone || ""}`),
+    ...(info.rentRows || []).map((row) => `${row.label || ""}:${row.value || ""}:${row.active ? 1 : 0}`)
+  ].join("|");
+
+  if (billboard.userData.lastSyncKey === key && billboard.userData.panel?.material?.map) {
+    billboard.visible = true;
+    billboard.position.set(tileGroup.position.x, 0.08, tileGroup.position.z);
+    billboard.userData.baseY = tileGroup.position.y || 0;
+    return;
+  }
+
   if (billboard.userData.currentKey !== key || !billboard.userData.panel?.material?.map) {
     const panel = billboard.userData.panel;
-    const activeTab = billboard.userData.activeTab || "info";
-    const hoverKey = billboard.userData.hoverKey || "";
     const nextTexture = createSelectionCardTexture(info, activeTab, hoverKey);
     if (panel.material.map) panel.material.map.dispose();
     panel.material.map = nextTexture;
@@ -911,6 +928,8 @@ export function syncSelectionBillboard(model, info = null) {
     billboard.userData.currentKey = key;
     billboard.userData.hitZones = createSelectionCardHitZones(info, activeTab);
   }
+
+  billboard.userData.lastSyncKey = key;
 
   const panel = billboard.userData.panel;
   model.interactiveMeshes = model.interactiveMeshes.filter((mesh) => !mesh.userData.selectionAction);
@@ -994,6 +1013,9 @@ export function animateBoard3D(model, delta, elapsed, camera = null) {
 
 export function markSelectedTile(model, selectedIndex, options = {}) {
   const { moverIndex = null, currentIndex = null, destinationIndex = null } = options;
+  const markKey = `${selectedIndex ?? "x"}:${currentIndex ?? "x"}:${moverIndex ?? "x"}:${destinationIndex ?? "x"}`;
+  if (model.userData.lastMarkKey === markKey) return;
+  model.userData.lastMarkKey = markKey;
 
   model.tileGroups.forEach((tileGroup, tileIndex) => {
     const baseMesh = tileGroup.userData.baseMesh;

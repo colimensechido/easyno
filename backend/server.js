@@ -5133,12 +5133,16 @@ io.on("connection", (socket) => {
         motion: safeMotion
       };
       io.to(roomName(worldId)).emit("monopoly_dice_motion", diceMotionPayload);
-      io.to(roomName(worldId)).emit("monopoly_state", {
-        worldId,
-        tableId,
-        visualOnly: true,
-        diceMotion: diceMotionPayload
-      });
+      // High-frequency move/state frames stay on the dedicated channel only.
+      // Broad monopoly_state visual wrappers are reserved for durable gesture phases.
+      if (phase === "grab" || phase === "release" || phase === "settled" || phase === "cancel") {
+        io.to(roomName(worldId)).emit("monopoly_state", {
+          worldId,
+          tableId,
+          visualOnly: true,
+          diceMotion: diceMotionPayload
+        });
+      }
       if (phase === "settled" || phase === "cancel") {
         socket.data.monopolyDiceGesture = null;
       }

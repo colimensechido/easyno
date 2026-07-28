@@ -217,10 +217,14 @@ export default function Monopoly3DScene({
     const camera = new THREE.PerspectiveCamera(48, 1, 0.1, 100);
     camera.position.set(HOME_CAMERA_POSITION.x, HOME_CAMERA_POSITION.y, HOME_CAMERA_POSITION.z);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    const coarsePointer = typeof window !== "undefined" && (
+      window.matchMedia?.("(pointer: coarse)")?.matches ||
+      window.matchMedia?.("(max-width: 860px)")?.matches
+    );
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarsePointer ? 1.15 : 1.5));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = coarsePointer ? THREE.BasicShadowMap : THREE.PCFShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     mount.appendChild(renderer.domElement);
 
@@ -251,7 +255,7 @@ export default function Monopoly3DScene({
     const keyLight = new THREE.DirectionalLight("#fff2ce", 2.1);
     keyLight.position.set(7, 13, 6);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
+    keyLight.shadow.mapSize.set(coarsePointer ? 512 : 1024, coarsePointer ? 512 : 1024);
     keyLight.shadow.camera.near = 1;
     keyLight.shadow.camera.far = 32;
     keyLight.shadow.camera.left = -12;

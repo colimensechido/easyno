@@ -8260,6 +8260,28 @@ export default function MonopolyGame({
       setTables(payload.tables || []);
     }
 
+    function handleMonopolyError(payload) {
+      setError(payload.message || `Error en ${BOLOWPOLY_DISPLAY_NAME}`);
+    }
+
+    function ingestRemoteDiceMotion(diceMotion) {
+      if (!diceMotion || sameEntityId(diceMotion.actorId, currentUserId)) return;
+      if (remoteDiceMotionSinkRef.current) {
+        remoteDiceMotionSinkRef.current(diceMotion);
+        return;
+      }
+      bufferedRemoteDiceMotionsRef.current.push(diceMotion);
+      if (bufferedRemoteDiceMotionsRef.current.length > 120) {
+        bufferedRemoteDiceMotionsRef.current.splice(0, bufferedRemoteDiceMotionsRef.current.length - 120);
+      }
+    }
+
+    function handleMonopolyDiceMotion(payload) {
+      if (!payload || payload.worldId !== world.id) return;
+      if (payload.tableId && activeTableId && payload.tableId !== activeTableId) return;
+      ingestRemoteDiceMotion(payload);
+    }
+
     function handleMonopolyState(payload) {
       if (payload.worldId !== world.id) return;
       if (payload.tableId && activeTableId && payload.tableId !== activeTableId) {
@@ -8267,17 +8289,7 @@ export default function MonopolyGame({
       }
 
       if (payload.visualOnly && payload.diceMotion) {
-        const diceMotion = payload.diceMotion;
-        if (!sameEntityId(diceMotion.actorId, currentUserId)) {
-          if (remoteDiceMotionSinkRef.current) {
-            remoteDiceMotionSinkRef.current(diceMotion);
-          } else {
-            bufferedRemoteDiceMotionsRef.current.push(diceMotion);
-            if (bufferedRemoteDiceMotionsRef.current.length > 120) {
-              bufferedRemoteDiceMotionsRef.current.splice(0, bufferedRemoteDiceMotionsRef.current.length - 120);
-            }
-          }
-        }
+        ingestRemoteDiceMotion(payload.diceMotion);
         return;
       }
 
@@ -8330,12 +8342,9 @@ export default function MonopolyGame({
       applyPayload();
     }
 
-    function handleMonopolyError(payload) {
-      setError(payload.message || `Error en ${BOLOWPOLY_DISPLAY_NAME}`);
-    }
-
     socket.on("monopoly_tables_state", handleTablesState);
     socket.on("monopoly_state", handleMonopolyState);
+    socket.on("monopoly_dice_motion", handleMonopolyDiceMotion);
     socket.on("monopoly_error", handleMonopolyError);
     socket.emit("request_monopoly_tables", { worldId: world.id });
     if (activeTableId) {
@@ -8345,6 +8354,7 @@ export default function MonopolyGame({
     return () => {
       socket.off("monopoly_tables_state", handleTablesState);
       socket.off("monopoly_state", handleMonopolyState);
+      socket.off("monopoly_dice_motion", handleMonopolyDiceMotion);
       socket.off("monopoly_error", handleMonopolyError);
     };
   }, [socket, world?.id, activeTableId, currentUserId]);
@@ -9704,16 +9714,14 @@ export default function MonopolyGame({
       ) {
         Promise.race([
           authorization.promise,
-          new Promise((resolve) => window.setTimeout(() => resolve(false), 2500))
+          new Promise((resolve) => window.setTimeout(() => resolve("timeout"), 4500))
         ]).then((authorized) => {
-          if (authorized) {
-            scheduleEmit();
-            return;
+          // Never block the real roll on gesture sync. Spectators may miss the grab,
+          // but the authoritative tirarDados action must still go through.
+          if (authorized !== true) {
+            diceMotionAuthorizedRef.current = false;
           }
-          releaseActionLock();
-          diceStateHoldUntilRef.current = 0;
-          stopDiceCinematic();
-          setError("No se pudo sincronizar el gesto de dados. Intenta de nuevo.");
+          scheduleEmit();
         });
         return;
       }
@@ -9774,7 +9782,8 @@ export default function MonopolyGame({
             diceMotionAuthorizationRef.current.resolve?.(false);
             diceMotionAuthorizationRef.current = { sequenceId: "", promise: null, resolve: null };
           }
-          if (!response?.ok && response?.error) {
+          // Soft-fail gesture sync: keep local play flowing; only surface lasting auth errors briefly.
+          if (!response?.ok && response?.error && !String(response.error).includes("no autorizo")) {
             setError(response.error);
           }
           diceMotionSequenceRef.current = "";
