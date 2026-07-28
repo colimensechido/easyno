@@ -65,7 +65,10 @@ const ADMIN_ENV_USERNAMES = String(process.env.ADMIN_USERNAMES || "")
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
-  process.env.CLIENT_ORIGIN
+  ...String(process.env.CLIENT_ORIGIN || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
 ].filter(Boolean);
 
 const io = new Server(server, {
