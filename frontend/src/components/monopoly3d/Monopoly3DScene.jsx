@@ -288,6 +288,23 @@ export default function Monopoly3DScene({
     let localDiceSyncActive = false;
     let lastDiceSyncAt = 0;
     let reportedDicePhysicsActive = false;
+    let tileTapGesture = null;
+
+    function clearTileTapGesture(pointerId) {
+      if (!tileTapGesture) return;
+      if (pointerId == null || tileTapGesture.pointerId === pointerId) {
+        tileTapGesture = null;
+      }
+    }
+
+    function markTileTapMoved(event) {
+      if (!tileTapGesture || tileTapGesture.pointerId !== event.pointerId || tileTapGesture.moved) return;
+      const dx = event.clientX - tileTapGesture.startX;
+      const dy = event.clientY - tileTapGesture.startY;
+      if ((dx * dx) + (dy * dy) >= tileTapGesture.thresholdSq) {
+        tileTapGesture.moved = true;
+      }
+    }
 
     function reportDicePhysics(active) {
       const nextActive = Boolean(active);
@@ -330,6 +347,7 @@ export default function Monopoly3DScene({
       if (event.pointerType === "mouse" && event.button !== 0) return;
       renderer.domElement.focus({ preventScroll: true });
       updatePointer(event);
+      clearTileTapGesture();
 
       if (canRollDiceRef.current && !localDiceRollRef.current.active && !dice.userData.physicsActive) {
         const diceHit = raycaster.intersectObjects(diceHitObjects, false)[0];
@@ -370,12 +388,22 @@ export default function Monopoly3DScene({
       const intersections = raycaster.intersectObjects(model.tileMeshes, false);
       const hit = intersections.find((item) => item.object.userData.spaceIndex !== undefined);
       if (hit) {
-        onSelectRef.current?.(hit.object.userData.spaceIndex);
+        // Delay tile selection until pointerup so camera pans/orbits do not open a space.
+        const thresholdPx = event.pointerType === "touch" ? 14 : 8;
+        tileTapGesture = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          spaceIndex: hit.object.userData.spaceIndex,
+          thresholdSq: thresholdPx * thresholdPx,
+          moved: false
+        };
       }
     }
 
     function handlePointerMove(event) {
       updatePointer(event);
+      markTileTapMoved(event);
 
       if (activeDicePointerId === event.pointerId && isDiceDragging(dice)) {
         event.preventDefault();
@@ -412,25 +440,37 @@ export default function Monopoly3DScene({
     }
 
     function handlePointerUp(event) {
-      if (activeDicePointerId !== event.pointerId || !isDiceDragging(dice)) return;
-      event.preventDefault();
-      renderer.domElement.releasePointerCapture?.(event.pointerId);
-      activeDicePointerId = null;
-      const releaseMotion = releaseDiceDrag(dice, performance.now());
-      renderer.domElement.style.cursor = "";
-      if (releaseMotion) {
-        onDiceMotionRef.current?.(releaseMotion);
-        localDiceSyncActive = true;
-        lastDiceSyncAt = performance.now();
-        reportDicePhysics(true);
-        startLocalDiceRoll();
-        window.requestAnimationFrame(() => onRollDiceRef.current?.());
-      } else {
-        onDiceGestureChangeRef.current?.(false);
+      if (activeDicePointerId === event.pointerId && isDiceDragging(dice)) {
+        event.preventDefault();
+        renderer.domElement.releasePointerCapture?.(event.pointerId);
+        activeDicePointerId = null;
+        const releaseMotion = releaseDiceDrag(dice, performance.now());
+        renderer.domElement.style.cursor = "";
+        if (releaseMotion) {
+          onDiceMotionRef.current?.(releaseMotion);
+          localDiceSyncActive = true;
+          lastDiceSyncAt = performance.now();
+          reportDicePhysics(true);
+          startLocalDiceRoll();
+          window.requestAnimationFrame(() => onRollDiceRef.current?.());
+        } else {
+          onDiceGestureChangeRef.current?.(false);
+        }
+        clearTileTapGesture(event.pointerId);
+        return;
+      }
+
+      if (tileTapGesture && tileTapGesture.pointerId === event.pointerId) {
+        markTileTapMoved(event);
+        if (!tileTapGesture.moved && tileTapGesture.spaceIndex !== undefined) {
+          onSelectRef.current?.(tileTapGesture.spaceIndex);
+        }
+        clearTileTapGesture(event.pointerId);
       }
     }
 
     function handlePointerCancel(event) {
+      clearTileTapGesture(event.pointerId);
       if (activeDicePointerId !== event.pointerId) return;
       renderer.domElement.releasePointerCapture?.(event.pointerId);
       activeDicePointerId = null;
@@ -445,6 +485,7 @@ export default function Monopoly3DScene({
 
     function handlePointerLeave() {
       if (isDiceDragging(dice)) return;
+      clearTileTapGesture();
       setSelectionBillboardHover(model, "");
       dice.userData.hovered = false;
       renderer.domElement.style.cursor = "";
