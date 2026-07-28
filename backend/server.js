@@ -32,6 +32,7 @@ const STARTING_BALANCE = 5000;
 const REQUIRED_DISH_SCRUBS = 100;
 const BETTING_WINDOW_MS = 7000;
 const TURN_WINDOW_MS = 15000;
+const AI_SIMULTANEOUS_TURN_MS = 25000;
 const SETTLED_TABLE_VISIBLE_MS = 12000;
 const PVP_START_WINDOW_MS = 180000;
 const PVP_REMATCH_WINDOW_MS = 20000;
@@ -1537,32 +1538,59 @@ function startBettingCountdown(table) {
 
 function scheduleTurnTimeout(table) {
   clearTurnTimer(table);
-  table.turnEndsAt = Date.now() + TURN_WINDOW_MS;
-  const expectedUserId = table.currentTurnUserId;
+  table.turnEndsAt = Date.now() + AI_SIMULTANEOUS_TURN_MS;
+  table.currentTurnUserId = null;
 
   table.turnTimer = setTimeout(() => {
     const currentTable = multiplayerBlackjackTables.get(table.worldId);
 
-    if (
-      !currentTable ||
-      currentTable.phase !== "playing" ||
-      currentTable.currentTurnUserId !== expectedUserId
-    ) {
+    if (!currentTable || currentTable.phase !== "playing") {
       return;
     }
 
-    const player = currentTable.players.get(expectedUserId);
-
-    if (!player || player.status !== "playing") {
-      return;
+    let autoStood = 0;
+    for (const userId of currentTable.order) {
+      const player = currentTable.players.get(userId);
+      if (player && player.status === "playing") {
+        player.status = "stood";
+        autoStood += 1;
+      }
     }
 
-    player.status = "stood";
-    currentTable.message = `${player.username} agoto el tiempo y se planta`;
-    advanceMultiplayerTurn(currentTable.worldId).catch((error) => {
-      console.error("No se pudo avanzar el turno automatico", error);
+    if (autoStood > 0) {
+      currentTable.message = autoStood === 1
+        ? "Se agoto el tiempo: un jugador se planta automaticamente"
+        : `Se agoto el tiempo: ${autoStood} jugadores se plantan automaticamente`;
+    }
+
+    settleMultiplayerTable(currentTable.worldId).catch((error) => {
+      console.error("No se pudo resolver la mesa tras el timeout simultaneo", error);
     });
-  }, TURN_WINDOW_MS);
+  }, AI_SIMULTANEOUS_TURN_MS);
+}
+
+function playersStillDeciding(table) {
+  return table.order.some((userId) => {
+    const player = table.players.get(userId);
+    return player && player.status === "playing";
+  });
+}
+
+async function maybeFinishSimultaneousPlay(worldId) {
+  const table = multiplayerBlackjackTables.get(worldId);
+
+  if (!table || table.phase !== "playing") {
+    return;
+  }
+
+  if (playersStillDeciding(table)) {
+    emitMultiplayerTable(worldId);
+    return;
+  }
+
+  clearTurnTimer(table);
+  table.turnEndsAt = null;
+  await settleMultiplayerTable(worldId);
 }
 
 function scheduleSettledCleanup(table) {
@@ -1578,12 +1606,10 @@ function scheduleSettledCleanup(table) {
   }, SETTLED_TABLE_VISIBLE_MS);
 }
 
-function setCurrentTurn(table, turnIndex) {
-  table.turnIndex = turnIndex;
-  table.currentTurnUserId = table.order[turnIndex];
-  table.turnEndsAt = null;
-  const player = table.players.get(table.currentTurnUserId);
-  table.message = `Turno de ${player.username}`;
+function beginSimultaneousPlay(table) {
+  table.turnIndex = -1;
+  table.currentTurnUserId = null;
+  table.message = "Todos juegan a la vez. La banca espera.";
   scheduleTurnTimeout(table);
   emitMultiplayerTable(table.worldId);
 }
@@ -1616,44 +1642,22 @@ async function startMultiplayerRound(worldId) {
     const player = table.players.get(userId);
     player.cards = [draw(table.deck), draw(table.deck)];
     player.status = hasBlackjack(player.cards) ? "blackjack" : "playing";
-      player.outcome = null;
-      player.payout = 0;
-      player.eyconRewardUnits = 0;
+    player.outcome = null;
+    player.payout = 0;
+    player.eyconRewardUnits = 0;
   }
 
-  const firstTurnIndex = table.order.findIndex((userId) => {
-    const player = table.players.get(userId);
-    return player && player.status === "playing";
-  });
-
-  if (firstTurnIndex === -1) {
+  if (!playersStillDeciding(table)) {
     await settleMultiplayerTable(worldId);
     return;
   }
 
-  setCurrentTurn(table, firstTurnIndex);
+  beginSimultaneousPlay(table);
 }
 
 async function advanceMultiplayerTurn(worldId) {
-  const table = multiplayerBlackjackTables.get(worldId);
-
-  if (!table || table.phase !== "playing") {
-    return;
-  }
-
-  clearTurnTimer(table);
-
-  for (let index = table.turnIndex + 1; index < table.order.length; index += 1) {
-    const userId = table.order[index];
-    const player = table.players.get(userId);
-
-    if (player && player.status === "playing") {
-      setCurrentTurn(table, index);
-      return;
-    }
-  }
-
-  await settleMultiplayerTable(worldId);
+  // Compat: el flujo vs banca ya no es secuencial; cerramos cuando nadie decide.
+  await maybeFinishSimultaneousPlay(worldId);
 }
 
 function settleOutcome(player, dealerTotal) {
@@ -1799,13 +1803,12 @@ async function handlePlayerLeftWorld(userId, worldId) {
 
   if (
     table.phase === "playing" &&
-    table.currentTurnUserId === userId &&
     player.status === "playing"
   ) {
     player.connected = false;
     player.status = "stood";
-    table.message = `${player.username} se desconecto; turno saltado`;
-    await advanceMultiplayerTurn(worldId);
+    table.message = `${player.username} se desconecto; se planta`;
+    await maybeFinishSimultaneousPlay(worldId);
     return;
   }
 
@@ -4997,22 +5000,41 @@ io.on("connection", (socket) => {
 
       if (phase === "grab") {
         const state = await monopolyService.getState({ worldId, tableId });
-        const game = state?.table?.game;
-        const actor = game?.players?.find((player) => String(player.id) === String(socket.user.id));
-        if (
-          !actor ||
-          actor.bankrupt ||
-          String(game.currentPlayerId) !== String(socket.user.id) ||
-          !Array.isArray(actor.availableActions) ||
-          !actor.availableActions.includes("tirarDados")
-        ) {
-          if (typeof callback === "function") {
-            callback({
-              ok: false,
-              error: "El servidor no autorizo el gesto de dados para este turno"
-            });
+        const table = state?.table || null;
+        const game = table?.game;
+        const actorId = socket.user.id;
+
+        if (table?.status === "ORDERING") {
+          const seated = (table.seatedPlayers || []).some((player) => String(player.id) === String(actorId));
+          const alreadyRolled = (table.turnOrder?.rolls || []).some(
+            (roll) => String(roll.playerId) === String(actorId) && roll.rolled
+          );
+          if (!seated || alreadyRolled) {
+            if (typeof callback === "function") {
+              callback({
+                ok: false,
+                error: "El servidor no autorizo el gesto de dados para el sorteo"
+              });
+            }
+            return;
           }
-          return;
+        } else {
+          const actor = game?.players?.find((player) => String(player.id) === String(actorId));
+          if (
+            !actor ||
+            actor.bankrupt ||
+            String(game.currentPlayerId) !== String(actorId) ||
+            !Array.isArray(actor.availableActions) ||
+            !actor.availableActions.includes("tirarDados")
+          ) {
+            if (typeof callback === "function") {
+              callback({
+                ok: false,
+                error: "El servidor no autorizo el gesto de dados para este turno"
+              });
+            }
+            return;
+          }
         }
         socket.data.monopolyDiceGesture = {
           worldId,
@@ -5728,14 +5750,10 @@ io.on("connection", (socket) => {
         throw new Error("No hay ronda activa");
       }
 
-      if (table.currentTurnUserId !== socket.user.id) {
-        throw new Error("No es tu turno");
-      }
-
       const player = table.players.get(socket.user.id);
 
       if (!player || player.status !== "playing") {
-        throw new Error("No puedes actuar en esta ronda");
+        throw new Error("Ya no puedes actuar en esta ronda");
       }
 
       if (action === "hit") {
@@ -5745,20 +5763,19 @@ io.on("connection", (socket) => {
         if (total > 21) {
           player.status = "busted";
           table.message = `${player.username} se paso`;
-          await advanceMultiplayerTurn(worldId);
+          await maybeFinishSimultaneousPlay(worldId);
         } else if (total === 21) {
           player.status = "stood";
           table.message = `${player.username} llego a 21`;
-          await advanceMultiplayerTurn(worldId);
+          await maybeFinishSimultaneousPlay(worldId);
         } else {
           table.message = `${player.username} pidio carta`;
-          scheduleTurnTimeout(table);
           emitMultiplayerTable(worldId);
         }
       } else if (action === "stand") {
         player.status = "stood";
         table.message = `${player.username} se planta`;
-        await advanceMultiplayerTurn(worldId);
+        await maybeFinishSimultaneousPlay(worldId);
       } else {
         throw new Error("Accion invalida");
       }

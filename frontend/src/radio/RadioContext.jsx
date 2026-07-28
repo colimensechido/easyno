@@ -351,7 +351,9 @@ export function RadioProvider({ children }) {
       manualStationRef.current = false;
     }
     if (!forceStation && manualStationRef.current && currentStationRef.current) {
-      if (forcePlay || !playbackTouchedRef.current) {
+      // Keep the user's station selection. Never autoplay unless explicitly requested.
+      if (forcePlay) {
+        playbackTouchedRef.current = true;
         setIsPlaying(true);
       }
       return;
@@ -365,7 +367,9 @@ export function RadioProvider({ children }) {
       setCurrentStation(target);
       setCategoryState(target.CATEGORIA || ALL_CATEGORIES);
     }
-    if (forcePlay || !playbackTouchedRef.current) {
+    // Only start audio when the caller explicitly asks (e.g. user accepted a prompt).
+    if (forcePlay) {
+      playbackTouchedRef.current = true;
       setIsPlaying(true);
     }
   }, [setCurrentStation, setIsPlaying, stations]);

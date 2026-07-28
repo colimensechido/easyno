@@ -42,7 +42,7 @@ function writeMinimizedPreference(value) {
   }
 }
 
-export default function PlatformRadioPlayer({ compact = false }) {
+export default function PlatformRadioPlayer({ compact = false, className = "" }) {
   const {
     stations,
     categories,
@@ -126,7 +126,7 @@ export default function PlatformRadioPlayer({ compact = false }) {
 
   if (minimized) {
     return (
-      <section className={cx("platform-radio", "is-minimized", isPlaying && "is-playing")} aria-label="Radio de la plataforma">
+      <section className={cx("platform-radio", "is-minimized", isPlaying && "is-playing", className)} aria-label="Radio de la plataforma">
         {showRecommendation && showRecommendationHint && (
           <button type="button" className="platform-radio-recommendation" onClick={playRecommendedStation}>
             <span>Estas escuchando otra radio.</span>
@@ -175,7 +175,7 @@ export default function PlatformRadioPlayer({ compact = false }) {
   }
 
   return (
-    <section className={cx("platform-radio", isPlaying && "is-playing", expanded && "is-expanded")} aria-label="Radio de la plataforma">
+    <section className={cx("platform-radio", isPlaying && "is-playing", expanded && "is-expanded", className)} aria-label="Radio de la plataforma">
       {showRecommendation && showRecommendationHint && !expanded && (
         <button type="button" className="platform-radio-recommendation" onClick={playRecommendedStation}>
           <span>Actualmente estas escuchando otra radio.</span>

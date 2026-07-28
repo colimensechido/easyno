@@ -21,7 +21,7 @@ import BrandLogo from "./shared/BrandLogo";
 import TermsModal from "./TermsModal";
 
 const usernamePattern = /^[a-z0-9_]{3,16}$/;
-const TERMS_STORAGE_KEY = "easyno-terms-accepted-v1";
+const TERMS_STORAGE_KEY = "easyno-terms-accepted-v2";
 
 function passwordRules(password) {
   return [
@@ -154,15 +154,15 @@ export default function AuthPanel({ onAuth }) {
           <div className="auth-disclaimer-card">
             <ShieldCheck size={18} />
             <div>
-              <strong>Juego 100% virtual</strong>
-              <span>Sin apuestas reales. Fichas y saldo son solo de entretenimiento y no tienen valor de cambio.</span>
+              <strong>Es un videojuego</strong>
+              <span>EasyNo es software de entretenimiento. Fichas y saldo son virtuales: no hay apuestas con dinero real.</span>
             </div>
           </div>
           <div className="auth-disclaimer-card">
             <Gem size={18} />
             <div>
-              <strong>Solo pagas por cosmeticos</strong>
-              <span>Piezas, tableros, dados y efectos visuales. Nunca ventajas competitivas ni dinero de juego.</span>
+              <strong>BolowPoly inspirado</strong>
+              <span>Obra independiente inspirada en el genero de MONOPOLY. No afiliada a Hasbro ni a sus marcas.</span>
             </div>
           </div>
         </div>
@@ -283,7 +283,7 @@ export default function AuthPanel({ onAuth }) {
                   {termsAccepted ? (
                     <>Aceptaste los terminos y condiciones <em>(ver de nuevo)</em></>
                   ) : (
-                    <>Debes leer y aceptar los <strong>terminos y condiciones</strong> para continuar</>
+                    <>Lee y acepta los <strong>terminos y condiciones</strong> para crear tu cuenta</>
                   )}
                 </span>
                 <ExternalLink size={14} />
@@ -304,7 +304,7 @@ export default function AuthPanel({ onAuth }) {
           </button>
 
           <p className="mt-4 text-center text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500">
-            13+ para jugar &middot; 18+ para recargar EyCon &middot; Juego virtual &middot; Solo diversion
+            Videojuego &middot; 13+ para jugar &middot; 18+ para EyCon &middot; BolowPoly inspirado en MONOPOLY
           </p>
         </div>
       </form>

@@ -1,4 +1,4 @@
-import { Bug, Coins, Crown, Cuboid, Gamepad2, Gem, Globe2, KeyRound, LogOut, MessageSquare, Shield, Sparkles, Target, Trophy, Users, Volume2, VolumeX, WalletCards, Wifi, WifiOff, X } from "lucide-react";
+import { Bug, Coins, Crown, Cuboid, Flame, Gamepad2, Gem, Globe2, KeyRound, LogOut, Menu, MessageSquare, PauseCircle, PlayCircle, Radio, Shield, Sparkles, Target, Trophy, Users, Volume2, VolumeX, WalletCards, Wifi, WifiOff, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import { api } from "./api";
@@ -33,9 +33,17 @@ function formatMoney(value) {
 
 function RoomGamesHub({ world, onSelectGame }) {
   const games = [
-    { key: "dishes", icon: Sparkles, title: "Trabajo", text: "Lavar platos", status: "Listo" },
+    {
+      key: "monopoly3d",
+      icon: Cuboid,
+      title: "BolowPoly",
+      text: "Juego inspirado en MONOPOLY",
+      status: "Activo",
+      featured: true,
+      badge: "En tendencia"
+    },
     { key: "blackjack", icon: Gamepad2, title: "Blackjack", text: "Mesa contra la banca", status: "Activo" },
-    { key: "monopoly3d", icon: Cuboid, title: "BolowPoly", text: "Juego inspirado en MONOPOLY", status: "Activo" }
+    { key: "dishes", icon: Sparkles, title: "Trabajo", text: "Lavar platos", status: "Listo" }
   ];
 
   return (
@@ -51,17 +59,24 @@ function RoomGamesHub({ world, onSelectGame }) {
         {games.map((game) => {
           const Icon = game.icon;
           return (
-            <article className="game-card" key={game.key}>
+            <article className={`game-card${game.featured ? " is-featured" : ""}`} key={game.key}>
               <div className="game-card__top">
                 <span className="game-card__icon"><Icon size={20} /></span>
-                <span className="game-status is-live">{game.status}</span>
+                {game.badge ? (
+                  <span className="game-status is-hot">
+                    <Flame size={13} />
+                    {game.badge}
+                  </span>
+                ) : (
+                  <span className="game-status is-live">{game.status}</span>
+                )}
               </div>
               <div>
                 <h4>{game.title}</h4>
                 <p>{game.text}</p>
               </div>
               <button className="game-card__action" onClick={() => onSelectGame(game.key)} type="button">
-                Abrir
+                {game.featured ? "Jugar ahora" : "Abrir"}
               </button>
             </article>
           );
@@ -154,7 +169,7 @@ function SessionExpiredModal({ message, onClose }) {
 }
 
 export default function App() {
-  const { loadDefaultStation, pause } = useRadio();
+  const { loadDefaultStation, pause, togglePlay, isPlaying, currentStation } = useRadio();
   const [session, setSession] = useState(savedSession);
   const [world, setWorld] = useState(null);
   const [balance, setBalance] = useState(0);
@@ -175,7 +190,10 @@ export default function App() {
   const [clientErrors, setClientErrors] = useState([]);
   const [sessionExpiredMessage, setSessionExpiredMessage] = useState("");
   const [muted, setMuted] = useState(() => audio.isMuted());
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => (
+    typeof window === "undefined" ? true : window.innerWidth >= 1280
+  ));
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const worldRef = useRef(null);
   const presenceIdsRef = useRef(new Set());
   const lastMessageIdRef = useRef(null);
@@ -235,6 +253,10 @@ export default function App() {
       window.removeEventListener("unhandledrejection", onRejection);
     };
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [view, routePath]);
 
   useEffect(() => {
     if (!token) return;
@@ -338,8 +360,9 @@ export default function App() {
       return;
     }
 
+    // Prepare a station for the UI, but never autoplay on login.
     loadDefaultStation(APP_RADIO_GAME_KEY, {
-      forcePlay: true,
+      forcePlay: false,
       resetPlaybackIntent: true
     });
   }, [loadDefaultStation, pause, session]);
@@ -806,57 +829,132 @@ export default function App() {
                 <span key={eyconProfile.balanceUnits} className="tabnum inline-block animate-count-pop">{eyconLabel}</span>
               </div>
             )}
-            {isAdmin && (
-              <button className="ghost-button px-3" onClick={() => navigate("/admin")} title="Administracion">
-                <Shield size={18} />
-                <span className="hidden sm:inline">Admin</span>
-              </button>
-            )}
-            <button className="ghost-button px-3 report-trigger" data-report-exclude onClick={() => setReportOpen(true)} title="Reportar bug o enviar sugerencia">
-              <Bug size={18} />
-              <span className="hidden sm:inline">Reportar</span>
-            </button>
-            <button className="ghost-button px-3 social-trigger" data-report-exclude onClick={() => openSocial()} title="Mensajes, perfiles y moderacion">
-              <Users size={18} />
-              <span className="hidden sm:inline">Social</span>
-              {directUnread > 0 && <b>{Math.min(directUnread, 99)}</b>}
-            </button>
-            <div
-              className={`hud-pill ${socketStatus === "online" ? "hud-pill--emerald" : "hud-pill--muted"} text-xs uppercase tracking-[0.14em]`}
-              title={socketError || "Estado de conexión"}
-            >
-              {socketStatus === "online" ? (
-                <span className="relative flex items-center">
-                  <span className="absolute inset-0 -m-0.5 animate-ping rounded-full bg-emerald-400/40" />
-                  <Wifi size={15} className="relative" />
-                </span>
-              ) : (
-                <WifiOff size={15} />
-              )}
-              {socketStatus === "online" ? "En vivo" : "offline"}
-            </div>
-            {world && (
-              <button className="ghost-button px-3" onClick={leaveWorld} title="Cambiar de sala">
-                <Globe2 size={18} />
-                <span className="hidden sm:inline">Sala</span>
-              </button>
-            )}
             <button
-              className="ghost-button px-3"
-              onClick={() => audio.toggleMuted()}
-              title={muted ? "Activar audio" : "Silenciar audio"}
+              type="button"
+              className="ghost-button px-3 platform-menu-toggle"
+              onClick={() => setMobileMenuOpen(true)}
+              title="Más opciones"
+              aria-label="Abrir menú"
             >
-              {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              <Menu size={18} />
             </button>
-            <button className="ghost-button px-3" onClick={handleLogout} title="Cerrar sesión">
-              <LogOut size={18} />
-              <span className="hidden sm:inline">Salir</span>
-            </button>
+            <div className="platform-actions__extra">
+              {isAdmin && (
+                <button className="ghost-button px-3" onClick={() => navigate("/admin")} title="Administracion">
+                  <Shield size={18} />
+                  <span className="hidden sm:inline">Admin</span>
+                </button>
+              )}
+              <button className="ghost-button px-3 report-trigger" data-report-exclude onClick={() => setReportOpen(true)} title="Reportar bug o enviar sugerencia">
+                <Bug size={18} />
+                <span className="hidden sm:inline">Reportar</span>
+              </button>
+              <button className="ghost-button px-3 social-trigger" data-report-exclude onClick={() => openSocial()} title="Mensajes, perfiles y moderacion">
+                <Users size={18} />
+                <span className="hidden sm:inline">Social</span>
+                {directUnread > 0 && <b>{Math.min(directUnread, 99)}</b>}
+              </button>
+              <div
+                className={`hud-pill ${socketStatus === "online" ? "hud-pill--emerald" : "hud-pill--muted"} text-xs uppercase tracking-[0.14em]`}
+                title={socketError || "Estado de conexión"}
+              >
+                {socketStatus === "online" ? (
+                  <span className="relative flex items-center">
+                    <span className="absolute inset-0 -m-0.5 animate-ping rounded-full bg-emerald-400/40" />
+                    <Wifi size={15} className="relative" />
+                  </span>
+                ) : (
+                  <WifiOff size={15} />
+                )}
+                {socketStatus === "online" ? "En vivo" : "offline"}
+              </div>
+              {world && (
+                <button className="ghost-button px-3" onClick={leaveWorld} title="Cambiar de sala">
+                  <Globe2 size={18} />
+                  <span className="hidden sm:inline">Sala</span>
+                </button>
+              )}
+              <button
+                className="ghost-button px-3"
+                onClick={() => audio.toggleMuted()}
+                title={muted ? "Activar audio" : "Silenciar audio"}
+              >
+                {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+              </button>
+              <button className="ghost-button px-3" onClick={handleLogout} title="Cerrar sesión">
+                <LogOut size={18} />
+                <span className="hidden sm:inline">Salir</span>
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      <section className={`mx-auto px-4 ${monopolyView ? "max-w-[1800px] py-3" : "max-w-7xl py-8"}`}>
+      {mobileMenuOpen && (
+        <div className="platform-mobile-sheet" role="dialog" aria-modal="true" aria-label="Menú de opciones">
+          <button type="button" className="platform-mobile-sheet__backdrop" aria-label="Cerrar menú" onClick={() => setMobileMenuOpen(false)} />
+          <div className="platform-mobile-sheet__panel">
+            <header>
+              <strong>Opciones</strong>
+              <button type="button" className="ghost-button px-3" onClick={() => setMobileMenuOpen(false)} aria-label="Cerrar">
+                <X size={18} />
+              </button>
+            </header>
+            <div className="platform-mobile-sheet__status">
+              <span className={socketStatus === "online" ? "is-online" : ""}>
+                {socketStatus === "online" ? <Wifi size={16} /> : <WifiOff size={16} />}
+                {socketStatus === "online" ? "En vivo" : "Offline"}
+              </span>
+              {world && <em>{world.name}</em>}
+            </div>
+            <div className="platform-mobile-sheet__radio">
+              <span>
+                <Radio size={16} />
+                <span>
+                  <strong>Radio</strong>
+                  <em>{currentStation?.NOMBRE || "Sin estacion"}</em>
+                </span>
+              </span>
+              <button
+                type="button"
+                className="platform-mobile-sheet__radio-play"
+                onClick={() => togglePlay()}
+                title={isPlaying ? "Pausar radio" : "Reproducir radio"}
+              >
+                {isPlaying ? <PauseCircle size={22} /> : <PlayCircle size={22} />}
+              </button>
+            </div>
+            <nav className="platform-mobile-sheet__nav">
+              {isAdmin && (
+                <button type="button" onClick={() => { setMobileMenuOpen(false); navigate("/admin"); }}>
+                  <Shield size={18} /> Admin
+                </button>
+              )}
+              <button type="button" data-report-exclude onClick={() => { setMobileMenuOpen(false); setReportOpen(true); }}>
+                <Bug size={18} /> Reportar
+              </button>
+              <button type="button" data-report-exclude onClick={() => { setMobileMenuOpen(false); openSocial(); }}>
+                <Users size={18} /> Social
+                {directUnread > 0 && <b>{Math.min(directUnread, 99)}</b>}
+              </button>
+              {world && (
+                <button type="button" onClick={() => { setMobileMenuOpen(false); leaveWorld(); }}>
+                  <Globe2 size={18} /> Cambiar sala
+                </button>
+              )}
+              <button type="button" onClick={() => { audio.toggleMuted(); }}>
+                {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                {muted ? "Activar audio" : "Silenciar"}
+              </button>
+              <button type="button" className="is-danger" onClick={() => { setMobileMenuOpen(false); handleLogout(); }}>
+                <LogOut size={18} /> Cerrar sesión
+              </button>
+            </nav>
+          </div>
+        </div>
+      )}
+
+      <section className={`mx-auto px-3 sm:px-4 ${monopolyView ? "max-w-[1800px] py-2 sm:py-3" : "max-w-7xl py-5 sm:py-8"}`}>
         {view === "worlds" ? (
           <WorldSelector
             token={token}
@@ -961,7 +1059,7 @@ export default function App() {
               {/* Botón flotante para reabrir el panel cuando está oculto */}
               {!sidebarOpen && (
                 <button
-                  className="fixed bottom-5 right-5 z-30 inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/70 px-4 py-3 text-sm font-bold text-zinc-200 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur transition hover:border-amber-300/40 hover:text-amber-100"
+                  className="platform-chat-fab fixed z-30 inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/70 px-4 py-3 text-sm font-bold text-zinc-200 shadow-[0_8px_24px_rgba(0,0,0,0.5)] backdrop-blur transition hover:border-amber-300/40 hover:text-amber-100"
                   onClick={() => setSidebarOpen(true)}
                   title="Mostrar jugadores y chat"
                 >
@@ -1007,7 +1105,7 @@ export default function App() {
           clientErrors
         }}
       />
-      <PlatformRadioPlayer compact={!world} />
+      <PlatformRadioPlayer compact={!world} className="platform-radio--desktop-only" />
     </main>
   );
 }

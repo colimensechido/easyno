@@ -240,7 +240,7 @@ export default function DishesGame({ token, world, onBalanceChange }) {
           </div>
 
           <div
-            className={`relative flex min-h-[400px] select-none items-center justify-center overflow-hidden rounded-xl border-2 p-6 text-center transition ${
+            className={`relative flex min-h-[280px] select-none items-center justify-center overflow-hidden rounded-xl border-2 p-4 text-center transition sm:min-h-[360px] sm:p-6 lg:min-h-[400px] ${
               status === "running"
                 ? "cursor-grab border-amber-300/50 shadow-gold active:cursor-grabbing"
                 : "border-white/10"
@@ -259,7 +259,7 @@ export default function DishesGame({ token, world, onBalanceChange }) {
             <div className="absolute inset-0 bg-[linear-gradient(rgba(251,191,36,.04)_1px,transparent_1px),linear-gradient(90deg,rgba(251,191,36,.04)_1px,transparent_1px)] bg-[size:36px_36px]" />
 
             <div className="relative grid justify-items-center gap-5" style={{ touchAction: "none" }}>
-              <div ref={plateRef} className={`relative h-64 w-64 rounded-full border-8 shadow-2xl transition ${status === "running" ? "border-amber-200" : "border-zinc-300"}`} style={{
+              <div ref={plateRef} className={`relative h-52 w-52 rounded-full border-8 shadow-2xl transition sm:h-64 sm:w-64 ${status === "running" ? "border-amber-200" : "border-zinc-300"}`} style={{
                 background: "radial-gradient(circle at 35% 25%, #ffffff, #e4e4e7 75%)"
               }}>
                 <div className="absolute inset-8 rounded-full border-4 border-zinc-300/70 bg-white" />

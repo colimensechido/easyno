@@ -530,7 +530,7 @@ export default function Monopoly3DScene({
         localRoll.active &&
         (
           ["dice", "highlightTarget", "move", "settle"].includes(globalPhase) ||
-          (!visualState.rollingDice && !globalPhase && !canRollDiceRef.current && performance.now() - localRoll.startedAt > 900) ||
+          (!visualState.rollingDice && !globalPhase && !canRollDiceRef.current && performance.now() - localRoll.startedAt > 1600) ||
           performance.now() > localRoll.maxUntil
         )
       ) {

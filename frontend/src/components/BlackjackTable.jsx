@@ -99,7 +99,7 @@ function Card({ card, compact = false, index = 0 }) {
     return (
       <div
         className={`playing-card-back animate-deal-in ${
-          compact ? "w-16" : "w-24 sm:w-28"
+          compact ? "w-14 sm:w-16" : "w-[4.25rem] sm:w-24 md:w-28"
         }`}
         style={dealStyle}
       >
@@ -123,7 +123,7 @@ function Card({ card, compact = false, index = 0 }) {
 
   return (
     <div
-      className={`playing-card animate-deal-in ${compact ? "w-16 p-2" : "w-24 p-3 sm:w-28"}`}
+      className={`playing-card animate-deal-in ${compact ? "w-14 p-1.5 sm:w-16 sm:p-2" : "w-[4.25rem] p-2 sm:w-24 sm:p-3 md:w-28"}`}
       style={dealStyle}
       title={`${card.rank} de ${suit.name}`}
     >
@@ -241,37 +241,37 @@ function ResultModal({ notice, onClose }) {
 
   const config = isWin
     ? {
-        ring: "border-amber-300",
-        bannerClass: "victory-banner",
-        eyebrow: "GANASTE",
-        eyebrowColor: "text-amber-900",
+        ring: "border-amber-300/70",
+        shell: "bj-result-shell bj-result-shell--win",
+        eyebrow: "VICTORIA",
+        eyebrowColor: "text-amber-200",
         titleColor: "text-amber-50 text-shadow-gold",
         Icon: Crown,
         iconColor: "text-amber-100",
         iconBg: "linear-gradient(135deg, #fbbf24, #b8860b)",
-        amountClass: "text-amber-900 bg-amber-200/95 border-amber-700",
-        msgColor: "text-amber-900",
+        amountClass: "text-amber-950 bg-amber-200/95 border-amber-700",
+        msgColor: "text-amber-100/90",
         btnClass: "arcade-button",
         animation: "animate-bounce-in"
       }
     : isLose
       ? {
-          ring: "border-rose-400",
-          bannerClass: "defeat-banner",
-          eyebrow: "PERDISTE",
+          ring: "border-rose-400/70",
+          shell: "bj-result-shell bj-result-shell--lose",
+          eyebrow: "DERROTA",
           eyebrowColor: "text-rose-200",
           titleColor: "text-rose-50 text-shadow-ruby",
           Icon: Skull,
           iconColor: "text-rose-100",
           iconBg: "linear-gradient(135deg, #ef4444, #7f1d1d)",
           amountClass: "text-rose-50 bg-black/40 border-rose-300/30",
-          msgColor: "text-rose-100",
+          msgColor: "text-rose-100/90",
           btnClass: "danger-button",
           animation: "animate-defeat-shake"
         }
       : {
-          ring: "border-cyan-300",
-          bannerClass: "push-banner",
+          ring: "border-cyan-300/70",
+          shell: "bj-result-shell bj-result-shell--push",
           eyebrow: isPush ? "EMPATE" : "AVISO",
           eyebrowColor: "text-cyan-100",
           titleColor: "text-white",
@@ -279,7 +279,7 @@ function ResultModal({ notice, onClose }) {
           iconColor: "text-cyan-100",
           iconBg: "linear-gradient(135deg, #06b6d4, #0e7490)",
           amountClass: "text-white bg-black/40 border-cyan-300/30",
-          msgColor: "text-cyan-50",
+          msgColor: "text-cyan-50/90",
           btnClass: "arcade-button",
           animation: "animate-bounce-in"
         };
@@ -288,40 +288,43 @@ function ResultModal({ notice, onClose }) {
   const buttonLabel = notice.buttonLabel || (isWin ? "Cobrar y seguir" : isLose ? "Nueva ronda" : "Continuar");
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
+    <div className="bj-result-backdrop">
       {isWin && <CoinShower count={28} />}
       <div className={`relative w-full max-w-md ${config.animation}`}>
-        <div className={`${config.bannerClass} relative overflow-hidden`}>
+        <div className={`${config.shell} relative overflow-hidden border-2 ${config.ring}`}>
           {isWin && <SparkleField />}
 
-          <div className="relative text-center">
-            <p className={`text-xs font-black uppercase tracking-[0.42em] ${config.eyebrowColor}`}>
+          <div className="relative px-6 py-7 text-center sm:px-8 sm:py-8">
+            <p className={`text-[11px] font-black uppercase tracking-[0.42em] ${config.eyebrowColor}`}>
               {config.eyebrow}
             </p>
 
-            <div className="mx-auto my-4 flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/30 shadow-2xl" style={{ background: config.iconBg }}>
-              <Icon size={42} className={config.iconColor} />
+            <div
+              className="mx-auto my-4 flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full border-4 border-white/25 shadow-2xl"
+              style={{ background: config.iconBg }}
+            >
+              <Icon size={38} className={config.iconColor} />
             </div>
 
-            <h3 className={`font-display text-4xl font-black uppercase ${config.titleColor}`}>
+            <h3 className={`font-display text-3xl font-black uppercase sm:text-4xl ${config.titleColor}`}>
               {notice.title}
             </h3>
 
             {notice.amount && (
-              <div className={`mx-auto mt-5 inline-flex items-center gap-3 rounded-lg border-2 px-6 py-3 font-display text-3xl font-black ${config.amountClass} ${isWin ? "animate-victory-pulse" : ""}`}>
-                {isWin && <Coins size={28} />}
+              <div className={`mx-auto mt-5 inline-flex items-center gap-3 rounded-xl border-2 px-5 py-2.5 font-display text-2xl font-black sm:text-3xl ${config.amountClass} ${isWin ? "animate-victory-pulse" : ""}`}>
+                {isWin && <Coins size={26} />}
                 {notice.amount}
-                {isWin && <Coins size={28} />}
+                {isWin && <Coins size={26} />}
               </div>
             )}
 
-            <p className={`mt-5 text-sm font-bold leading-6 ${config.msgColor}`}>
+            <p className={`mx-auto mt-5 max-w-[34ch] text-sm font-bold leading-6 ${config.msgColor}`}>
               {notice.message}
             </p>
           </div>
         </div>
 
-        <button className={`${config.btnClass} mt-4 w-full text-base`} onClick={onClose}>
+        <button type="button" className={`${config.btnClass} mt-4 w-full text-base`} onClick={onClose}>
           {isWin ? <PartyPopper size={20} /> : <StepForward size={20} />}
           {buttonLabel}
         </button>
@@ -820,34 +823,35 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
   }
 
   return (
-    <section className={showCreatePanel ? "grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]" : "grid gap-5"}>
+    <section className={showCreatePanel ? "bj-pvp-layout" : "grid gap-5"}>
       <div className="grid gap-5">
-        <div className="arcade-panel p-5">
-          <div className="mb-5 flex flex-col gap-3 border-b border-white/10 pb-5 sm:flex-row sm:items-end sm:justify-between">
+        <div className="bj-pvp-board">
+          <div className="bj-pvp-board__head">
             <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-cyan-200">Mesas PvP</p>
-              <h2 className="mt-1 font-display text-2xl font-extrabold text-white">Jugadores vs jugadores</h2>
+              <p>Mesas PvP</p>
+              <h2>Jugadores vs jugadores</h2>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-md border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-center">
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-amber-200/60">Min</p>
-                <p className="font-display text-lg font-extrabold text-amber-200">{formatMoney(limits.min)}</p>
+            <div className="bj-pvp-stats">
+              <div>
+                <span>Min</span>
+                <strong>{formatMoney(limits.min)}</strong>
               </div>
-              <div className="rounded-md border border-emerald-300/30 bg-emerald-300/10 px-3 py-2 text-center">
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-200/60">Tope</p>
-                <p className="font-display text-lg font-extrabold text-emerald-200">Libre</p>
+              <div>
+                <span>Tope</span>
+                <strong>Libre</strong>
               </div>
-              <div className="rounded-md border border-cyan-300/30 bg-cyan-300/10 px-3 py-2 text-center">
-                <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-cyan-200/60">Abiertas</p>
-                <p className="font-display text-lg font-extrabold text-cyan-200">{openTables}</p>
+              <div>
+                <span>Abiertas</span>
+                <strong>{openTables}</strong>
               </div>
             </div>
           </div>
 
           {state.tables.length === 0 ? (
-            <div className="rounded-md border border-dashed border-white/10 p-8 text-center">
-              <p className="font-display text-xl font-extrabold text-white">No hay mesas PvP abiertas</p>
-              <p className="mt-2 text-sm font-bold text-zinc-500">Crea una mesa y el buy-in queda reservado hasta que salgas o termine la ronda.</p>
+            <div className="bj-empty-state">
+              <Swords size={28} />
+              <strong>No hay mesas PvP abiertas</strong>
+              <span>Crea una mesa; el buy-in queda reservado hasta que salgas o termine la ronda.</span>
             </div>
           ) : (
             <div className="grid gap-4">
@@ -863,45 +867,33 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
                 const canLeave = seated && table.phase !== "settled";
 
                 return (
-                  <article key={table.id} className="rounded-lg border border-white/10 bg-black/35 p-4">
-                    <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <article key={table.id} className="bj-table-card">
+                    <div className="bj-table-card__head">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate font-display text-xl font-extrabold text-white">{table.name}</h3>
-                          <span
-                            className={`rounded-md border px-2 py-1 text-xs font-extrabold uppercase tracking-[0.12em] ${
-                              table.phase === "playing"
-                                ? "border-cyan-300/30 bg-cyan-300/10 text-cyan-200"
-                                : table.phase === "settled"
-                                  ? "border-emerald-300/30 bg-emerald-300/10 text-emerald-200"
-                                  : "border-amber-300/30 bg-amber-300/10 text-amber-200"
-                            }`}
-                          >
+                          <h3>{table.name}</h3>
+                          <span className={`bj-phase-pill bj-phase-pill--${table.phase}`}>
                             {table.phase === "playing" ? "En juego" : table.phase === "settled" ? "Finalizada" : "Lobby"}
                           </span>
                           {table.currency === "EYCON" && (
-                            <span className="rounded-md border border-fuchsia-300/40 bg-fuchsia-300/10 px-2 py-1 text-xs font-extrabold uppercase tracking-[0.12em] text-fuchsia-200">
-                              Apuesta EyCon
-                            </span>
+                            <span className="bj-phase-pill bj-phase-pill--eycon">Apuesta EyCon</span>
                           )}
                         </div>
-                        <p className="mt-2 text-sm font-bold text-zinc-500">
-                          {table.message || `${table.seats.length}/${table.maxSeats} sentados`}
-                        </p>
+                        <p>{table.message || `${table.seats.length}/${table.maxSeats} sentados`}</p>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-2 sm:min-w-[300px]">
-                        <div className="rounded-md border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-center">
-                          <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-amber-200/60">Buy-in</p>
-                          <p className="font-display text-lg font-extrabold text-amber-200">{formatStake(table.buyIn, table.currency)}</p>
+                      <div className="bj-table-card__metrics">
+                        <div>
+                          <span>Buy-in</span>
+                          <strong>{formatStake(table.buyIn, table.currency)}</strong>
                         </div>
-                        <div className="rounded-md border border-emerald-300/20 bg-emerald-300/10 px-3 py-2 text-center">
-                          <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-200/60">Pozo</p>
-                          <p className="font-display text-lg font-extrabold text-emerald-200">{formatStake(table.pot, table.currency)}</p>
+                        <div>
+                          <span>Pozo</span>
+                          <strong>{formatStake(table.pot, table.currency)}</strong>
                         </div>
-                        <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 px-3 py-2 text-center">
-                          <p className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-cyan-200/60">Sillas</p>
-                          <p className="font-display text-lg font-extrabold text-cyan-200">{table.seats.length}/{table.maxSeats}</p>
+                        <div>
+                          <span>Sillas</span>
+                          <strong>{table.seats.length}/{table.maxSeats}</strong>
                         </div>
                       </div>
                     </div>
@@ -912,11 +904,7 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
                           {table.seats.map((seat) => (
                             <span
                               key={seat.userId}
-                              className={`rounded-md border px-2 py-1 text-xs font-extrabold ${
-                                seat.userId === currentUser.id
-                                  ? "border-amber-300/30 bg-amber-300/10 text-amber-200"
-                                  : "border-cyan-300/20 bg-cyan-300/10 text-cyan-200"
-                              }`}
+                              className={`bj-seat-chip ${seat.userId === currentUser.id ? "is-me" : ""}`}
                             >
                               {seat.username}{seat.userId === table.hostId ? " / host" : ""}
                             </span>
@@ -924,7 +912,7 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
                         </div>
 
                         {table.startEndsAt && (
-                          <div className="rounded-md border border-cyan-300/20 bg-cyan-300/10 p-3">
+                          <div className="rounded-xl border border-cyan-300/20 bg-cyan-300/10 p-3">
                             <TimerBar seconds={startSeconds} active totalSeconds={180} />
                           </div>
                         )}
@@ -970,16 +958,17 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
       </div>
 
       {showCreatePanel && (
-        <aside className="arcade-panel p-5">
-          <p className="text-xs font-extrabold uppercase tracking-[0.22em] text-amber-200">Crear mesa</p>
-          <h3 className="mt-1 font-display text-xl font-extrabold text-white">
-            {currency === "EYCON" ? "Apuesta con EyCon" : "Buy-in sin limite"}
-          </h3>
+        <aside className="bj-create-panel">
+          <p className="bj-create-panel__kicker">Crear mesa</p>
+          <h3>{currency === "EYCON" ? "Apuesta con EyCon" : "Buy-in en monedas"}</h3>
+          <p className="bj-create-panel__lead">
+            Configura el pozo, elige moneda y abre la sala. El host puede iniciar cuando haya al menos 2 jugadores.
+          </p>
           <div className="mt-4 grid gap-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="bj-currency-toggle">
               <button
                 type="button"
-                className={currency === "NORMAL" ? "arcade-button w-full" : "ghost-button w-full"}
+                className={currency === "NORMAL" ? "is-active" : ""}
                 onClick={() => setCurrency("NORMAL")}
               >
                 <Coins size={16} />
@@ -987,23 +976,21 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
               </button>
               <button
                 type="button"
-                className={currency === "EYCON" ? "arcade-button w-full" : "ghost-button w-full"}
+                className={currency === "EYCON" ? "is-active" : ""}
                 onClick={() => setCurrency("EYCON")}
               >
                 <BadgeDollarSign size={16} />
                 EyCon
               </button>
             </div>
-            <label className="grid gap-2">
-              <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Nombre</span>
+            <label className="bj-field">
+              <span>Nombre de la mesa</span>
               <input className="arcade-input" value={name} onChange={(event) => setName(event.target.value)} maxLength={32} />
             </label>
             {currency === "EYCON" ? (
               <>
-                <label className="grid gap-2">
-                  <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">
-                    Apuesta EyCon (0.01 - 1.00)
-                  </span>
+                <label className="bj-field">
+                  <span>Apuesta EyCon (0.01 - 1.00)</span>
                   <input
                     className="arcade-input"
                     type="number"
@@ -1013,9 +1000,9 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
                     onChange={(event) => setEyconBuyIn(event.target.value)}
                   />
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="bj-preset-row">
                   {[10, 50, 100].map((chip) => (
-                    <button key={chip} className="ghost-button px-2" onClick={() => setEyconBuyIn(chip)}>
+                    <button key={chip} type="button" onClick={() => setEyconBuyIn(chip)}>
                       {formatEycon(chip)}
                     </button>
                   ))}
@@ -1023,8 +1010,8 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
               </>
             ) : (
               <>
-                <label className="grid gap-2">
-                  <span className="text-xs font-extrabold uppercase tracking-[0.16em] text-zinc-500">Buy-in</span>
+                <label className="bj-field">
+                  <span>Buy-in</span>
                   <input
                     className="arcade-input"
                     type="number"
@@ -1034,9 +1021,9 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
                     onChange={(event) => setBuyIn(event.target.value)}
                   />
                 </label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="bj-preset-row">
                   {[100, 500, 1000].map((chip) => (
-                    <button key={chip} className="ghost-button px-2" onClick={() => setBuyIn(chip)}>
+                    <button key={chip} type="button" onClick={() => setBuyIn(chip)}>
                       {formatMoney(chip)}
                     </button>
                   ))}
@@ -1056,13 +1043,13 @@ function PlayerTablesLobby({ socket, world, currentUser, balance, eyconBalanceUn
               Abrir mesa
             </button>
           </div>
-          <div className="mt-4 rounded-md border border-white/10 bg-black/35 px-3 py-3 text-sm font-bold leading-6 text-zinc-400">
+          <div className="bj-create-note">
             {currency === "EYCON"
-              ? "La apuesta EyCon se descuenta al sentarte y se reparte al ganador al terminar la ronda. Las mesas EyCon no permiten revancha."
-              : "El buy-in se descuenta al sentarte. Si sales antes de que empiece, vuelve a tu saldo; si la ronda empieza, se reparte el pozo al final."}
+              ? "La apuesta EyCon se descuenta al sentarte y se reparte al ganador. Las mesas EyCon no permiten revancha."
+              : "El buy-in se descuenta al sentarte. Si sales antes de que empiece, vuelve a tu saldo."}
           </div>
           {error && (
-            <div className="mt-4 rounded-md border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-200">
+            <div className="mt-4 rounded-xl border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-sm font-bold text-rose-200">
               {error}
             </div>
           )}
@@ -1077,98 +1064,85 @@ function TableSelection({ balance, onSelect }) {
     {
       id: "ai",
       icon: Bot,
-      eyebrow: "Mesa con dealer IA",
+      eyebrow: "Contra la casa",
       title: "Vs la Banca",
-      subtitle: "Blackjack clasico contra la casa",
-      accent: "border-amber-300/50",
-      bg: "linear-gradient(135deg, rgba(251,191,36,0.18), rgba(15,74,48,0.5))",
+      subtitle: "Blackjack clasico. Todos deciden a la vez; la banca revela al final.",
+      accent: "bj-mode-card--ai",
       chipClass: "chip-gold",
       stat: "Cap $500",
       action: "Entrar a la mesa",
-      details: ["Turnos con timer", "Dealer se planta en 17", "Apuesta reservada"]
+      details: ["Turnos simultaneos", "Dealer oculto hasta el cierre", "Se planta en 17"]
     },
     {
       id: "pvp",
       icon: Swords,
-      eyebrow: "Mesa con jugadores",
+      eyebrow: "Mesa privada",
       title: "Vs Jugadores",
-      subtitle: "Mesas PvP sin limite de apuesta",
-      accent: "border-rose-400/50",
-      bg: "linear-gradient(135deg, rgba(220,38,38,0.22), rgba(15,74,48,0.5))",
+      subtitle: "Crea o unete a mesas PvP con buy-in en monedas o EyCon.",
+      accent: "bj-mode-card--pvp",
       chipClass: "chip-red",
       stat: "Sin limite",
       action: "Ver mesas PvP",
-      details: ["Crea mesas privadas", "Turnos reales con timer", "Buy-in libre segun saldo"]
+      details: ["Lobby con buy-in", "Pozo al ganador", "Revancha opcional"]
     }
   ];
 
   return (
-    <section className="grid gap-5">
-      <div className="casino-panel overflow-hidden marquee-lights">
-        <div className="border-b border-amber-300/15 bg-black/40 p-5">
-          <p className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.28em] text-amber-200">
+    <section className="bj-lobby">
+      <header className="bj-lobby-hero">
+        <div>
+          <p className="bj-lobby-kicker">
             <Spade size={14} />
-            Blackjack &middot; easyno
+            Blackjack · easyno
           </p>
-          <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <h2 className="font-display text-4xl font-black"><span className="gold-text">Elige tu mesa</span></h2>
-            <div className="flex items-center gap-2 rounded-md border border-emerald-300/40 bg-emerald-300/10 px-3 py-2 font-display text-sm font-extrabold text-emerald-200 shadow-emeraldGlow">
-              <Coins size={16} />
-              Saldo ${Math.max(0, balance)}
-            </div>
-          </div>
+          <h2>Elige como quieres jugar</h2>
+          <p>Una mesa limpia, apuestas claras y sin ventajas por ver la banca antes que tu amigo.</p>
         </div>
-
-        <div className="grid gap-4 p-5 lg:grid-cols-2">
-          {choices.map((choice) => {
-            const Icon = choice.icon;
-
-            return (
-              <button
-                key={choice.id}
-                type="button"
-                className={`group relative min-h-[320px] overflow-hidden rounded-xl border-2 p-5 text-left text-white transition hover:-translate-y-1 ${choice.accent}`}
-                style={{ background: choice.bg, boxShadow: "0 8px 28px rgba(0,0,0,0.5)" }}
-                onClick={() => onSelect(choice.id)}
-              >
-                <div className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100" style={{
-                  background: "radial-gradient(circle at center, rgba(251,191,36,0.18), transparent 60%)"
-                }} />
-
-                <div className="relative mb-5 flex items-start justify-between gap-3">
-                  <div className={`chip ${choice.chipClass} scale-90`}>
-                    <Icon size={22} />
-                  </div>
-                  <span className="rounded-md border border-amber-300/30 bg-black/40 px-3 py-2 font-display text-sm font-extrabold text-amber-200">
-                    {choice.stat}
-                  </span>
-                </div>
-
-                <p className="relative text-xs font-extrabold uppercase tracking-[0.22em] text-amber-200/80">
-                  {choice.eyebrow}
-                </p>
-                <h3 className="relative mt-2 font-display text-3xl font-black uppercase">
-                  {choice.title}
-                </h3>
-                <p className="relative mt-1 text-sm font-semibold text-zinc-300">{choice.subtitle}</p>
-
-                <div className="relative mt-5 grid gap-2">
-                  {choice.details.map((detail) => (
-                    <div key={detail} className="flex items-center gap-2 text-sm font-bold text-zinc-100">
-                      <Sparkles size={14} className="text-amber-300" />
-                      {detail}
-                    </div>
-                  ))}
-                </div>
-
-                <div className="relative mt-6 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-amber-300/40 bg-black/40 px-4 py-2 text-sm font-extrabold text-amber-200 transition group-hover:bg-amber-300/15 group-hover:text-amber-100">
-                  {choice.action}
-                  <StepForward size={18} />
-                </div>
-              </button>
-            );
-          })}
+        <div className="bj-lobby-balance">
+          <Coins size={16} />
+          <span>Saldo</span>
+          <strong>${Math.max(0, balance)}</strong>
         </div>
+      </header>
+
+      <div className="bj-mode-grid">
+        {choices.map((choice) => {
+          const Icon = choice.icon;
+
+          return (
+            <button
+              key={choice.id}
+              type="button"
+              className={`bj-mode-card ${choice.accent}`}
+              onClick={() => onSelect(choice.id)}
+            >
+              <div className="bj-mode-card__top">
+                <div className={`chip ${choice.chipClass} scale-90`}>
+                  <Icon size={22} />
+                </div>
+                <span>{choice.stat}</span>
+              </div>
+
+              <p>{choice.eyebrow}</p>
+              <h3>{choice.title}</h3>
+              <em>{choice.subtitle}</em>
+
+              <ul>
+                {choice.details.map((detail) => (
+                  <li key={detail}>
+                    <Sparkles size={14} />
+                    {detail}
+                  </li>
+                ))}
+              </ul>
+
+              <span className="bj-mode-card__cta">
+                {choice.action}
+                <StepForward size={18} />
+              </span>
+            </button>
+          );
+        })}
       </div>
     </section>
   );
@@ -1268,8 +1242,9 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
   const limits = table.betLimits || { min: 25, max: 1000 };
   const betValue = useMemo(() => Math.max(1, Math.floor(Number(bet) || 0)), [bet]);
   const me = table.players.find((player) => player.userId === currentUser.id);
-  const currentTurnPlayer = table.players.find((player) => player.userId === table.currentTurnUserId);
-  const isMyTurn = table.currentTurnUserId === currentUser.id && phase === "playing";
+  const decidingPlayers = table.players.filter((player) => player.status === "playing");
+  const isMyTurn = phase === "playing" && me?.status === "playing";
+  const waitingOnOthers = phase === "playing" && Boolean(me) && me.status !== "playing" && decidingPlayers.length > 0;
   const bettingSeconds = table.bettingEndsAt ? Math.max(0, Math.ceil((table.bettingEndsAt - now) / 1000)) : 0;
   const turnSeconds = table.turnEndsAt ? Math.max(0, Math.ceil((table.turnEndsAt - now) / 1000)) : 0;
   const tablePot = table.players.reduce((total, player) => total + player.bet, 0);
@@ -1301,8 +1276,10 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
       ? "Hagan sus apuestas"
       : phase === "playing"
         ? isMyTurn
-          ? "Tu turno"
-          : `Turno de ${currentTurnPlayer?.username || "jugador"}`
+          ? "Tu turno · todos a la vez"
+          : waitingOnOthers
+            ? `Esperando a ${decidingPlayers.length} jugador${decidingPlayers.length === 1 ? "" : "es"}`
+            : "Decidiendo manos"
         : phase === "dealer"
           ? "La banca revela"
           : phase === "settled"
@@ -1424,16 +1401,24 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
       <div className="felt-table relative px-3 py-6 sm:px-10 sm:py-9">
         {/* Rivales discretos */}
         {others.length > 0 && (
-          <div className="absolute left-3 top-3 z-10 flex max-w-[44%] flex-wrap gap-1.5 sm:left-5 sm:top-5">
+          <div className="absolute left-3 top-3 z-10 flex max-w-[48%] flex-wrap gap-1.5 sm:left-5 sm:top-5">
             {others.map((player) => (
               <span
                 key={player.userId}
-                className={`rival-chip ${player.userId === table.currentTurnUserId ? "is-turn" : ""}`}
-                title={player.username}
+                className={`rival-chip ${player.status === "playing" && phase === "playing" ? "is-turn" : ""}`}
+                title={`${player.username} · ${statusLabel[player.status] || player.status}`}
               >
                 <SeatAvatar username={player.username} size={20} />
                 <span className="hidden max-w-[72px] truncate sm:inline">{player.username}</span>
-                <span className="tabnum opacity-70">{phase === "settled" ? (player.total || "—") : "·"}</span>
+                <span className="tabnum opacity-70">
+                  {phase === "settled"
+                    ? (player.total || "—")
+                    : player.status === "playing"
+                      ? "…"
+                      : player.status === "busted"
+                        ? "X"
+                        : "OK"}
+                </span>
               </span>
             ))}
           </div>
@@ -1490,15 +1475,15 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
       )}
 
       {/* ===== Barra de acciones inferior ===== */}
-      <div className="action-bar justify-between">
+      <div className="action-bar action-bar--sticky justify-between">
         <div className="hud-stat">
           <span className="hud-stat__k">Saldo</span>
           <span key={balance} className="hud-stat__v animate-count-pop text-emerald-300">${Math.max(0, balance)}</span>
         </div>
 
-        <div className="order-last flex w-full items-center justify-center gap-3 sm:order-none sm:w-auto sm:flex-1">
+        <div className="order-last flex w-full flex-col items-stretch justify-center gap-3 sm:order-none sm:w-auto sm:flex-1 sm:flex-row sm:items-center">
           {phase === "playing" || phase === "dealer" ? (
-            <>
+            <div className="flex w-full items-center justify-center gap-3">
               <AnimatedButton baseClassName="action-key action-key--hit" onClick={() => playerAction("hit")} disabled={!isMyTurn} ignoreGate>
                 <Hand size={20} />
                 Pedir
@@ -1507,18 +1492,20 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
                 <Hand size={20} className="rotate-90" />
                 Plantarse
               </AnimatedButton>
-            </>
+            </div>
           ) : (
             <>
-              <div className="flex items-center gap-2.5">
+              <div className="bj-chip-scroller" role="listbox" aria-label="Fichas de apuesta">
                 {chipOptions.map((chip) => {
                   const selected = !betLocked && betValue === chip.value;
                   return (
                     <button
                       key={chip.value}
                       type="button"
+                      role="option"
+                      aria-selected={selected}
                       aria-pressed={selected}
-                      className={`chip ${chip.cls} ${selected ? "is-selected" : "scale-[0.78] hover:scale-90"} transition disabled:opacity-40 disabled:saturate-50`}
+                      className={`chip ${chip.cls} ${selected ? "is-selected" : "scale-[0.86] hover:scale-95"} transition disabled:opacity-40 disabled:saturate-50`}
                       onClick={() => setBet(chip.value)}
                       disabled={betLocked}
                     >
@@ -1527,7 +1514,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
                   );
                 })}
               </div>
-              <AnimatedButton baseClassName="action-key action-key--hit !max-w-[230px]" onClick={placeBet} disabled={!canPlaceBet} ignoreGate>
+              <AnimatedButton baseClassName="action-key action-key--hit w-full sm:!max-w-[230px]" onClick={placeBet} disabled={!canPlaceBet} ignoreGate>
                 {phase === "settled" ? <RotateCcw size={18} /> : me ? <LockKeyhole size={18} /> : <BadgeDollarSign size={18} />}
                 {phase === "settled"
                   ? seatsFull && !me
@@ -1545,7 +1532,7 @@ export default function BlackjackTable({ socket, currentUser, world, balance, ey
           )}
         </div>
 
-        <div className="flex items-center gap-5">
+        <div className="flex items-center gap-4 sm:gap-5">
           <div className="hud-stat items-end text-right">
             <span className="hud-stat__k">Apuesta</span>
             <span className="hud-stat__v text-amber-200">${me?.bet ?? betValue}</span>

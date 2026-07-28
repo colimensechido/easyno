@@ -10,6 +10,10 @@ function actionClassName(action) {
   return "";
 }
 
+function cx(...classes) {
+  return classes.filter(Boolean).join(" ");
+}
+
 function Monopoly3DSpaceCard({ info, onAction }) {
   if (!info) return null;
 
@@ -97,6 +101,7 @@ export default function Monopoly3DView({
   cameraFocus = null,
   cameraAutoFollow = false,
   onCameraAutoFollowChange,
+  cameraResetSignal = 0,
   canRollDice = false,
   onRollDice,
   onDicePhysicsChange,
@@ -104,7 +109,8 @@ export default function Monopoly3DView({
   onSelectionAction,
   statusTitle = "",
   statusBody = "",
-  hideCenterDecks = false
+  hideCenterDecks = false,
+  mobileChrome = false
 }) {
   const board = useMemo(() => gameState?.board || createClassicBoard(), [gameState?.board]);
   const fallbackPlayers = useMemo(() => createMockPlayers(currentUser), [currentUser?.id, currentUser?.username]);
@@ -223,8 +229,15 @@ export default function Monopoly3DView({
     setCameraResetVersion((current) => current + 1);
   }
 
+  useEffect(() => {
+    if (!cameraResetSignal) return;
+    resetCamera();
+    // Only react to external signal bumps from the mobile chrome.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraResetSignal]);
+
   return (
-    <section className="monopoly-3d-view">
+    <section className={cx("monopoly-3d-view", mobileChrome && "is-mobile-chrome")}>
       <div className="monopoly-3d-layout">
         <div className="monopoly-3d-stage">
           <div className={`monopoly-3d-stage-banner ${diceRollingVisual || cinematic ? "is-live" : ""}`}>
@@ -240,6 +253,7 @@ export default function Monopoly3DView({
               </span>
             </div>
           )}
+          {!mobileChrome && (
           <aside className={`monopoly-3d-camera-guide ${cameraHelpOpen ? "is-open" : "is-collapsed"}`}>
             <header>
               <span className="monopoly-3d-camera-guide-title">
@@ -285,6 +299,7 @@ export default function Monopoly3DView({
               </>
             )}
           </aside>
+          )}
           <Monopoly3DScene
             board={board}
             players={displayPlayers}
@@ -313,7 +328,7 @@ export default function Monopoly3DView({
             hideCenterDecks={hideCenterDecks}
           />
           {sidePanel}
-          <Monopoly3DSpaceCard info={selectedSpaceInfo} onAction={onSelectionAction} />
+          {!mobileChrome && <Monopoly3DSpaceCard info={selectedSpaceInfo} onAction={onSelectionAction} />}
         </div>
       </div>
 
