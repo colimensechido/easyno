@@ -726,7 +726,8 @@ export function createBoard3D({ board = [], players = [], boardTheme = null, hid
     base,
     center,
     centerRing,
-    boardThemeId: theme.id
+    boardThemeId: theme.id,
+    userData: {}
   };
   syncPlayerPieces(model, players);
   return model;
@@ -1012,6 +1013,8 @@ export function animateBoard3D(model, delta, elapsed, camera = null) {
 }
 
 export function markSelectedTile(model, selectedIndex, options = {}) {
+  if (!model?.tileGroups) return;
+  if (!model.userData) model.userData = {};
   const { moverIndex = null, currentIndex = null, destinationIndex = null } = options;
   const markKey = `${selectedIndex ?? "x"}:${currentIndex ?? "x"}:${moverIndex ?? "x"}:${destinationIndex ?? "x"}`;
   if (model.userData.lastMarkKey === markKey) return;
